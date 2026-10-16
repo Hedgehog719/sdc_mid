@@ -54,6 +54,10 @@ def main():
     p.add_argument('--smooth_yaw', type=float, default=0.0)
     p.add_argument('--lever', type=float, nargs=2, default=[0.0, 0.0],
                    help='constant (fwd, lat) offset GNSS->reference point in the vehicle frame')
+    p.add_argument('--rts', action='store_true', help='Kalman/RTS smoothing of GNSS with IMU heading')
+    p.add_argument('--rts_sigma', type=float, default=0.3)
+    p.add_argument('--rts_qacc', type=float, default=1.0)
+    p.add_argument('--rts_qpos', type=float, default=0.05)
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -66,6 +70,15 @@ def main():
         yaw = s.imu_yaw_cf(ts, a.yaw_cf_sigma)
     else:
         yaw = s.gnss_yaw(ts)
+    if a.rts:
+        from rts import rts_smooth
+        if a.yaw_src == 'imu_cf':
+            psi_fn = lambda t: s.imu_yaw_cf(t, a.yaw_cf_sigma)  # noqa: E731
+        else:
+            psi_fn = s.imu_yaw
+        st = rts_smooth(ts, s.gt, s.gxyz[:, :2], psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos)
+        xyz = xyz.copy()
+        xyz[:, :2] = st[:, :2]
     n = len(ts)
     corr = np.zeros((n, 3))  # fwd, lat, yaw(rad)
     if a.reg:
