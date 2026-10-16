@@ -58,6 +58,8 @@ def main():
     p.add_argument('--rts_sigma', type=float, default=0.3)
     p.add_argument('--rts_qacc', type=float, default=1.0)
     p.add_argument('--rts_qpos', type=float, default=0.05)
+    p.add_argument('--rts_scan_sigma', type=float, default=0.0,
+                   help='>0: feed gated scan-matching positions to the RTS smoother with this sigma (m)')
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -76,7 +78,20 @@ def main():
             psi_fn = lambda t: s.imu_yaw_cf(t, a.yaw_cf_sigma)  # noqa: E731
         else:
             psi_fn = s.imu_yaw
-        st = rts_smooth(ts, s.gt, s.gxyz[:, :2], psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos)
+        tm, zm, sm = s.gt, s.gxyz[:, :2], np.full(len(s.gt), a.rts_sigma)
+        if a.reg and a.rts_scan_sigma > 0:
+            z = {k: np.concatenate([np.load(f)[k] for f in a.reg]) for k in ['ts', 'T', 'P', 'inlier', 'map_keep']}
+            d = z['T'][:, :2, 3] - z['P'][:, :2, 3]
+            dyaw = wrap(yaw_of(z['T']) - yaw_of(z['P']))
+            w = z['inlier'] * z['map_keep']
+            good = (np.linalg.norm(d, axis=1) < a.gate_xy) & (np.abs(np.degrees(dyaw)) < a.gate_yaw) & (w > 0.3)
+            # scan position = GNSS(at frame) + correction, so the lever arm / interpolation stay consistent
+            gxy = s.gnss_xyz(z['ts'][good], a.interp)[:, :2]
+            tm = np.concatenate([tm, z['ts'][good]])
+            zm = np.concatenate([zm, gxy + d[good]])
+            sm = np.concatenate([sm, a.rts_scan_sigma / np.sqrt(np.clip(w[good], 0.1, 1))])
+            print('scan measurements used: %d / %d' % (good.sum(), len(good)))
+        st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, meas_sigma=sm)
         xyz = xyz.copy()
         xyz[:, :2] = st[:, :2]
     n = len(ts)

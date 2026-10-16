@@ -26,8 +26,9 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     Pp = np.zeros((n, 3, 3))
     Fs = np.zeros((n, 3, 3))
     # init from first two measurements
-    v0 = np.linalg.norm(z_meas[min(4, len(tm) - 1)] - z_meas[0]) / max((tm[min(4, len(tm) - 1)] - tm[0]) * 1e-9, 1e-3)
-    x = np.array([z_meas[0, 0], z_meas[0, 1], v0])
+    first = np.argsort(tm)[:5]
+    v0 = np.linalg.norm(z_meas[first[-1]] - z_meas[first[0]]) / max((tm[first[-1]] - tm[first[0]]) * 1e-9, 1e-3)
+    x = np.array([z_meas[first[0], 0], z_meas[first[0], 1], v0])
     P = np.diag([1.0, 1.0, 4.0])
     H = np.array([[1.0, 0, 0], [0, 1.0, 0]])
     t_prev = times[0]
