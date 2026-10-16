@@ -1,0 +1,20 @@
+# data / large files
+data/
+*.zip
+*.pt
+*.pdf
+*.pcd
+*.ply
+*.db3
+hw2_backup/
+workspace/
+Code_LoGeR/
+# colcon
+midterm01/build/
+midterm01/install/
+midterm01/log/
+__pycache__/
+*.pyc
+# outputs (keep only final csv)
+midterm01/src/localization/result/*.txt
+.vscode/

@@ -1,0 +1,33 @@
+services:
+  sdc_ros2_dev:
+    build: .
+    image: sdc_ros2_dev:latest
+    container_name: sdc_midterm01
+    network_mode: host
+    ipc: host
+    shm_size: "4gb"
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_LOCALHOST_ONLY=1
+      - ROS_DOMAIN_ID=20
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # colcon workspace -> /root/midterm (src/localization inside)
+      - ./midterm01:/root/midterm
+      # Track1 / Track2 datasets -> /root/data/Track1, /root/data/Track2
+      - ./data:/root/data
+      # Optional LoGeR preprocessing code
+      - ./Code_LoGeR:/root/Code_LoGeR
+
+    stdin_open: true
+    tty: true
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
