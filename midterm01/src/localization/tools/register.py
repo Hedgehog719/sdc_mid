@@ -16,6 +16,7 @@ import os
 import sys
 import time
 
+import cv2
 import numpy as np
 import small_gicp
 from scipy.spatial import cKDTree
@@ -24,10 +25,14 @@ from scipy.spatial.transform import Rotation
 sys.path.insert(0, os.path.dirname(__file__))
 from common import Sensors, TiledMap, ply_frames, wrap, yaw_of  # noqa: E402
 from plyio import read_ply_xyz  # noqa: E402
+from camera_model import Cameras  # noqa: E402
 
 ARGS = None
 MAP = None
 SENS = None
+MASKS = None
+CAMS = None
+MASK_KERNEL = None
 
 
 def fit_plane(p):
@@ -55,10 +60,28 @@ def rot_z_to(n):
     return Rotation.from_rotvec(v / s * np.arcsin(s)).as_matrix()
 
 
-def load_cloud(path):
+def mask_filter(i, p):
+    """Drop points that project into a YOLO road-user mask in any camera (half-res masks, extra dilation)."""
+    keep = np.ones(len(p), bool)
+    for cam, masks in MASKS.items():
+        uv, valid = CAMS.project(cam, p / ARGS.scale)
+        if not valid.any():
+            continue
+        m = np.unpackbits(masks[i], axis=1)
+        if MASK_KERNEL is not None:
+            m = cv2.dilate(m, MASK_KERNEL)
+        u = (uv[valid, 0] / 2).astype(int).clip(0, m.shape[1] - 1)
+        v = (uv[valid, 1] / 2).astype(int).clip(0, m.shape[0] - 1)
+        keep[np.flatnonzero(valid)[m[v, u] > 0]] = False
+    return keep
+
+
+def load_cloud(i, path):
     p = read_ply_xyz(path).astype(np.float64) * ARGS.scale
     r = np.linalg.norm(p, axis=1)
     p = p[(r > ARGS.min_range) & (r < ARGS.max_range)]
+    if MASKS:
+        p = p[mask_filter(i, p)]
     pc, _ = small_gicp.preprocess_points(p, downsampling_resolution=ARGS.src_voxel, num_threads=1)
     return pc.points()[:, :3].copy()
 
@@ -154,7 +177,7 @@ def worker(chunk):
 
     def ensure(j):
         if j not in clouds and 0 <= j < len(FILES):
-            clouds[j] = load_cloud(FILES[j])
+            clouds[j] = load_cloud(j, FILES[j])
             priors[j] = prior(j, clouds[j])
 
     for i in range(lo, hi):
@@ -168,8 +191,6 @@ def worker(chunk):
         T, res = gicp(tgt, tree, src, P, ARGS.mcds)
         # map-consistency: remove points the map cannot explain, then refine
         q = src @ T[:3, :3].T + T[:3, 3]
-        d, _ = cKDTree(tgt.points()[:, :3]).query(q, k=1, distance_upper_bound=ARGS.map_th, workers=ARGS.threads) \
-            if False else (None, None)
         if ARGS.map_th > 0:
             nn = tree.batch_nearest_neighbor_search(q, num_threads=ARGS.threads)
             dist = np.sqrt(np.asarray(nn[1]))
@@ -198,7 +219,15 @@ def worker(chunk):
 
 
 def init_worker():
-    global MAP, SENS, SENS_TS
+    global MAP, SENS, SENS_TS, MASKS, CAMS, MASK_KERNEL
+    MASKS = {}
+    if ARGS.masks:
+        track = os.path.basename(os.path.normpath(ARGS.track_dir))
+        CAMS = Cameras(os.path.join(ARGS.track_dir, f'{track}_images', 'camera_info'))
+        if ARGS.mask_dilate > 0:
+            MASK_KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * ARGS.mask_dilate + 1,) * 2)
+        for cam in ['f', 'fl', 'fr']:
+            MASKS[cam] = np.load(os.path.join(ARGS.track_dir, 'masks', f'{cam}.npz'))['masks']
     MAP = TiledMap(ARGS.map_npy)
     SENS = Sensors(ARGS.track_dir)
     SENS_TS = TS
@@ -225,6 +254,8 @@ def main():
     parser.add_argument('--dyn_th', type=float, default=0.4)
     parser.add_argument('--dyn_th_range', type=float, default=0.02)
     parser.add_argument('--dyn_min_support', type=int, default=2)
+    parser.add_argument('--masks', action='store_true', help='remove YOLO road-user pixels (needs masks/)')
+    parser.add_argument('--mask_dilate', type=int, default=5, help='extra dilation in half-res pixels')
     parser.add_argument('--frames', type=str, default='', help='lo:hi[:step] subset for quick tests')
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--threads', type=int, default=6)
