@@ -43,6 +43,13 @@ class Sensors:
         t = np.clip(np.atleast_1d(t).astype(np.float64), self.it[0], self.it[-1])
         return self.islerp(t)
 
+    def imu_yaw(self, t):
+        """IMU yaw shifted by its median offset to GNSS yaw (IMU heading is smoother, GNSS is unbiased)."""
+        if not hasattr(self, '_imu_yaw_offset'):
+            ref = np.unwrap(self.imu_rot(self.gt).as_euler('ZYX')[:, 0])
+            self._imu_yaw_offset = np.median(wrap(self.gyaw - ref))
+        return np.unwrap(self.imu_rot(t).as_euler('ZYX')[:, 0]) + self._imu_yaw_offset
+
     def prior_pose(self, t, yaw_offset=0.0):
         """4x4 prior: GNSS position, IMU roll/pitch, GNSS yaw (+offset)."""
         t = np.atleast_1d(t)
