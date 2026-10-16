@@ -32,9 +32,23 @@ class Sensors:
         self.islerp = Slerp(self.it, self.irot)
         self.igyro = im[['wx', 'wy', 'wz']].values
 
-    def gnss_xyz(self, t):
+    def gnss_xyz(self, t, method='linear'):
         t = np.atleast_1d(t).astype(np.float64)
+        if method == 'cubic':
+            from scipy.interpolate import CubicSpline
+            cs = CubicSpline((self.gt - self.gt[0]) * 1e-9, self.gxyz, axis=0, extrapolate=True)
+            return cs((t - self.gt[0]) * 1e-9)
         return np.stack([np.interp(t, self.gt, self.gxyz[:, i]) for i in range(3)], axis=1)
+
+    def imu_yaw_cf(self, t, sigma_s):
+        """Complementary filter: IMU yaw + low-passed (GNSS - IMU) yaw offset (Gaussian sigma in seconds)."""
+        from scipy.ndimage import gaussian_filter1d
+        ref = np.unwrap(self.imu_rot(self.gt).as_euler('ZYX')[:, 0])
+        off = np.unwrap(self.gyaw - ref)
+        dt = np.median(np.diff(self.gt)) * 1e-9
+        off_s = gaussian_filter1d(off, sigma_s / dt, mode='nearest')
+        t = np.atleast_1d(t).astype(np.float64)
+        return np.unwrap(self.imu_rot(t).as_euler('ZYX')[:, 0]) + np.interp(t, self.gt, off_s)
 
     def gnss_yaw(self, t):
         return np.interp(np.atleast_1d(t).astype(np.float64), self.gt, self.gyaw)

@@ -40,7 +40,9 @@ def main():
     p.add_argument('output_csv')
     p.add_argument('--reg', nargs='*', default=[], help='register.py npz outputs (optional)')
     p.add_argument('--ply_dir', default='raw_ply', help='defines the frame list / row count')
-    p.add_argument('--yaw_src', choices=['imu', 'gnss'], default='imu')
+    p.add_argument('--yaw_src', choices=['imu', 'gnss', 'imu_cf'], default='imu')
+    p.add_argument('--yaw_cf_sigma', type=float, default=10.0, help='seconds, for imu_cf')
+    p.add_argument('--interp', choices=['linear', 'cubic'], default='linear')
     p.add_argument('--use', default='fwd,lat,yaw', help='which corrections to apply')
     p.add_argument('--sigma_fwd', type=float, default=150.0)
     p.add_argument('--sigma_lat', type=float, default=60.0)
@@ -50,13 +52,20 @@ def main():
     p.add_argument('--gain', type=float, default=1.0, help='scale applied to smoothed corrections')
     p.add_argument('--smooth_xy', type=float, default=0.0, help='final Gaussian smoothing of x/y (frames)')
     p.add_argument('--smooth_yaw', type=float, default=0.0)
+    p.add_argument('--lever', type=float, nargs=2, default=[0.0, 0.0],
+                   help='constant (fwd, lat) offset GNSS->reference point in the vehicle frame')
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
     ts, _ = ply_frames(os.path.join(a.track_dir, a.ply_dir))
     s = Sensors(a.track_dir)
-    xyz = s.gnss_xyz(ts)
-    yaw = s.imu_yaw(ts) if a.yaw_src == 'imu' else s.gnss_yaw(ts)
+    xyz = s.gnss_xyz(ts, a.interp)
+    if a.yaw_src == 'imu':
+        yaw = s.imu_yaw(ts)
+    elif a.yaw_src == 'imu_cf':
+        yaw = s.imu_yaw_cf(ts, a.yaw_cf_sigma)
+    else:
+        yaw = s.gnss_yaw(ts)
     n = len(ts)
     corr = np.zeros((n, 3))  # fwd, lat, yaw(rad)
     if a.reg:
@@ -86,6 +95,8 @@ def main():
             good.sum(), len(good), corr[:, 0].mean(), corr[:, 1].mean(), np.degrees(corr[:, 2].mean())))
         if a.dump:
             np.savez(a.dump, V=V, W=W, corr=corr)
+    corr[:, 0] += a.lever[0]
+    corr[:, 1] += a.lever[1]
     x = xyz[:, 0] + np.cos(yaw) * corr[:, 0] - np.sin(yaw) * corr[:, 1]
     y = xyz[:, 1] + np.sin(yaw) * corr[:, 0] + np.cos(yaw) * corr[:, 1]
     yw = np.unwrap(yaw + corr[:, 2])
