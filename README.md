@@ -1,0 +1,56 @@
+# SDC 2026 Midterm01 — Image-based Localization
+
+Code for the NYCU SDC 2026 Midterm 1 localization competition (Track01 / Track02).
+Data is not included (see `.gitignore`).
+
+## Layout
+```
+Dockerfile, docker-compose.yml, ros_entrypoint.sh   ROS 2 Humble dev container (GPU)
+midterm01/src/localization/                         colcon package (TA template, C++ NDT baseline)
+  tools/                                            our pipeline (Python)
+  run_pipeline.sh                                   reproduces result/result_{1,2}.csv
+data/Track{1,2}/                                    datasets (mounted at /root/data)
+```
+
+## Run
+```bash
+docker compose up -d --build
+docker exec -it sdc_midterm01 bash
+bash /root/midterm/src/localization/run_pipeline.sh          # fast: sensor fusion only
+FULL=1 bash /root/midterm/src/localization/run_pipeline.sh   # + map cache, YOLO masks, map matching
+```
+TA baseline (C++): `cd /root/midterm && colcon build && source install/setup.bash && ros2 launch localization localization.launch.py`
+
+## Pipeline (tools/)
+| file | purpose |
+|---|---|
+| `extract_bag.py` | dump `/localizer_node/gnss_pose` (4 Hz) and `/imu/data` (100 Hz) to CSV |
+| `common.py` | GNSS/IMU interpolation, complementary-filter yaw, GNSS re-timing, tiled full-res map |
+| `rts.py` | Kalman filter + RTS smoother, state [x, y, v], IMU heading as input, robust GNSS gating |
+| `fuse.py` | final trajectory: GNSS + IMU yaw (complementary) + RTS (+ optional scan-matching terms) |
+| `map_to_npy.py` | full-resolution map cache (ascii/binary PCD), no downsampling |
+| `segment_vehicles.py` | YOLO11x-seg masks of road users on the 3 fisheye cameras |
+| `camera_model.py` | FLU cloud -> fisheye pixel projection (validated with point colours) |
+| `register.py` | per-frame GICP of 3-camera clouds to the full-res map with YOLO-mask removal, ego-motion temporal dynamic filter, map-consistency filter |
+| `accum_register.py` | multi-frame accumulated submap registration |
+| `gnss_variants.py`, `probe.py` | leaderboard probes (lag, yaw source, constant-offset error decomposition) |
+
+## Findings (Kaggle public score, lower is better)
+| step | Track1 | Track2 |
+|---|---|---|
+| TA baseline (NDT on raw_ply) | 1.791 | |
+| GNSS interpolation | 1.311 | |
+| + IMU yaw (median offset to GNSS) | 1.184 | 0.550 |
+| + complementary yaw (low-passed GNSS-IMU offset) | 1.115 (10 s) | 0.462 (30 s, +RTS) |
+| + Kalman/RTS smoothing with IMU heading | **1.087** (q 0.2) | 0.459 (q 0.4) |
+| yaw reference = heading of travel | 1.100 | **0.350** |
+
+Negative results (kept for the report):
+* GNSS time shift +-0.1 s: 1.78 / 1.73 -> stamps already aligned.
+* Gaussian low-pass of GNSS x/y: cuts corners (sigma 3 s -> 2.39).
+* Lever arm from init_guess - GNSS (-0.62, +0.21 m, identical on both tracks): worse (1.38 / 1.00) -> it is the injected noise.
+* Image-cloud map matching (per frame or accumulated, with YOLO masks and dynamic filtering): corrections are not
+  reliable (on Track2, where GNSS is accurate, they swing by +-5 m); as weak RTS measurements they give at most 0.001.
+
+Observations: 3-camera MapAnything clouds are metric (camera height ~2.1 m), raw LoGeR clouds need scale ~3.5,
+the map frame is tilted ~10 deg relative to the vehicle, GNSS fixes are on a regular 4 Hz grid with jittered stamps.
