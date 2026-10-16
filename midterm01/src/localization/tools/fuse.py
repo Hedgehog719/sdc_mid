@@ -41,6 +41,7 @@ def main():
     p.add_argument('--reg', nargs='*', default=[], help='register.py npz outputs (optional)')
     p.add_argument('--ply_dir', default='raw_ply', help='defines the frame list / row count')
     p.add_argument('--yaw_src', choices=['imu', 'gnss', 'imu_cf'], default='imu')
+    p.add_argument('--yaw_cf_ref', choices=['gnss', 'motion'], default='gnss')
     p.add_argument('--yaw_cf_sigma', type=float, default=10.0, help='seconds, for imu_cf')
     p.add_argument('--interp', choices=['linear', 'cubic'], default='linear')
     p.add_argument('--use', default='fwd,lat,yaw', help='which corrections to apply')
@@ -69,13 +70,13 @@ def main():
     if a.yaw_src == 'imu':
         yaw = s.imu_yaw(ts)
     elif a.yaw_src == 'imu_cf':
-        yaw = s.imu_yaw_cf(ts, a.yaw_cf_sigma)
+        yaw = s.imu_yaw_cf(ts, a.yaw_cf_sigma, a.yaw_cf_ref)
     else:
         yaw = s.gnss_yaw(ts)
     if a.rts:
         from rts import rts_smooth
         if a.yaw_src == 'imu_cf':
-            psi_fn = lambda t: s.imu_yaw_cf(t, a.yaw_cf_sigma)  # noqa: E731
+            psi_fn = lambda t: s.imu_yaw_cf(t, a.yaw_cf_sigma, a.yaw_cf_ref)  # noqa: E731
         else:
             psi_fn = s.imu_yaw
         tm, zm, sm = s.gt, s.gxyz[:, :2], np.full(len(s.gt), a.rts_sigma)
