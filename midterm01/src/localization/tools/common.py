@@ -20,10 +20,24 @@ def wrap(a):
 class Sensors:
     """GNSS + IMU interpolated at arbitrary ns timestamps (bag receive time)."""
 
-    def __init__(self, track_dir):
+    def __init__(self, track_dir, regularize_gnss=None):
         g = pd.read_csv(os.path.join(track_dir, 'sensors', 'gnss.csv'))
         im = pd.read_csv(os.path.join(track_dir, 'sensors', 'imu.csv'))
         self.gt = g.t.values.astype(np.float64)
+        if regularize_gnss is None:
+            regularize_gnss = os.environ.get('GNSS_REGULAR', '0') == '1'
+        if regularize_gnss:
+            # GNSS fixes are sampled on a regular 4 Hz grid; only the stamps jitter (step length is
+            # uncorrelated with stamp dt). Re-time them with a robust linear fit over the slot index.
+            period = np.median(np.diff(self.gt))
+            slot = np.concatenate([[0], np.cumsum(np.round(np.diff(self.gt) / period))])
+            A = np.stack([slot, np.ones_like(slot)], 1)
+            keep = np.ones(len(slot), bool)
+            for _ in range(5):
+                coef = np.linalg.lstsq(A[keep], self.gt[keep], rcond=None)[0]
+                r = self.gt - A @ coef
+                keep = np.abs(r) < 3 * max(np.median(np.abs(r[keep])) * 1.4826, 1e5)
+            self.gt = A @ coef
         self.gxyz = g[['x', 'y', 'z']].values
         self.gyaw = np.unwrap(2 * np.arctan2(g.qz.values, g.qw.values))
         self.it = im.t.values.astype(np.float64)

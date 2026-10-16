@@ -40,7 +40,7 @@ def main():
     p.add_argument('output_csv')
     p.add_argument('--reg', nargs='*', default=[], help='register.py npz outputs (optional)')
     p.add_argument('--ply_dir', default='raw_ply', help='defines the frame list / row count')
-    p.add_argument('--yaw_src', choices=['imu', 'gnss', 'imu_cf'], default='imu')
+    p.add_argument('--yaw_src', choices=['imu', 'gnss', 'imu_cf', 'path'], default='imu')
     p.add_argument('--yaw_cf_ref', choices=['gnss', 'motion'], default='gnss')
     p.add_argument('--yaw_cf_sigma', type=float, default=10.0, help='seconds, for imu_cf')
     p.add_argument('--interp', choices=['linear', 'cubic'], default='linear')
@@ -61,6 +61,8 @@ def main():
     p.add_argument('--rts_qpos', type=float, default=0.05)
     p.add_argument('--rts_scan_sigma', type=float, default=0.0,
                    help='>0: feed gated scan-matching positions to the RTS smoother with this sigma (m)')
+    p.add_argument('--path_iters', type=int, default=2, help='yaw_src=path: RTS <-> heading iterations')
+    p.add_argument('--path_min_speed', type=float, default=2.0)
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -73,11 +75,29 @@ def main():
         yaw = s.imu_yaw_cf(ts, a.yaw_cf_sigma, a.yaw_cf_ref)
     else:
         yaw = s.gnss_yaw(ts)
+    if a.yaw_src == 'path':
+        # heading of travel of the RTS-smoothed path, fused with IMU yaw (complementary), iterated
+        from rts import rts_smooth
+        from scipy.interpolate import interp1d
+        psi_fn = lambda t: s.imu_yaw_cf(t, a.yaw_cf_sigma, 'gnss')  # noqa: E731
+        imu_ts = np.unwrap(s.imu_rot(ts).as_euler('ZYX')[:, 0])
+        frame_dt = np.median(np.diff(ts)) * 1e-9
+        for _ in range(a.path_iters):
+            st = rts_smooth(ts, s.gt, s.gxyz[:, :2], psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos)
+            d = np.gradient(st[:, :2], axis=0)
+            heading = np.arctan2(d[:, 1], d[:, 0])
+            w = (np.linalg.norm(d, axis=1) / frame_dt > a.path_min_speed).astype(float)
+            off = np.unwrap(wrap(heading - imu_ts))
+            sig = a.yaw_cf_sigma / frame_dt
+            off_s = gaussian_filter1d(off * w, sig, mode='nearest') / np.maximum(gaussian_filter1d(w, sig, mode='nearest'), 1e-6)
+            yaw = imu_ts + off_s
+            f = interp1d(ts.astype(np.float64), yaw, bounds_error=False, fill_value=(yaw[0], yaw[-1]))
+            psi_fn = lambda t, f=f: f(np.atleast_1d(t).astype(np.float64))  # noqa: E731
     if a.rts:
         from rts import rts_smooth
         if a.yaw_src == 'imu_cf':
             psi_fn = lambda t: s.imu_yaw_cf(t, a.yaw_cf_sigma, a.yaw_cf_ref)  # noqa: E731
-        else:
+        elif a.yaw_src != 'path':
             psi_fn = s.imu_yaw
         tm, zm, sm = s.gt, s.gxyz[:, :2], np.full(len(s.gt), a.rts_sigma)
         if a.reg and a.rts_scan_sigma > 0:
