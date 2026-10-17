@@ -168,6 +168,7 @@ def main():
     ap.add_argument('--accum_step', type=int, default=4)
     ap.add_argument('--ground3d', action='store_true', help='IPM onto the map road surface with road tilt')
     ap.add_argument('--dyn_attitude', action='store_true', help='add IMU high-pass pitch/roll (braking, bumps)')
+    ap.add_argument('--dyn_roll_only', action='store_true', help='use only the IMU roll (side tilt from bumps)')
     ap.add_argument('--dyn_sign', type=float, default=1.0)
     ap.add_argument('--pitch_per_accel', type=float, default=0.0, help='deg of body pitch per m/s^2 (suspension)')
     ap.add_argument('--frame_list', default='', help='npy of frame indices to process (overrides --frames)')
@@ -217,6 +218,8 @@ def main():
             e = S.imu_rot(TS_ALL).as_euler('ZYX', degrees=True)
             hp = lambda v: v - gaussian_filter1d(v, 2.0 * 28, mode='nearest')  # noqa: E731
             BEV.dyn = np.stack([A.dyn_sign * hp(e[:, 1]), A.dyn_sign * hp(e[:, 2])], 1)
+            if A.dyn_roll_only:
+                BEV.dyn[:, 0] = 0.0
         if A.pitch_per_accel != 0.0:
             # suspension model: body pitch (nose dive when braking, squat when accelerating) = k * longitudinal accel
             from scipy.ndimage import gaussian_filter1d

@@ -1,4 +1,7 @@
-# Day 2 submissions (2026-10-18, resets 08:00 Taiwan time) — 12 per track first, 3 kept for combinations
+# Day 2 submissions (2026-10-18, resets 08:00 Taiwan time)
+
+**Submit first: submissions/final/final_1.csv and final_2.csv** (final_pipeline.sh, every refinement combined).
+Then 11 per track from the lists below, 3 kept for combinations.
 
 Yaw is worth a lot: score = pos_rmse + 0.2 * yaw_rmse_deg. Probes give yaw rmse ~0.96 deg on Track1 (0.19 of
 the score) and ~0.54 deg on Track2 (0.11, a third of the score), so yaw candidates get priority.
@@ -30,3 +33,9 @@ Suspension pitch model (Track2, 236 braking/accelerating frames, 1 m / 2 deg noi
 | NCC peak | 0.161 | 0.168 | 0.178 | 0.190 | 0.196 | 0.199 | 0.199 | 0.194 |
 | median pos (sharp>0.02) | 0.38 | 0.31 | 0.40 | 0.34 | 0.23 | 0.26 | 0.27 | 0.28 |
 ZUPT/ZIHR: Track2 only stationary at the start, change 2 mm -> dropped. 3D road IPM rejected (0.90-1.03 vs 0.61).
+
+## Added for the final pipeline
+- BEV fix weight by match quality: NCC-peak quartiles have lateral error rms 1.26 / 1.18 / 0.76 / 0.40 m, so sigma
+  is scaled by clip(0.2 / peak, 0.5, 3). Drift simulation: 0.884 -> 0.837 (lat 0.5), 0.821 -> 0.814 (lat 0.3).
+- IMU roll only (side tilt from bumps), sign +: median 0.64 -> 0.59, lat rms 1.37 -> 1.30, yaw 2.07 -> 1.81 deg.
+  (IMU pitch is not used: it does not show nose dive; pitch comes from the suspension model instead.)

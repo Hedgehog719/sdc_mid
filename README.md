@@ -60,6 +60,19 @@ matched in the image domain:
    finds the best yaw and x/y shift by normalised cross-correlation in the map raster.
 5. The fixes enter the RTS smoother with anisotropic covariance and Huber gating, together with GNSS.
 
+Refinements found later (Track2 offline tests):
+* suspension pitch model: body pitch = -0.8 deg per m/s^2 of longitudinal acceleration (nose dive / squat),
+  calibrated on braking/accelerating frames (median error of confident fixes 0.40 -> 0.23 m); the IMU attitude
+  does not show the nose dive (r = -0.06 with acceleration);
+* IMU roll for side tilt from bumps (median 0.64 -> 0.59 m);
+* rig yaw -1.5 deg (residual +0.5 deg seen in both tracks);
+* fix weights scaled by the NCC peak (occlusion by traffic / few markings -> low peak -> lateral rms 1.26 m
+  vs 0.40 m for the best quartile);
+* rejected: 3D road-surface IPM (worse), ZUPT (only the start is stationary).
+Sensor-fusion refinements from the GNSS/INS literature: non-holonomic constraint (small cross-track process
+noise), yaw offset estimated by a scalar RTS with speed-weighted heading-of-travel measurements and BEV yaw
+fixes. `final_pipeline.sh` combines everything.
+
 On Track2 with 1 m / 2 deg noise, the single-match median error drops from 1.23 m to 0.61 m. With simulated
 Track1-like GNSS drift (0.95 m rms), fusion reaches 0.84 m. On the real Track1 the leaderboard score goes from
 1.0786 to 1.0042. On Track2, where GNSS is already accurate (0.23 m), the fixes add noise, so it is not used there.

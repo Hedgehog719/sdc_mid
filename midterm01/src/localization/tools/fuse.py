@@ -69,6 +69,8 @@ def main():
     p.add_argument('--bev_fwd_sigma', type=float, default=5.0, help='large = lateral-only fix')
     p.add_argument('--bev_min_speed', type=float, default=3.0)
     p.add_argument('--bev_huber', type=float, default=2.0)
+    p.add_argument('--bev_peak_ref', type=float, default=0.0,
+                   help='>0: scale BEV sigma by clip(ref/peak, 0.5, 3): weak matches (occluded / few markings) count less')
     p.add_argument('--xy_bias', type=float, nargs=2, default=[0.0, 0.0], help='m subtracted from final x/y')
     p.add_argument('--time_shift', type=float, default=0.0, help='s, resample the final trajectory at t + shift')
     p.add_argument('--rts_qlat', type=float, default=None, help='cross-track process noise (NHC); default = isotropic')
@@ -135,13 +137,16 @@ def main():
         if a.bev:
             st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, meas_sigma=sm)
             parts = [np.load(f) for f in a.bev]
-            b = {k: np.concatenate([q[k] for q in parts]) for k in ['ts', 'pyaw', 'mx', 'my']}
+            b = {k: np.concatenate([q[k] for q in parts]) for k in ['ts', 'pyaw', 'mx', 'my', 'peak']}
             speed = np.interp(b['ts'].astype(float), ts.astype(float), np.abs(st0[:, 2]))
             m = speed > a.bev_min_speed
             yw = b['pyaw'][m]
             c, s_ = np.cos(yw), np.sin(yw)
             Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)
             bc = Rr @ np.diag([a.bev_fwd_sigma ** 2, a.bev_lat_sigma ** 2]) @ Rr.transpose(0, 2, 1)
+            if a.bev_peak_ref > 0:
+                sc = np.clip(a.bev_peak_ref / np.maximum(b['peak'][m], 1e-3), 0.5, 3.0)
+                bc = bc * (sc ** 2)[:, None, None]
             tm = np.concatenate([tm, b['ts'][m]])
             zm = np.concatenate([zm, np.stack([b['mx'][m], b['my'][m]], 1)])
             cov = np.concatenate([cov, bc])

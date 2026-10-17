@@ -46,6 +46,7 @@ def main():
     ap.add_argument('--huber', type=float, default=2.0)
     ap.add_argument('--fwd_sigma', type=float, default=0.0, help='>0: anisotropic BEV fix (fwd sigma, lat=bev_sigma)')
     ap.add_argument('--min_speed', type=float, default=3.0)
+    ap.add_argument('--peak_ref', type=float, default=0.0)
     a = ap.parse_args()
     ref = pd.read_csv(a.ref_csv)
     ts, _ = ply_frames(os.path.join(a.track_dir, 'raw_ply'))
@@ -78,7 +79,8 @@ def main():
         sf = a.fwd_sigma if a.fwd_sigma > 0 else a.bev_sigma
         for k, y in enumerate(yw):
             Rr = np.array([[np.cos(y), -np.sin(y)], [np.sin(y), np.cos(y)]])
-            cov[len(tg) + k] = Rr @ np.diag([sf ** 2, a.bev_sigma ** 2]) @ Rr.T
+            sc = np.clip(a.peak_ref / max(z['peak'][m][k], 1e-3), 0.5, 3.0) if a.peak_ref > 0 else 1.0
+            cov[len(tg) + k] = Rr @ np.diag([sf ** 2, a.bev_sigma ** 2]) @ Rr.T * sc ** 2
         st2 = rts_smooth(ts, tm, zm, psi, a.gnss_sigma, 1.0, a.qpos, huber=a.huber, meas_cov=cov)
         report(f'RTS(GNSS+BEV n={m.sum()})', st2[:, :2], ref)
 
