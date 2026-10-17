@@ -17,14 +17,19 @@ braking/accelerating frames), stricter gating.
 - mix4_l04f15_cf20    lat 0.4 / fwd 1.5 + yaw filter 20 s
 - mix5_q0.3           RTS process noise 0.3
 
-Remaining 5: combine winners; time-lag probes (candidates/track1/probe_lag+-0.1) if worth it.
+Literature (non-holonomic constraint: no side slip -> small cross-track process noise):
+- nhc_lon0.4_lat0.1   on top of mix1 (BEV pitch model, Huber 1.5)
+- nhc_lon0.4_lat0.05
+Remaining 3: combine winners; time-lag probes (candidates/track1/probe_lag+-0.1) if worth it.
 
-## Track2 (11 + 4)
+## Track2 (14 + 1)
 - par_cf15 / cf20 / cf45        yaw complementary filter
 - par_q0.8 / q1.6 / qa0.5 / qa2 RTS process noise
 - par_gs0.15                    GNSS measurement sigma
 - bev_l0.7f3_h15 / l1.0f3_h15 / l1.5f4_h15   BEV (all refinements) with low weight + strict gating
-Remaining 4: combine winners.
+- nhc_lon0.4_lat0.1 / nhc_lon0.8_lat0.1 / nhc_lon0.8_lat0.2   non-holonomic constraint
+Remaining 1: combine winners.
+(ZUPT/ZIHR tested: only the start of Track2 is stationary and RTS already holds it, change 2 mm -> dropped.)
 
 ## Offline findings behind the mix (Track2, 1 m / 2 deg noisy prior, median fix error)
 | variant | median | sharp>0.02 median |

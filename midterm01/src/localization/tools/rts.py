@@ -10,13 +10,16 @@ import numpy as np
 
 
 def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos=0.05, huber=3.0,
-               meas_sigma=None, meas_cov=None):
+               meas_sigma=None, meas_cov=None, q_lat=None, t_zupt=None, sigma_zupt=0.02):
     """meas_cov: optional (N, 2, 2) per-measurement covariance (overrides sigma), e.g. lateral-only fixes."""
+    # q_lat: cross-track position noise (non-holonomic constraint: no side slip); q_pos is then along-track.
+    # t_zupt: times of zero-velocity pseudo-measurements (vehicle stationary, e.g. red lights).
     tq = np.asarray(t_query, np.float64)
     tm = np.asarray(t_meas, np.float64)
-    times = np.concatenate([tq, tm])
-    kind = np.concatenate([np.zeros(len(tq), int), np.ones(len(tm), int)])
-    ref = np.concatenate([np.arange(len(tq)), np.arange(len(tm))])
+    tz = np.asarray([] if t_zupt is None else t_zupt, np.float64)
+    times = np.concatenate([tq, tm, tz])
+    kind = np.concatenate([np.zeros(len(tq), int), np.ones(len(tm), int), np.full(len(tz), 2)])
+    ref = np.concatenate([np.arange(len(tq)), np.arange(len(tm)), np.arange(len(tz))])
     order = np.lexsort((kind, times))
     times, kind, ref = times[order], kind[order], ref[order]
     psi = psi_fn(times)
@@ -38,10 +41,23 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
         c, s = np.cos(psi[k]), np.sin(psi[k])
         F = np.array([[1, 0, c * dt], [0, 1, s * dt], [0, 0, 1]])
         G = np.array([c * dt * dt / 2, s * dt * dt / 2, dt])
-        Q = q_acc ** 2 * np.outer(G, G) + np.diag([q_pos ** 2 * dt, q_pos ** 2 * dt, 1e-6 * dt])
+        if q_lat is None:
+            Qp = np.eye(2) * q_pos ** 2
+        else:
+            Rh = np.array([[c, -s], [s, c]])
+            Qp = Rh @ np.diag([q_pos ** 2, q_lat ** 2]) @ Rh.T
+        Q = q_acc ** 2 * np.outer(G, G)
+        Q[:2, :2] += Qp * dt
+        Q[2, 2] += 1e-6 * dt
         x = F @ x
         P = F @ P @ F.T + Q
         Fs[k], xp[k], Pp[k] = F, x, P
+        if kind[k] == 2:  # zero-velocity update
+            Hv = np.array([[0.0, 0.0, 1.0]])
+            S = Hv @ P @ Hv.T + sigma_zupt ** 2
+            K = P @ Hv.T / S
+            x = x + (K * (0.0 - x[2])).ravel()
+            P = (np.eye(3) - K @ Hv) @ P
         if kind[k] == 1:
             z = z_meas[ref[k]]
             if meas_cov is not None:

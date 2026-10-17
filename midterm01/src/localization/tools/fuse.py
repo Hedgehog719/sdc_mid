@@ -71,6 +71,9 @@ def main():
     p.add_argument('--bev_huber', type=float, default=2.0)
     p.add_argument('--xy_bias', type=float, nargs=2, default=[0.0, 0.0], help='m subtracted from final x/y')
     p.add_argument('--time_shift', type=float, default=0.0, help='s, resample the final trajectory at t + shift')
+    p.add_argument('--rts_qlat', type=float, default=None, help='cross-track process noise (NHC); default = isotropic')
+    p.add_argument('--zupt_speed', type=float, default=0.0, help='>0: zero-velocity updates where speed < this (m/s)')
+    p.add_argument('--zupt_hold_yaw', action='store_true', help='hold yaw constant while stationary (ZIHR)')
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -101,6 +104,7 @@ def main():
             yaw = imu_ts + off_s
             f = interp1d(ts.astype(np.float64), yaw, bounds_error=False, fill_value=(yaw[0], yaw[-1]))
             psi_fn = lambda t, f=f: f(np.atleast_1d(t).astype(np.float64))  # noqa: E731
+    ZUPT_MASK = np.zeros(len(ts), bool)
     if a.rts:
         from rts import rts_smooth
         if a.yaw_src == 'imu_cf':
@@ -137,7 +141,16 @@ def main():
             cov = np.concatenate([cov, bc])
             huber = a.bev_huber
             print('BEV fixes used: %d / %d' % (m.sum(), len(m)))
-        st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov)
+        tz = None
+        if a.zupt_speed > 0:
+            st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov)
+            from scipy.ndimage import binary_opening
+            still = binary_opening(np.abs(st0[:, 2]) < a.zupt_speed, np.ones(15, bool))
+            tz = ts[still]
+            ZUPT_MASK[:] = still
+            print('ZUPT frames: %d' % still.sum())
+        st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov,
+                        q_lat=a.rts_qlat, t_zupt=tz)
         xyz = xyz.copy()
         xyz[:, :2] = st[:, :2]
     n = len(ts)
@@ -174,6 +187,14 @@ def main():
     x = xyz[:, 0] + np.cos(yaw) * corr[:, 0] - np.sin(yaw) * corr[:, 1]
     y = xyz[:, 1] + np.sin(yaw) * corr[:, 0] + np.cos(yaw) * corr[:, 1]
     yw = np.unwrap(yaw + corr[:, 2]) + np.radians(a.yaw_bias)
+    if a.zupt_hold_yaw and ZUPT_MASK.any():
+        # ZIHR: while stationary, keep the heading of travel from just before the stop
+        idx = np.flatnonzero(ZUPT_MASK)
+        starts = idx[np.r_[True, np.diff(idx) > 1]]
+        ends = idx[np.r_[np.diff(idx) > 1, True]]
+        for s0, e0 in zip(starts, ends):
+            ref_i = s0 - 1 if s0 > 0 else min(e0 + 1, n - 1)
+            yw[s0:e0 + 1] = yw[ref_i]
     if a.smooth_xy > 0:
         x = gaussian_filter1d(x, a.smooth_xy, mode='nearest')
         y = gaussian_filter1d(y, a.smooth_xy, mode='nearest')
