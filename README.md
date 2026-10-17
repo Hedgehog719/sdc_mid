@@ -43,12 +43,23 @@ TA baseline (C++): `cd /root/midterm && colcon build && source install/setup.bas
 | + IMU yaw (median offset to GNSS) | 1.184 | 0.550 |
 | + complementary yaw (low-passed GNSS-IMU offset) | 1.115 (10 s) | 0.462 (30 s, +RTS) |
 | + Kalman/RTS smoothing with IMU heading | **1.087** (q 0.2) | 0.459 (q 0.4) |
-| yaw reference = heading of travel | 1.100 | **0.350** |
+| yaw reference = heading of travel | 1.100 | 0.350 |
+| + yaw bias from offset probes (+0.29 / +0.22 deg) | **1.0786** | **0.3411** |
+
+Error decomposition with constant-offset probes (`probe.py`, final settings before yaw bias):
+| | pos RMSE | yaw RMSE | mean bias x / y (world) | fwd / lat (vehicle) | yaw |
+|---|---|---|---|---|---|
+| Track1 | 0.887 m | 1.00 deg | -0.04 / -0.02 m | +0.02 / -0.03 m | -0.29 deg |
+| Track2 | 0.232 m | 0.59 deg | +0.04 / +0.04 m | | -0.22 deg |
+
+Track1's remaining error is zero-mean, slowly wandering GNSS position error (no constant bias in world or vehicle
+frame); only a reliable map match could remove it.
 
 Negative results (kept for the report):
 * GNSS time shift +-0.1 s: 1.78 / 1.73 -> stamps already aligned.
 * Gaussian low-pass of GNSS x/y: cuts corners (sigma 3 s -> 2.39).
 * Lever arm from init_guess - GNSS (-0.62, +0.21 m, identical on both tracks): worse (1.38 / 1.00) -> it is the injected noise.
+* Yaw from the heading of the RTS path (T2 0.361) and GNSS re-timing (T2 0.342) did not beat 0.341.
 * Image-cloud map matching (per frame or accumulated, with YOLO masks and dynamic filtering): corrections are not
   reliable (on Track2, where GNSS is accurate, they swing by +-5 m); as weak RTS measurements they give at most 0.001.
 

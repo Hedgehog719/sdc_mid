@@ -17,6 +17,6 @@ for T in 1 2; do
 done
 
 # Best fusion settings found on the leaderboard (see README.md)
-python3 tools/fuse.py $DATA/Track1 result/result_1.csv --yaw_src imu_cf --yaw_cf_sigma 10 --rts --rts_qpos 0.2
-python3 tools/fuse.py $DATA/Track2 result/result_2.csv --yaw_src imu_cf --yaw_cf_sigma 30 --yaw_cf_ref motion --rts --rts_qpos 0.4
+python3 tools/fuse.py $DATA/Track1 result/result_1.csv --yaw_src imu_cf --yaw_cf_sigma 10 --rts --rts_qpos 0.2 --yaw_bias 0.29
+python3 tools/fuse.py $DATA/Track2 result/result_2.csv --yaw_src imu_cf --yaw_cf_sigma 30 --yaw_cf_ref motion --rts --rts_qpos 0.4 --yaw_bias 0.22
 echo "wrote result/result_1.csv result/result_2.csv"

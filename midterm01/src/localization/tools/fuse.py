@@ -63,6 +63,7 @@ def main():
                    help='>0: feed gated scan-matching positions to the RTS smoother with this sigma (m)')
     p.add_argument('--path_iters', type=int, default=2, help='yaw_src=path: RTS <-> heading iterations')
     p.add_argument('--path_min_speed', type=float, default=2.0)
+    p.add_argument('--yaw_bias', type=float, default=0.0, help='deg added to the final yaw')
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -148,7 +149,7 @@ def main():
     corr[:, 1] += a.lever[1]
     x = xyz[:, 0] + np.cos(yaw) * corr[:, 0] - np.sin(yaw) * corr[:, 1]
     y = xyz[:, 1] + np.sin(yaw) * corr[:, 0] + np.cos(yaw) * corr[:, 1]
-    yw = np.unwrap(yaw + corr[:, 2])
+    yw = np.unwrap(yaw + corr[:, 2]) + np.radians(a.yaw_bias)
     if a.smooth_xy > 0:
         x = gaussian_filter1d(x, a.smooth_xy, mode='nearest')
         y = gaussian_filter1d(y, a.smooth_xy, mode='nearest')

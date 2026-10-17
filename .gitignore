@@ -18,3 +18,4 @@ __pycache__/
 # outputs (keep only final csv)
 midterm01/src/localization/result/*.txt
 .vscode/
+midterm01/src/localization/work/
