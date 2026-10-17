@@ -74,6 +74,12 @@ def main():
     p.add_argument('--rts_qlat', type=float, default=None, help='cross-track process noise (NHC); default = isotropic')
     p.add_argument('--zupt_speed', type=float, default=0.0, help='>0: zero-velocity updates where speed < this (m/s)')
     p.add_argument('--zupt_hold_yaw', action='store_true', help='hold yaw constant while stationary (ZIHR)')
+    p.add_argument('--yaw_rts', default='', choices=['', 'gnss', 'traj'],
+                   help='replace yaw by IMU yaw + RTS-smoothed offset; reference = GNSS fixes or the fused trajectory')
+    p.add_argument('--yaw_rts_q', type=float, default=0.05, help='offset random walk, deg/sqrt(s)')
+    p.add_argument('--yaw_rts_base', type=float, default=1.0, help='s, baseline for the motion heading')
+    p.add_argument('--yaw_rts_sigpos', type=float, default=0.15, help='m, position noise of the heading reference')
+    p.add_argument('--yaw_rts_bev', type=float, default=0.0, help='>0: also use BEV yaw fixes with this sigma (deg)')
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -187,6 +193,23 @@ def main():
     x = xyz[:, 0] + np.cos(yaw) * corr[:, 0] - np.sin(yaw) * corr[:, 1]
     y = xyz[:, 1] + np.sin(yaw) * corr[:, 0] + np.cos(yaw) * corr[:, 1]
     yw = np.unwrap(yaw + corr[:, 2]) + np.radians(a.yaw_bias)
+    if a.yaw_rts:
+        from yaw_rts import motion_heading, yaw_offset_rts
+        imu_fn = lambda t: np.unwrap(s.imu_rot(np.atleast_1d(t)).as_euler('ZYX')[:, 0])  # noqa: E731
+        if a.yaw_rts == 'gnss':
+            mt, my_, ms = motion_heading(s.gt.astype(np.int64), s.gxyz[:, :2], a.yaw_rts_base, a.yaw_rts_sigpos)
+        else:  # fused trajectory (BEV-corrected positions)
+            mt, my_, ms = motion_heading(ts, np.stack([x, y], 1), a.yaw_rts_base, a.yaw_rts_sigpos)
+        if a.yaw_rts_bev > 0 and a.bev:
+            parts = [np.load(f) for f in a.bev]
+            bt = np.concatenate([q['ts'] for q in parts])
+            byaw = np.concatenate([q['myaw'] for q in parts])
+            mt = np.concatenate([mt, bt])
+            my_ = np.concatenate([my_, byaw])
+            ms = np.concatenate([ms, np.full(len(bt), np.radians(a.yaw_rts_bev))])
+        o = np.argsort(mt)
+        b = yaw_offset_rts(ts, imu_fn, mt[o], my_[o], ms[o], a.yaw_rts_q)
+        yw = imu_fn(ts) + b + np.radians(a.yaw_bias)
     if a.zupt_hold_yaw and ZUPT_MASK.any():
         # ZIHR: while stationary, keep the heading of travel from just before the stop
         idx = np.flatnonzero(ZUPT_MASK)
