@@ -10,7 +10,8 @@ import numpy as np
 
 
 def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos=0.05, huber=3.0,
-               meas_sigma=None):
+               meas_sigma=None, meas_cov=None):
+    """meas_cov: optional (N, 2, 2) per-measurement covariance (overrides sigma), e.g. lateral-only fixes."""
     tq = np.asarray(t_query, np.float64)
     tm = np.asarray(t_meas, np.float64)
     times = np.concatenate([tq, tm])
@@ -43,8 +44,11 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
         Fs[k], xp[k], Pp[k] = F, x, P
         if kind[k] == 1:
             z = z_meas[ref[k]]
-            sm = sigma_meas if meas_sigma is None else meas_sigma[ref[k]]
-            R = np.eye(2) * sm ** 2
+            if meas_cov is not None:
+                R = meas_cov[ref[k]].copy()
+            else:
+                sm = sigma_meas if meas_sigma is None else meas_sigma[ref[k]]
+                R = np.eye(2) * sm ** 2
             S = H @ P @ H.T + R
             r = z - H @ x
             m = np.sqrt(r @ np.linalg.solve(S, r))

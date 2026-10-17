@@ -27,14 +27,21 @@ def main():
             data = np.fromfile(f, dtype=dtype, count=int(header['POINTS'][0]))
             xyz = np.stack([data['x'], data['y'], data['z']], axis=1).astype(np.float32)
             np.save(args.npy, xyz)
+            if 'intensity' in data.dtype.names:
+                np.save(args.npy.replace('.npy', '_intensity.npy'), data['intensity'].astype(np.float32))
             print(args.npy, xyz.shape, xyz.min(0), xyz.max(0))
             return
     chunks = []
-    for chunk in pd.read_csv(args.pcd, sep=' ', header=None, skiprows=skip, usecols=[0, 1, 2],
+    cols = header['FIELDS']
+    use = [cols.index(c) for c in ['x', 'y', 'z']] + ([cols.index('intensity')] if 'intensity' in cols else [])
+    for chunk in pd.read_csv(args.pcd, sep=' ', header=None, skiprows=skip, usecols=use,
                              dtype=np.float32, chunksize=5_000_000, engine='c'):
-        chunks.append(chunk.values)
-    xyz = np.concatenate(chunks)
+        chunks.append(chunk[use].values)
+    data = np.concatenate(chunks)
+    xyz = np.ascontiguousarray(data[:, :3])
     np.save(args.npy, xyz)
+    if data.shape[1] > 3:
+        np.save(args.npy.replace('.npy', '_intensity.npy'), data[:, 3].copy())
     print(args.npy, xyz.shape, xyz.min(0), xyz.max(0))
 
 

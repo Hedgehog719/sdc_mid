@@ -33,6 +33,7 @@ SENS = None
 MASKS = None
 CAMS = None
 MASK_KERNEL = None
+GROUND = {}
 
 
 def fit_plane(p):
@@ -104,10 +105,40 @@ def prior(i, cloud):
         hs = -(ns @ cs)
     else:
         ns, hs = np.array([0, 0, 1.0]), 2.1
+    if ARGS.prior_noise[0] > 0 or ARGS.prior_noise[1] > 0:  # evaluation: perturb the prior deterministically
+        rng = np.random.default_rng(i)
+        x += rng.normal(0, ARGS.prior_noise[0])
+        y += rng.normal(0, ARGS.prior_noise[0])
+        yaw += np.radians(rng.normal(0, ARGS.prior_noise[1]))
     P = np.eye(4)
     P[:3, :3] = rot_z_to(nm) @ Rotation.from_euler('z', yaw).as_matrix() @ rot_z_to(ns).T
     P[:3, 3] = [x, y, gz + hs]
+    GROUND[i] = (ns, hs, z - gz)
     return P
+
+
+def remove_ground_cloud(i, p):
+    """Drop points within ground_th of the cloud's own ground plane (fitted in prior())."""
+    ns, hs, _ = GROUND[i]
+    height = p @ ns + hs
+    return p[height > ARGS.ground_th]
+
+
+def remove_ground_map(pts):
+    """Drop map points within ground_th of the local ground (low percentile height of each XY cell)."""
+    cell = ARGS.ground_cell
+    key = np.floor(pts[:, :2] / cell).astype(np.int64)
+    key = (key[:, 0] - key[:, 0].min()) * 1_000_000 + (key[:, 1] - key[:, 1].min())
+    order = np.lexsort((pts[:, 2], key))
+    ks = key[order]
+    starts = np.flatnonzero(np.r_[True, ks[1:] != ks[:-1]])
+    counts = np.diff(np.r_[starts, len(ks)])
+    # ~5th percentile height per cell, robust to stray points below the road
+    pick = starts + (counts * 0.05).astype(np.int64)
+    ground_z = np.repeat(pts[order[pick], 2], counts)
+    above = np.empty(len(pts), bool)
+    above[order] = pts[order, 2] - ground_z > ARGS.ground_th
+    return pts[above]
 
 
 def dynamic_filter(i, clouds, priors):
@@ -142,6 +173,8 @@ class Target:
     def get(self, x, y):
         if self.center is None or np.hypot(x - self.center[0], y - self.center[1]) > ARGS.rebuild_dist:
             sub = MAP.query(x, y, ARGS.submap_radius).astype(np.float64)
+            if ARGS.ground_th > 0:
+                sub = remove_ground_map(sub)
             if ARGS.map_voxel > 0:
                 self.pc, self.tree = small_gicp.preprocess_points(sub, downsampling_resolution=ARGS.map_voxel,
                                                                   num_neighbors=20, num_threads=ARGS.threads)
@@ -185,8 +218,11 @@ def worker(chunk):
             ensure(j)
         for j in [k for k in clouds if k < i - pad]:
             del clouds[j], priors[j]
+            GROUND.pop(j, None)
         P = priors[i]
         src, dyn_keep = dynamic_filter(i, clouds, priors) if ARGS.dyn_offsets else (clouds[i], 1.0)
+        if ARGS.ground_th > 0:
+            src = remove_ground_cloud(i, src)
         tgt, tree = target.get(P[0, 3], P[1, 3])
         T, res = gicp(tgt, tree, src, P, ARGS.mcds)
         # map-consistency: remove points the map cannot explain, then refine
@@ -256,6 +292,9 @@ def main():
     parser.add_argument('--dyn_min_support', type=int, default=2)
     parser.add_argument('--masks', action='store_true', help='remove YOLO road-user pixels (needs masks/)')
     parser.add_argument('--mask_dilate', type=int, default=5, help='extra dilation in half-res pixels')
+    parser.add_argument('--ground_th', type=float, default=0.0, help='>0: remove ground (m above plane) in cloud and map')
+    parser.add_argument('--ground_cell', type=float, default=1.0)
+    parser.add_argument('--prior_noise', type=float, nargs=2, default=[0.0, 0.0], help='eval: sigma xy (m), yaw (deg)')
     parser.add_argument('--frames', type=str, default='', help='lo:hi[:step] subset for quick tests')
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--threads', type=int, default=6)

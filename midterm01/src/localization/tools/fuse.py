@@ -64,6 +64,11 @@ def main():
     p.add_argument('--path_iters', type=int, default=2, help='yaw_src=path: RTS <-> heading iterations')
     p.add_argument('--path_min_speed', type=float, default=2.0)
     p.add_argument('--yaw_bias', type=float, default=0.0, help='deg added to the final yaw')
+    p.add_argument('--bev', default='', help='bev_match.py npz: map-to-image fixes fed to the RTS smoother')
+    p.add_argument('--bev_lat_sigma', type=float, default=0.3)
+    p.add_argument('--bev_fwd_sigma', type=float, default=5.0, help='large = lateral-only fix')
+    p.add_argument('--bev_min_speed', type=float, default=3.0)
+    p.add_argument('--bev_huber', type=float, default=2.0)
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -113,7 +118,23 @@ def main():
             zm = np.concatenate([zm, gxy + d[good]])
             sm = np.concatenate([sm, a.rts_scan_sigma / np.sqrt(np.clip(w[good], 0.1, 1))])
             print('scan measurements used: %d / %d' % (good.sum(), len(good)))
-        st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, meas_sigma=sm)
+        cov = np.eye(2)[None] * (sm ** 2)[:, None, None]
+        huber = 3.0
+        if a.bev:
+            st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, meas_sigma=sm)
+            b = np.load(a.bev)
+            speed = np.interp(b['ts'].astype(float), ts.astype(float), np.abs(st0[:, 2]))
+            m = speed > a.bev_min_speed
+            yw = b['pyaw'][m]
+            c, s_ = np.cos(yw), np.sin(yw)
+            Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)
+            bc = Rr @ np.diag([a.bev_fwd_sigma ** 2, a.bev_lat_sigma ** 2]) @ Rr.transpose(0, 2, 1)
+            tm = np.concatenate([tm, b['ts'][m]])
+            zm = np.concatenate([zm, np.stack([b['mx'][m], b['my'][m]], 1)])
+            cov = np.concatenate([cov, bc])
+            huber = a.bev_huber
+            print('BEV fixes used: %d / %d' % (m.sum(), len(m)))
+        st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov)
         xyz = xyz.copy()
         xyz[:, :2] = st[:, :2]
     n = len(ts)

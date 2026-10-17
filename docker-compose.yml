@@ -6,6 +6,9 @@ services:
     network_mode: host
     ipc: host
     shm_size: "4gb"
+    # Hard cap so heavy map processing can never take down the host desktop (32 GB machine).
+    mem_limit: 20g
+    memswap_limit: 20g
     environment:
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1

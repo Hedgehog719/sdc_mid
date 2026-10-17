@@ -103,17 +103,38 @@ class Sensors:
 class TiledMap:
     """Full-resolution map bucketed in square XY tiles for fast radius queries."""
 
-    def __init__(self, npy_path, tile=20.0):
+    def __init__(self, npy_path, tile=20.0, keep_order=False):
         pts = np.load(npy_path, mmap_mode='r')
         self.tile = tile
-        keys = np.floor(pts[:, :2] / tile).astype(np.int64)
+        keys = np.floor(pts[:, :2] / tile).astype(np.int32)
         self.kx0, self.ky0 = keys.min(0)
-        k = (keys[:, 0] - self.kx0) * 100000 + (keys[:, 1] - self.ky0)
+        k = (keys[:, 0] - self.kx0).astype(np.int64) * 100000 + (keys[:, 1] - self.ky0)
+        del keys
         order = np.argsort(k, kind='stable')
         self.pts = np.ascontiguousarray(pts[order])
         ks = k[order]
+        del k
+        if keep_order:
+            self.order = order
         self.ukeys, self.starts = np.unique(ks, return_index=True)
         self.ends = np.append(self.starts[1:], len(ks))
+
+    def query_idx(self, x, y, radius):
+        """Indices into self.pts of points within radius (XY)."""
+        r = int(np.ceil(radius / self.tile))
+        cx = int(np.floor(x / self.tile)) - self.kx0
+        cy = int(np.floor(y / self.tile)) - self.ky0
+        parts = []
+        for ix in range(cx - r, cx + r + 1):
+            for iy in range(cy - r, cy + r + 1):
+                i = np.searchsorted(self.ukeys, ix * 100000 + iy)
+                if i < len(self.ukeys) and self.ukeys[i] == ix * 100000 + iy:
+                    parts.append(np.arange(self.starts[i], self.ends[i]))
+        if not parts:
+            return np.empty(0, np.int64)
+        idx = np.concatenate(parts)
+        p = self.pts[idx]
+        return idx[(p[:, 0] - x) ** 2 + (p[:, 1] - y) ** 2 < radius * radius]
 
     def query(self, x, y, radius):
         r = int(np.ceil(radius / self.tile))
