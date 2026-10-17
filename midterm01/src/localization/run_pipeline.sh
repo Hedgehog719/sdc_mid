@@ -21,5 +21,5 @@ python3 tools/fuse.py $DATA/Track1 work/prior_1.csv --yaw_src imu_cf --yaw_cf_si
 [ -f work/bm_t1.npz ] || python3 tools/bev_match.py $DATA/Track1 work/prior_1.csv work/bm_t1.npz --frames 0:3011:3 --accum 20 --accum_step 4 --workers 4
 python3 tools/fuse.py $DATA/Track1 result/result_1.csv --yaw_src imu_cf --yaw_cf_sigma 10 --rts --rts_qpos 0.2 --yaw_bias 0.29 \
     --bev work/bm_t1.npz --bev_lat_sigma 0.5 --bev_fwd_sigma 2
-python3 tools/fuse.py $DATA/Track2 result/result_2.csv --yaw_src imu_cf --yaw_cf_sigma 30 --yaw_cf_ref motion --rts --rts_qpos 0.4 --yaw_bias 0.22
+python3 tools/fuse.py $DATA/Track2 result/result_2.csv --yaw_src imu_cf --yaw_cf_sigma 30 --yaw_cf_ref motion --rts --rts_qpos 0.4 --yaw_bias 0.22 --xy_bias 0.041 0.038 --time_shift -0.004
 echo "wrote result/result_1.csv result/result_2.csv"

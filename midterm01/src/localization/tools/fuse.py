@@ -69,6 +69,8 @@ def main():
     p.add_argument('--bev_fwd_sigma', type=float, default=5.0, help='large = lateral-only fix')
     p.add_argument('--bev_min_speed', type=float, default=3.0)
     p.add_argument('--bev_huber', type=float, default=2.0)
+    p.add_argument('--xy_bias', type=float, nargs=2, default=[0.0, 0.0], help='m subtracted from final x/y')
+    p.add_argument('--time_shift', type=float, default=0.0, help='s, resample the final trajectory at t + shift')
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -176,6 +178,13 @@ def main():
         y = gaussian_filter1d(y, a.smooth_xy, mode='nearest')
     if a.smooth_yaw > 0:
         yw = gaussian_filter1d(yw, a.smooth_yaw, mode='nearest')
+    if a.time_shift != 0.0:
+        tt = (ts - ts[0]) * 1e-9
+        x = np.interp(tt + a.time_shift, tt, x)
+        y = np.interp(tt + a.time_shift, tt, y)
+        yw = np.interp(tt + a.time_shift, tt, yw)
+    x = x - a.xy_bias[0]
+    y = y - a.xy_bias[1]
     pd.DataFrame({'idx': np.arange(n), 'x': x, 'y': y, 'yaw': wrap(yw)}).to_csv(a.output_csv, index=False)
     print('wrote', a.output_csv, n)
 
