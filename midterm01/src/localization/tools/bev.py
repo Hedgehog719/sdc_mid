@@ -46,6 +46,8 @@ class ImageBEV:
             f = os.path.join(mdir, f'{c}.npz')
             if os.path.exists(f):
                 self.masks[c] = np.load(f)['masks']
+        self.calib = (cam_height, pitch_deg, roll_deg, yaw_deg)
+        self.dyn = None  # optional (N, 2) per-frame dynamic pitch/roll offsets in degrees
         self.set_calib(cam_height, pitch_deg, roll_deg, yaw_deg)
 
     def set_calib(self, cam_height, pitch_deg, roll_deg, yaw_deg):
@@ -67,6 +69,9 @@ class ImageBEV:
 
     def render(self, i):
         """Return (gray BEV float32, valid mask)."""
+        if self.dyn is not None:  # braking / bumps: re-project with this frame's body pitch and roll
+            h, p, r, y = self.calib
+            self.set_calib(h, p + self.dyn[i, 0], r + self.dyn[i, 1], y)
         acc = np.zeros((H, W), np.float32)
         cnt = np.zeros((H, W), np.float32)
         for c in self.cams:
@@ -162,3 +167,122 @@ def lane_response(gray, valid, k=0.7):
     vm = cv2.erode(valid.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
     resp[~vm] = 0
     return np.clip(resp, 0, 4)
+
+
+class GroundRaster:
+    """Global road-surface height raster of the LiDAR map (low-percentile z per cell, holes filled, smoothed)."""
+
+    def __init__(self, xyz, res=0.2):
+        self.res = res
+        self.x0 = float(xyz[:, 0].min()) - 1
+        self.y0 = float(xyz[:, 1].min()) - 1
+        nx = int((xyz[:, 0].max() - self.x0) / res) + 2
+        ny = int((xyz[:, 1].max() - self.y0) / res) + 2
+        z = np.full(nx * ny, np.inf, np.float32)
+        step = 5_000_000
+        for s in range(0, len(xyz), step):
+            p = np.asarray(xyz[s:s + step])
+            k = ((p[:, 0] - self.x0) / res).astype(np.int64) * ny + ((p[:, 1] - self.y0) / res).astype(np.int64)
+            np.minimum.at(z, k, p[:, 2].astype(np.float32))
+        z = z.reshape(nx, ny)
+        valid = np.isfinite(z)
+        zf = np.where(valid, z, 0).astype(np.float32)
+        # fill holes by normalised box filtering at growing scales, then light smoothing
+        out = zf.copy()
+        filled = valid.copy()
+        for k in [3, 7, 15, 31]:
+            num = cv2.blur(np.where(filled, out, 0).astype(np.float32), (k, k))
+            den = cv2.blur(filled.astype(np.float32), (k, k))
+            fill = (~filled) & (den > 0.05)
+            out[fill] = num[fill] / den[fill]
+            filled |= fill
+        self.z = cv2.GaussianBlur(out, (5, 5), 0)
+        self.nx, self.ny = nx, ny
+
+    def height(self, x, y):
+        ix = np.clip(((x - self.x0) / self.res).astype(np.int64), 0, self.nx - 1)
+        iy = np.clip(((y - self.y0) / self.res).astype(np.int64), 0, self.ny - 1)
+        return self.z[ix, iy]
+
+
+class ImageBEV3D(ImageBEV):
+    """IPM onto the true map road surface with per-frame vehicle attitude.
+
+    Camera pose per frame = road tilt under the vehicle (from the ground raster) x heading x dynamic pitch/roll
+    (IMU high-pass, braking / bumps) x rig mounting; image pixels are sampled at the 3D road points.
+    """
+
+    def __init__(self, track_dir, ground, cam_height=1.5, mount=(0.0, 0.0, -1.5), dyn=None, cams=('f', 'fl', 'fr')):
+        super().__init__(track_dir, cam_height, mount[0], mount[1], mount[2], cams)
+        from scipy.spatial.transform import Rotation
+        self.ground = ground
+        self.h = cam_height
+        self.Rm = Rotation.from_euler('ZYX', [mount[2], mount[0], mount[1]], degrees=True).as_matrix()
+        self.dyn = dyn  # (N, 2) dynamic pitch, roll in degrees per frame, or None
+        gx, gy = bev_grid()
+        self.gx, self.gy = gx.ravel(), gy.ravel()
+
+    def road_surface(self, x, y, c, s, wx, wy):
+        """Smooth quadratic road surface z(u, v) (u fwd, v left) fitted robustly to the ground raster ahead."""
+        uu, vv = np.meshgrid(np.arange(-4, X_MAX + 0.1, 1.0), np.arange(-8, 8.1, 1.0))
+        uu, vv = uu.ravel(), vv.ravel()
+        zz = self.ground.height(x + c * uu - s * vv, y + s * uu + c * vv)
+        F = lambda u, v: np.stack([np.ones_like(u), u, v, u * u, v * v, u * v], 1)  # noqa: E731
+        keep = np.ones(len(uu), bool)
+        for _ in range(4):
+            coef = np.linalg.lstsq(F(uu[keep], vv[keep]), zz[keep], rcond=None)[0]
+            r = zz - F(uu, vv) @ coef
+            keep = np.abs(r) < max(3 * np.median(np.abs(r[keep])) * 1.4826, 0.05)
+        u = c * (wx - x) + s * (wy - y)
+        v = -s * (wx - x) + c * (wy - y)
+        return F(u, v) @ coef
+
+    def render_pose(self, i, x, y, yaw):
+        from scipy.spatial.transform import Rotation
+        c, s = np.cos(yaw), np.sin(yaw)
+        wx = x + c * self.gx - s * self.gy
+        wy = y + s * self.gx + c * self.gy
+        wz = self.road_surface(x, y, c, s, wx, wy)
+        # local road plane under the vehicle for the body attitude
+        ox, oy = np.meshgrid(np.linspace(-4, 4, 9), np.linspace(-2, 2, 5))
+        px = x + c * ox.ravel() - s * oy.ravel()
+        py = y + s * ox.ravel() + c * oy.ravel()
+        pz = self.ground.height(px, py)
+        A = np.stack([px - x, py - y, np.ones_like(px)], 1)
+        a, b, z0 = np.linalg.lstsq(A, pz, rcond=None)[0]
+        n = np.array([-a, -b, 1.0])
+        n /= np.linalg.norm(n)
+        from register import rot_z_to
+        R = rot_z_to(n) @ Rotation.from_euler('z', yaw).as_matrix()
+        if self.dyn is not None:
+            R = R @ Rotation.from_euler('YX', [self.dyn[i, 0], self.dyn[i, 1]], degrees=True).as_matrix()
+        cam = np.array([x, y, z0]) + R @ np.array([0, 0, self.h])
+        q = (np.stack([wx, wy, wz], 1) - cam) @ R  # vehicle frame
+        q = q @ self.Rm
+        acc = np.zeros((H, W), np.float32)
+        cnt = np.zeros((H, W), np.float32)
+        for cname in self.cams:
+            uv, valid = self.C.project(cname, q)
+            mx = uv[:, 0].reshape(H, W).astype(np.float32)
+            my = uv[:, 1].reshape(H, W).astype(np.float32)
+            v = valid.reshape(H, W)
+            mx[~v] = -1
+            my[~v] = -1
+            img = cv2.imread(os.path.join(self.track_dir, f'{self.track}_images', f'{self.track}_{cname}_images',
+                                          self.names[cname][i]), cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            bad = np.zeros(img.shape, np.uint8)
+            if cname in self.masks:
+                m = np.unpackbits(self.masks[cname][i], axis=1)[:, :img.shape[1] // 2]
+                bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+            if cname == 'f' and self.hood is not None and self.hood.shape == img.shape:
+                bad |= self.hood.astype(np.uint8)
+            g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
+            bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
+            ok = v & (bm == 0)
+            acc[ok] += g[ok]
+            cnt[ok] += 1
+        valid = cnt > 0
+        acc[valid] /= cnt[valid]
+        return acc, valid

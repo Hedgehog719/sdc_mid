@@ -64,7 +64,7 @@ def main():
     p.add_argument('--path_iters', type=int, default=2, help='yaw_src=path: RTS <-> heading iterations')
     p.add_argument('--path_min_speed', type=float, default=2.0)
     p.add_argument('--yaw_bias', type=float, default=0.0, help='deg added to the final yaw')
-    p.add_argument('--bev', default='', help='bev_match.py npz: map-to-image fixes fed to the RTS smoother')
+    p.add_argument('--bev', nargs='*', default=[], help='bev_match.py npz file(s): map-to-image fixes fed to the RTS smoother')
     p.add_argument('--bev_lat_sigma', type=float, default=0.3)
     p.add_argument('--bev_fwd_sigma', type=float, default=5.0, help='large = lateral-only fix')
     p.add_argument('--bev_min_speed', type=float, default=3.0)
@@ -124,7 +124,8 @@ def main():
         huber = 3.0
         if a.bev:
             st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, meas_sigma=sm)
-            b = np.load(a.bev)
+            parts = [np.load(f) for f in a.bev]
+            b = {k: np.concatenate([q[k] for q in parts]) for k in ['ts', 'pyaw', 'mx', 'my']}
             speed = np.interp(b['ts'].astype(float), ts.astype(float), np.abs(st0[:, 2]))
             m = speed > a.bev_min_speed
             yw = b['pyaw'][m]

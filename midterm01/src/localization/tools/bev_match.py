@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
-from bev import H, RES, W, X_MAX, Y_MAX, ImageBEV, lane_response, map_bev  # noqa: E402
+from bev import H, RES, W, X_MAX, Y_MAX, GroundRaster, ImageBEV, ImageBEV3D, lane_response, map_bev  # noqa: E402
 from common import TiledMap, ply_frames, wrap  # noqa: E402
 
 A = None
@@ -59,7 +59,7 @@ def accumulated_response(i, road_d):
     for j in range(i - A.accum, i + A.accum + 1, A.accum_step):
         if j < 0 or j >= len(PRIOR_REL):
             continue
-        g, v = BEV.render(j)
+        g, v = BEV.render_pose(j, *PRIOR_REL[j]) if A.ground3d else BEV.render(j)
         r = lane_response(g, v)
         xj, yj, yawj = PRIOR_REL[j]
         c, s = np.cos(yawi), np.sin(yawi)
@@ -99,7 +99,7 @@ def match_frame(i, prior):
     if A.accum > 0:
         base = accumulated_response(i, road_d)
     else:
-        g, v = BEV.render(i)
+        g, v = BEV.render_pose(i, *PRIOR_REL[i]) if A.ground3d else BEV.render(i)
         base = lane_response(g, v & road_d)
     best = None
     for dyaw in np.radians(np.arange(-A.max_yaw, A.max_yaw + 1e-6, A.yaw_step)):
@@ -166,10 +166,15 @@ def main():
     ap.add_argument('--yaw_sign', type=float, default=-1.0)
     ap.add_argument('--accum', type=int, default=0, help='+-frames of image responses accumulated')
     ap.add_argument('--accum_step', type=int, default=4)
+    ap.add_argument('--ground3d', action='store_true', help='IPM onto the map road surface with road tilt')
+    ap.add_argument('--dyn_attitude', action='store_true', help='add IMU high-pass pitch/roll (braking, bumps)')
+    ap.add_argument('--dyn_sign', type=float, default=1.0)
     ap.add_argument('--prior_noise', type=float, nargs=2, default=[0.0, 0.0])
     ap.add_argument('--frames', default='')
     ap.add_argument('--workers', type=int, default=4)
     A = ap.parse_args()
+    global TS_ALL
+    TS_ALL, _ = ply_frames(os.path.join(A.track_dir, 'raw_ply'))
     ref = pd.read_csv(A.prior_csv)
     n = len(ref)
     PRIOR = ref[['x', 'y', 'yaw']].values.copy()
@@ -188,7 +193,26 @@ def main():
     chunks = [frames[k:k + 40] for k in range(0, len(frames), 40)]
     global MAP, BEV
     MAP = load_map(A.track_dir)  # loaded once (~1.5 GB), shared by forked workers
-    BEV = ImageBEV(A.track_dir, A.cam_height, A.pitch, A.roll, A.yaw_mount)
+    if A.ground3d:
+        ground = GroundRaster(MAP.pts)
+        dyn = None
+        if A.dyn_attitude:
+            from common import Sensors
+            from scipy.ndimage import gaussian_filter1d
+            S = Sensors(A.track_dir)
+            e = S.imu_rot(TS_ALL).as_euler('ZYX', degrees=True)
+            hp = lambda v: v - gaussian_filter1d(v, 2.0 * 28, mode='nearest')  # noqa: E731
+            dyn = np.stack([A.dyn_sign * hp(e[:, 1]), A.dyn_sign * hp(e[:, 2])], 1)
+        BEV = ImageBEV3D(A.track_dir, ground, A.cam_height, (A.pitch, A.roll, A.yaw_mount), dyn)
+    else:
+        BEV = ImageBEV(A.track_dir, A.cam_height, A.pitch, A.roll, A.yaw_mount)
+        if A.dyn_attitude:
+            from common import Sensors
+            from scipy.ndimage import gaussian_filter1d
+            S = Sensors(A.track_dir)
+            e = S.imu_rot(TS_ALL).as_euler('ZYX', degrees=True)
+            hp = lambda v: v - gaussian_filter1d(v, 2.0 * 28, mode='nearest')  # noqa: E731
+            BEV.dyn = np.stack([A.dyn_sign * hp(e[:, 1]), A.dyn_sign * hp(e[:, 2])], 1)
     with mp.get_context('fork').Pool(A.workers, initializer=init_worker) as pool:
         res = pool.map(worker, chunks, chunksize=1)
     rows = np.array([r for c in res for r in c])
