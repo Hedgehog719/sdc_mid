@@ -169,6 +169,8 @@ def main():
     ap.add_argument('--ground3d', action='store_true', help='IPM onto the map road surface with road tilt')
     ap.add_argument('--dyn_attitude', action='store_true', help='add IMU high-pass pitch/roll (braking, bumps)')
     ap.add_argument('--dyn_sign', type=float, default=1.0)
+    ap.add_argument('--pitch_per_accel', type=float, default=0.0, help='deg of body pitch per m/s^2 (suspension)')
+    ap.add_argument('--frame_list', default='', help='npy of frame indices to process (overrides --frames)')
     ap.add_argument('--prior_noise', type=float, nargs=2, default=[0.0, 0.0])
     ap.add_argument('--frames', default='')
     ap.add_argument('--workers', type=int, default=4)
@@ -190,6 +192,8 @@ def main():
         lo, hi = parts[:2]
         st = parts[2] if len(parts) > 2 else 1
     frames = list(range(lo, hi, st))
+    if A.frame_list:
+        frames = [int(v) for v in np.load(A.frame_list)]
     chunks = [frames[k:k + 40] for k in range(0, len(frames), 40)]
     global MAP, BEV
     MAP = load_map(A.track_dir)  # loaded once (~1.5 GB), shared by forked workers
@@ -213,6 +217,15 @@ def main():
             e = S.imu_rot(TS_ALL).as_euler('ZYX', degrees=True)
             hp = lambda v: v - gaussian_filter1d(v, 2.0 * 28, mode='nearest')  # noqa: E731
             BEV.dyn = np.stack([A.dyn_sign * hp(e[:, 1]), A.dyn_sign * hp(e[:, 2])], 1)
+        if A.pitch_per_accel != 0.0:
+            # suspension model: body pitch (nose dive when braking, squat when accelerating) = k * longitudinal accel
+            from scipy.ndimage import gaussian_filter1d
+            tt = (TS_ALL - TS_ALL[0]) * 1e-9
+            v = gaussian_filter1d(np.hypot(np.gradient(PRIOR_REL[:, 0], tt), np.gradient(PRIOR_REL[:, 1], tt)), 14)
+            acc = gaussian_filter1d(np.gradient(v, tt), 14)
+            dyn = np.zeros((len(acc), 2)) if BEV.dyn is None else BEV.dyn
+            dyn[:, 0] += A.pitch_per_accel * acc
+            BEV.dyn = dyn
     with mp.get_context('fork').Pool(A.workers, initializer=init_worker) as pool:
         res = pool.map(worker, chunks, chunksize=1)
     rows = np.array([r for c in res for r in c])
