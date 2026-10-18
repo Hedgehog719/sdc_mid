@@ -34,10 +34,18 @@ def robust_smooth(v, w, sigma, iters=3, huber=1.0):
     return s
 
 
-def bev_edge(dyaw):
-    """BEV fixes whose yaw hit the +-max_yaw search limit (the optimum lies outside: unreliable)."""
+def bev_edge(dyaw, max_yaw=None):
+    """BEV fixes whose yaw hit the +-max_yaw search limit (the optimum lies outside: unreliable).
+    max_yaw: per-fix search limit in deg (npz key 'max_yaw'); default = the largest |dyaw| in the data."""
     d = np.abs(np.degrees(dyaw))
-    return np.abs(d - d.max()) < 0.01 if len(d) else np.zeros(0, bool)
+    if not len(d):
+        return np.zeros(0, bool)
+    lim = np.full(len(d), d.max()) if max_yaw is None else np.asarray(max_yaw, float)
+    return d >= lim - 0.01
+
+
+def npz_max_yaw(parts):
+    return np.concatenate([q['max_yaw'] for q in parts]) if all('max_yaw' in q for q in parts) else None
 
 
 def main():
@@ -76,6 +84,8 @@ def main():
     p.add_argument('--bev_aniso_k', type=float, default=0.0,
                    help='>0: per-fix fwd sigma = clip(k / sharp_f, aniso_min, bev_fwd_sigma) (needs sharp_f in npz)')
     p.add_argument('--bev_aniso_min', type=float, default=0.3)
+    p.add_argument('--yaw_from_bev', default='', help='npz whose (smoothed) BEV yaw replaces the yaw over --yaw_from_bev_frames')
+    p.add_argument('--yaw_from_bev_frames', default='0:180:300', help='lo:hi:end - full replacement lo..hi, blend to end')
     p.add_argument('--psi_csv', default='', help='CSV whose yaw is the heading input of the position RTS')
     p.add_argument('--bev_keep_edge', action='store_true',
                    help='keep BEV fixes whose yaw hit the search limit (default: dropped, they are unreliable)')
@@ -175,7 +185,7 @@ def main():
             speed = np.interp(b['ts'].astype(float), ts.astype(float), np.abs(st0[:, 2]))
             m = speed > a.bev_min_speed
             if not a.bev_keep_edge:
-                m &= ~bev_edge(b['dyaw'])
+                m &= ~bev_edge(b['dyaw'], npz_max_yaw(parts))
             yw = b['pyaw'][m]
             c, s_ = np.cos(yw), np.sin(yw)
             Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)
@@ -278,7 +288,7 @@ def main():
             bt = np.concatenate([q['ts'] for q in parts])
             byaw = np.concatenate([q['myaw'] for q in parts])
             if not a.bev_keep_edge:
-                ok = ~bev_edge(np.concatenate([q['dyaw'] for q in parts]))
+                ok = ~bev_edge(np.concatenate([q['dyaw'] for q in parts]), npz_max_yaw(parts))
                 bt, byaw = bt[ok], byaw[ok]
             mt = np.concatenate([mt, bt])
             my_ = np.concatenate([my_, byaw])
@@ -286,6 +296,25 @@ def main():
         o = np.argsort(mt)
         b = yaw_offset_rts(ts, imu_fn, mt[o], my_[o], ms[o], a.yaw_rts_q)
         yw = imu_fn(ts) + b + np.radians(a.yaw_bias)
+    if a.yaw_from_bev:
+        # map-consistent yaw where the map itself is rotated (Track1 start: built from the mapping run's drifting
+        # departure scans): smoothed BEV yaw over lo..hi, blended back into the RTS yaw over hi..end
+        lo, hi, end = [int(v) for v in a.yaw_from_bev_frames.split(':')]
+        zq = np.load(a.yaw_from_bev)
+        lim = zq['max_yaw'] if 'max_yaw' in zq else np.full(len(zq['idx']), np.abs(np.degrees(zq['dyaw'])).max())
+        ok = np.abs(np.degrees(zq['dyaw'])) < lim - 0.01
+        qi, qy = zq['idx'][ok], np.unwrap(zq['myaw'][ok])
+        o = np.argsort(qi)
+        qi, qy = qi[o], qy[o]
+        from scipy.ndimage import median_filter
+        qy = median_filter(qy, 7, mode='nearest')
+        by = np.interp(np.arange(n), qi, qy)
+        w = np.clip((end - np.arange(n)) / max(end - hi, 1), 0, 1)
+        w[:lo] = 0
+        yw = np.unwrap(yw)
+        by = by + 2 * np.pi * np.round((yw - by) / (2 * np.pi))
+        print('yaw from BEV over frames %d-%d (blend to %d): mean change %.2f deg' % (lo, hi, end, np.degrees(np.mean((by - yw)[:hi]))))
+        yw = w * by + (1 - w) * yw
     if a.zupt_hold_yaw and ZUPT_MASK.any():
         # ZIHR: while stationary, keep the heading of travel from just before the stop
         idx = np.flatnonzero(ZUPT_MASK)

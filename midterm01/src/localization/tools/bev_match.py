@@ -353,6 +353,7 @@ def main():
     outd = {k: rows[:, j] for j, k in enumerate(keys)}
     outd['idx'] = outd['idx'].astype(int)
     outd['ts'] = ts[outd['idx']]
+    outd['max_yaw'] = np.full(len(rows), A.max_yaw)  # per-fix yaw search limit (fuse drops fixes at the limit)
     np.savez(A.output_npz, **outd)
     print('saved', A.output_npz, len(rows))
 

@@ -61,3 +61,14 @@ Track2: 1) t2_pos.csv (GNSS + BEV/pole/kerb position fixes, gnss 0.3 / qpos 0.1 
   t2_yawbev0.7, BEV yaw 0.7 deg; small-drift sim 0.278 -> 0.244, never worse; start: fixes say 0.5 m right of
   GNSS at the stop next to a bus)  2) t2_yawbev0.7.csv (yaw only)  3) t2_yawonly.csv
 Order rule: submit 1); if it beats the best -> stop that track and wait for the user; else submit 2), etc.
+
+## 04:45 FINAL ORDER (supersedes the lists above)
+Track1 start (frames 0-240): the map there was built from the mapping run's departure scans with a rotated
+attitude; the BEV optimum is a stable -3.5 deg (search widened to +-6) and the user saw red map lines left at 30/60,
+right + skewed at 180 (less at 240), normal after 840 - exactly what the matcher says. GT appears map-consistent
+(explains T1's probed yaw RMSE 1.00 vs T2 0.59). Following the map there aligns the overlays (start_cmp).
+Track1: 1) final/t1_fin_start.csv  2) final/t1_fin.csv  3) final/t1_c6e_backup.csv
+Track2: 1) final/t2_pos2.csv (position+yaw fixes, start refined with +-6 deg search)  2) final/t2_yawbev0.7.csv
+        3) final/t2_yawonly.csv
+Rule: first file per track; if it beats the track's best (T1 0.93699, T2 0.28263) stop that track and wait for
+the user; otherwise next file.
