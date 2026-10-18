@@ -12,7 +12,7 @@ EXTR_KEYS = {'fl': 'T_front_front_left', 'fr': 'T_front_front_right'}
 
 
 class Cameras:
-    def __init__(self, info_dir):
+    def __init__(self, info_dir, rot_fix_file=None):
         extr = yaml.safe_load(open(os.path.join(info_dir, 'lucid_camera_extrinsics.yaml')))['transforms']
         self.cams = {}
         for cam, stem in CAM_FILES.items():
@@ -23,13 +23,23 @@ class Cameras:
             if cam in EXTR_KEYS:
                 T_cam_front = np.linalg.inv(np.array(extr[EXTR_KEYS[cam]]['matrix'], np.float64))
             self.cams[cam] = (K, D, T_cam_front, info['image_width'], info['image_height'])
+        # per-camera rotation corrections from calib_side.py (work/cam_rot_fix.json), if present
+        import json
+        f = rot_fix_file or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work', 'cam_rot_fix.json')
+        if os.path.exists(f):
+            self.rot_fix = {k: tuple(v) for k, v in json.load(open(f)).items()}
 
     yaw_fix = {'f': 0.0, 'fl': 0.5, 'fr': -0.5}  # deg, from calib_cam_yaw.py on Track2 poles
+    rot_fix = {}  # optional per-camera (yaw, pitch, roll) deg corrections (calib_side.py); overrides yaw_fix
 
     def project(self, cam, pts_flu):
         """Return pixel coords (N,2) and a validity mask for points given in the front FLU frame."""
         K, D, T, w, h = self.cams[cam]
-        if self.yaw_fix.get(cam, 0.0):
+        if cam in self.rot_fix:
+            from scipy.spatial.transform import Rotation
+            yw, pt, rl = self.rot_fix[cam]
+            pts_flu = pts_flu @ Rotation.from_euler('ZYX', [yw, pt, rl], degrees=True).as_matrix()
+        elif self.yaw_fix.get(cam, 0.0):
             a = np.radians(self.yaw_fix[cam])
             Rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1.0]])
             pts_flu = pts_flu @ Rz

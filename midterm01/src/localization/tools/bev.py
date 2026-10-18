@@ -15,7 +15,9 @@ import numpy as np
 from camera_model import Cameras, R_OPT_FLU
 
 RES = 0.1
-X_MIN, X_MAX = 3.0, 30.0
+X_MIN, X_MAX = -5.0, 30.0   # BEV from 5 m behind to 30 m ahead of the front camera: the side cameras see the
+                            # road beside the car (kerbs, adjacent lane lines) closest and sharpest
+NEAR = 3.0                  # start of the area ahead of the car used by road-surface heuristics
 Y_MAX = 15.0
 H = int((X_MAX - X_MIN) / RES)
 W = int(2 * Y_MAX / RES)
@@ -499,7 +501,7 @@ def map_road_region(xyz, pose_xy, yaw, step_max=0.08, win=0.4):
         return np.zeros((H, W), np.float32)
     rr, cc = np.nonzero(valid)
     xs, ys, zs = X_MAX - rr * RES, Y_MAX - cc * RES, hmin[valid]
-    near = (np.abs(ys) < 4) & (xs < X_MIN + 12)  # road under / ahead of the vehicle
+    near = (np.abs(ys) < 4) & (xs > NEAR - 3) & (xs < NEAR + 12)  # road under / ahead of the vehicle
     if near.sum() < 50:
         near = np.ones_like(zs, bool)
     keep = near.copy()
@@ -521,7 +523,7 @@ def map_road_region(xyz, pose_xy, yaw, step_max=0.08, win=0.4):
     ker = np.ones((k, k), np.uint8)
     step = cv2.dilate(np.where(known, hk, -1e4).astype(np.float32), ker) - cv2.erode(np.where(known, hk, 1e4).astype(np.float32), ker)
     free = (known & (step < step_max) & (np.abs(hk) < 0.6)).astype(np.uint8)
-    seeds = [(int((X_MAX - xx) / RES), int(Y_MAX / RES) + dc) for xx in np.arange(X_MIN + 0.5, X_MIN + 8, 0.5) for dc in (-5, 0, 5)]
+    seeds = [(int((X_MAX - xx) / RES), int(Y_MAX / RES) + dc) for xx in np.arange(NEAR + 0.5, NEAR + 8, 0.5) for dc in (-5, 0, 5)]
     mask = np.zeros((H + 2, W + 2), np.uint8)
     region = free.copy()
     for (r0, c0) in seeds:
@@ -556,7 +558,7 @@ def map_road_scan(xyz, pose_xy, yaw, curb_h=0.07, curb_run=0.3, gap_run=1.5, dro
         return np.zeros((H, W), np.float32)
     rr, cc = np.nonzero(valid)
     xs, ys, zs = X_MAX - rr * RES, Y_MAX - cc * RES, hmin[valid]
-    near = (np.abs(ys) < 3) & (xs < X_MIN + 10)
+    near = (np.abs(ys) < 3) & (xs > NEAR - 3) & (xs < NEAR + 10)
     if near.sum() < 50:
         near = np.ones_like(zs, bool)
     keep = near.copy()
@@ -651,12 +653,18 @@ def map_road_level(xyz, pose_xy, yaw, raise_h=0.08, win=4.0, obst_h=0.35):
     return road, ~unknown
 
 
-def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True, fill_hole_m2=3.0, standing_h=0.0,
-                    level_tol=0.08):
+ROAD_LEVEL_TOL = 0.0   # v3 (ramp-proof road level) when > 0, e.g. 0.08
+ROAD_FILL_M2 = 0.0     # v3 small-hole filling when > 0, e.g. 3.0
+
+
+def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True, fill_hole_m2=None, standing_h=0.0,
+                    level_tol=None):
     """Road = smooth ground: cells whose local height slope (over `base` metres) is below slope_max after removing
     the typical slope of the area (the map is tilted ~10 deg w.r.t. the vehicle). Gentle grades, crests and
     crossfall pass; kerbs and island edges (10-20 cm drops) are steep and cut the region. With `connect`, only the
     smooth region connected to the cells ahead of the vehicle is kept. Returns (road 0..1, known)."""
+    level_tol = ROAD_LEVEL_TOL if level_tol is None else level_tol
+    fill_hole_m2 = ROAD_FILL_M2 if fill_hole_m2 is None else fill_hole_m2
     c, s = np.cos(yaw), np.sin(yaw)
     d = xyz[:, :2] - pose_xy
     x = c * d[:, 0] + s * d[:, 1]
@@ -690,7 +698,7 @@ def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True, f
         # road level are excluded even when a gentle wheelchair ramp connects them to the road.
         gyy, gxx = np.meshgrid(Y_MAX - np.arange(W) * RES, X_MAX - np.arange(H) * RES)
         F = lambda u, v: np.stack([np.ones_like(u), u, v, u * u, v * v, u * v], -1)  # noqa: E731
-        sel = smooth & (np.abs(gyy) < 6) & (gxx < X_MIN + 15)
+        sel = smooth & (np.abs(gyy) < 6) & (gxx > NEAR - 3) & (gxx < NEAR + 15)
         if sel.sum() > 200:
             u0, v0, z0 = gxx[sel], gyy[sel], h[sel]
             keep = np.ones(len(z0), bool)
@@ -702,7 +710,7 @@ def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True, f
             smooth &= (h - level) < level_tol
     if connect:
         lab_n, lab = cv2.connectedComponents(smooth.astype(np.uint8), connectivity=4)
-        seeds = [(int((X_MAX - xx) / RES), int(Y_MAX / RES) + dc) for xx in np.arange(X_MIN + 0.5, X_MIN + 8, 0.5)
+        seeds = [(int((X_MAX - xx) / RES), int(Y_MAX / RES) + dc) for xx in np.arange(NEAR + 0.5, NEAR + 8, 0.5)
                  for dc in (-8, 0, 8)]
         ids = {lab[r0, c0] for r0, c0 in seeds if 0 <= r0 < H and 0 <= c0 < W and lab[r0, c0] > 0}
         smooth = np.isin(lab, list(ids)) if ids else smooth

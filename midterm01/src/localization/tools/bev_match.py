@@ -225,6 +225,7 @@ def main():
     ap.add_argument('--yaw_sign', type=float, default=-1.0)
     ap.add_argument('--feature', choices=['lane', 'curb', 'road'], default='lane', help='road markings or kerb edges')
     ap.add_argument('--road_map', choices=['scan', 'fill', 'smooth'], default='smooth', help='map road surface: row scan or flood fill')
+    ap.add_argument('--road_v3', action='store_true', help='kerb map v3: road-level criterion vs ramps + hole filling')
     ap.add_argument('--road_seg', default='road', help='segmentation subdir (road = SegFormer-B2, road_m2f = Mask2Former)')
     ap.add_argument('--road_colour', action='store_true', help='average segmentation with a per-frame asphalt colour model')
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
@@ -306,6 +307,8 @@ def main():
     BEV.photonorm = A.photonorm
     import bev as _bev
     _bev.GROUND_MODE = A.ground_mode
+    if A.road_v3:
+        _bev.ROAD_LEVEL_TOL, _bev.ROAD_FILL_M2 = 0.08, 3.0
     global ROADBEV
     ROADBEV = RoadProbBEV(BEV, A.road_seg, 'seg_colour' if A.road_colour else 'road') if A.feature == 'road' else None
     with mp.get_context('fork').Pool(A.workers, initializer=init_worker) as pool:
