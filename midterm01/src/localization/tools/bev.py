@@ -145,6 +145,24 @@ class ImageBEV:
         return acc, valid
 
 
+def local_ground(hmin, valid, open_m=1.5, smooth_m=1.0):
+    """Smooth local ground surface from the lowest point per BEV cell: holes filled, objects removed by a grey
+    opening (open_m), then Gaussian smoothing (smooth_m). Follows grades, crests, dips and crossfall that a single
+    plane cannot (e.g. Track1 start: 0.7 m height variation within 30 m)."""
+    big = np.where(valid, hmin, 1e4).astype(np.float32)
+    h = big.copy()
+    for k in (5, 11, 21):  # fill scan gaps / holes with nearby minima
+        f = cv2.erode(h, np.ones((k, k), np.uint8))
+        h = np.where(h > 1e3, f, h)
+    h = np.where(h > 1e3, np.median(hmin[valid]) if valid.any() else 0, h).astype(np.float32)
+    ko = max(3, int(open_m / RES) | 1)
+    g = cv2.dilate(cv2.erode(h, np.ones((ko, ko), np.uint8)), np.ones((ko, ko), np.uint8))
+    return cv2.GaussianBlur(g, (0, 0), smooth_m / RES)
+
+
+GROUND_MODE = 'plane'
+
+
 def map_bev(xyz, intensity, pose_xy, yaw, plane_tol=0.25, rough_max=0.08):
     """Road-surface intensity BEV of map points around pose (vehicle BEV frame).
 
@@ -169,6 +187,14 @@ def map_bev(xyz, intensity, pose_xy, yaw, plane_tol=0.25, rough_max=0.08):
     hrel = z - (coef[0] * x + coef[1] * y + coef[2])
     r = ((X_MAX - x) / RES).astype(np.int64)
     col = ((Y_MAX - y) / RES).astype(np.int64)
+    if GROUND_MODE == 'local':
+        inb = (r >= 0) & (r < H) & (col >= 0) & (col < W)
+        zmin = np.full(H * W, np.inf)
+        np.minimum.at(zmin, r[inb] * W + col[inb], z[inb])
+        zmin = zmin.reshape(H, W)
+        gsurf = local_ground(zmin.astype(np.float32), np.isfinite(zmin))
+        hrel = np.full(len(z), 1e3)
+        hrel[inb] = z[inb] - gsurf[r[inb], col[inb]]
     ok = (r >= 0) & (r < H) & (col >= 0) & (col < W) & (np.abs(hrel) < plane_tol + 0.3)
     r, col, hr, it = r[ok], col[ok], hrel[ok], intensity[ok]
     hmin = np.full((H, W), np.inf)

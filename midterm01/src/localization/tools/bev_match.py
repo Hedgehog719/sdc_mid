@@ -202,6 +202,8 @@ def main():
     ap.add_argument('--road_map', choices=['scan', 'fill'], default='scan', help='map road surface: row scan or flood fill')
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
+    ap.add_argument('--ground_mode', choices=['plane', 'local'], default='plane',
+                    help='map road surface reference: one plane under the vehicle, or a smooth local ground surface')
     ap.add_argument('--percam', action='store_true', help='compute the marking response per camera, then blend')
     ap.add_argument('--photonorm', action='store_true', help='per-camera exposure normalisation before blending')
     ap.add_argument('--accum', type=int, default=0, help='+-frames of image responses accumulated')
@@ -270,6 +272,8 @@ def main():
             dyn[:, 0] += A.pitch_per_accel * acc
             BEV.dyn = dyn
     BEV.photonorm = A.photonorm
+    import bev as _bev
+    _bev.GROUND_MODE = A.ground_mode
     global ROADBEV
     ROADBEV = RoadProbBEV(BEV) if A.feature == 'road' else None
     with mp.get_context('fork').Pool(A.workers, initializer=init_worker) as pool:
