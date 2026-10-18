@@ -86,6 +86,10 @@ def main():
     p.add_argument('--pole_pct', type=float, default=50, help='keep pole fixes whose peak is above this percentile')
     p.add_argument('--pole_fwd_sigma', type=float, default=0.3)
     p.add_argument('--pole_lat_sigma', type=float, default=0.6)
+    p.add_argument('--road', default='', help='bev_match.py --feature road npz: lateral fixes from the road region')
+    p.add_argument('--road_pct', type=float, default=50)
+    p.add_argument('--road_lat_sigma', type=float, default=0.5)
+    p.add_argument('--road_fwd_sigma', type=float, default=5.0)
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -168,6 +172,18 @@ def main():
             cov = np.concatenate([cov, pc])
             huber = a.bev_huber
             print('pole fixes used: %d / %d' % (pm.sum(), len(pm)))
+        if a.road:
+            rz = np.load(a.road)
+            rm = rz['peak'] >= np.percentile(rz['peak'], a.road_pct)
+            yw = rz['pyaw'][rm]
+            c, s_ = np.cos(yw), np.sin(yw)
+            Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)
+            rcv = Rr @ np.diag([a.road_fwd_sigma ** 2, a.road_lat_sigma ** 2]) @ Rr.transpose(0, 2, 1)
+            tm = np.concatenate([tm, rz['ts'][rm]])
+            zm = np.concatenate([zm, np.stack([rz['mx'][rm], rz['my'][rm]], 1)])
+            cov = np.concatenate([cov, rcv])
+            huber = a.bev_huber
+            print('road fixes used: %d / %d' % (rm.sum(), len(rm)))
         tz = None
         if a.zupt_speed > 0:
             st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov)

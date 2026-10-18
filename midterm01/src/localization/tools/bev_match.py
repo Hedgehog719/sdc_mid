@@ -21,7 +21,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
-from bev import H, RES, W, X_MAX, Y_MAX, GroundRaster, ImageBEV, ImageBEV3D, lane_response, map_bev  # noqa: E402
+from bev import (H, RES, W, X_MAX, Y_MAX, GroundRaster, ImageBEV, ImageBEV3D, edge_response, lane_response,  # noqa: E402
+                 RoadProbBEV, map_bev, map_curb, map_road_region, map_road_scan)
 from common import TiledMap, ply_frames, wrap  # noqa: E402
 
 A = None
@@ -59,8 +60,13 @@ def accumulated_response(i, road_d):
     for j in range(i - A.accum, i + A.accum + 1, A.accum_step):
         if j < 0 or j >= len(PRIOR_REL):
             continue
-        g, v = BEV.render_pose(j, *PRIOR_REL[j]) if A.ground3d else BEV.render(j)
-        r = lane_response(g, v)
+        if A.feature == 'road':
+            r, v = ROADBEV.render(j)
+        elif A.percam and A.feature == 'lane':
+            r, v = BEV.render_resp(j, lane_response)
+        else:
+            g, v = BEV.render_pose(j, *PRIOR_REL[j]) if A.ground3d else BEV.render(j)
+            r = edge_response(g, v) if A.feature == 'curb' else lane_response(g, v)
         xj, yj, yawj = PRIOR_REL[j]
         c, s = np.cos(yawi), np.sin(yawi)
         dx = c * (xj - xi) + s * (yj - yi)
@@ -69,6 +75,10 @@ def accumulated_response(i, road_d):
         acc += cv2.warpAffine(r, M, (W, H), flags=cv2.INTER_LINEAR, borderValue=0)
         cnt += cv2.warpAffine(v.astype(np.float32), M, (W, H), flags=cv2.INTER_NEAREST, borderValue=0)
     resp = np.where(cnt > 0, acc / np.maximum(cnt, 1), 0).astype(np.float32)
+    if A.feature == 'road':  # unknown pixels -> neutral (mean), not "non-road"
+        known = cnt > 0
+        resp[~known] = resp[known].mean() if known.any() else 0.5
+        return resp
     resp[~road_d] = 0
     return resp
 
@@ -91,19 +101,43 @@ def match_frame(i, prior):
     x, y, yaw = prior
     idx = MAP.query_idx(x, y, 42.0)
     mg, road = map_bev(MAP.pts[idx], MAP.inten[idx], np.array([x, y]), yaw)
-    ref = lane_response(mg, road)
+    if A.feature == 'road':
+        ref = (map_road_scan if A.road_map == 'scan' else map_road_region)(MAP.pts[idx], np.array([x, y]), yaw)
+        road = np.ones_like(road, bool)
+    elif A.feature == 'curb':
+        ref = map_curb(MAP.pts[idx], np.array([x, y]), yaw)
+        # kerbs sit on the road boundary: compare on the road and up to curb_band metres beyond it
+        b = int(A.curb_band / RES)
+        road = cv2.dilate(road.astype(np.uint8), np.ones((2 * b + 1, 2 * b + 1), np.uint8)) > 0
+        ref[~road] = 0
+    else:
+        ref = lane_response(mg, road)
     p = int(A.max_shift / RES)
-    padded = cv2.copyMakeBorder(ref, p, p, p, p, cv2.BORDER_CONSTANT, value=0).astype(np.float32)
+    padded = cv2.copyMakeBorder(ref, p, p, p, p, cv2.BORDER_CONSTANT,
+                                value=float(ref.mean()) if A.feature == 'road' else 0).astype(np.float32)
     # road mask from the map is applied in the (shifted) image frame approximately by dilation
     road_d = cv2.dilate(road.astype(np.uint8), np.ones((2 * p + 1, 3), np.uint8)) > 0
     if A.accum > 0:
         base = accumulated_response(i, road_d)
     else:
-        g, v = BEV.render_pose(i, *PRIOR_REL[i]) if A.ground3d else BEV.render(i)
-        base = lane_response(g, v & road_d)
+        if A.feature == 'road':
+            base, v = ROADBEV.render(i)
+            base = base.copy()
+            base[~v] = base[v].mean() if v.any() else 0.5
+        elif A.percam and A.feature == 'lane':
+            base, v = BEV.render_resp(i, lane_response)
+            base = base * road_d
+        else:
+            g, v = BEV.render_pose(i, *PRIOR_REL[i]) if A.ground3d else BEV.render(i)
+            base = edge_response(g, v & road_d) if A.feature == 'curb' else lane_response(g, v & road_d)
     best = None
     for dyaw in np.radians(np.arange(-A.max_yaw, A.max_yaw + 1e-6, A.yaw_step)):
         resp = rotate_raster(base, dyaw)
+        if A.range_weight > 0:  # near rows are reliable (IPM resolution / attitude sensitivity grow with range)
+            xs = X_MAX - (np.arange(H) + 0.5) * RES
+            resp = resp * np.clip(A.range_weight / xs, 0.25, 1.0)[:, None].astype(np.float32)
+        if A.feature == 'road':
+            resp = np.where(resp == 0, base.mean(), resp).astype(np.float32)
         if resp.max() <= 0:
             continue
         res = cv2.matchTemplate(padded, resp.astype(np.float32), cv2.TM_CCOEFF_NORMED)
@@ -164,6 +198,12 @@ def main():
     ap.add_argument('--yaw_step', type=float, default=0.5)
     ap.add_argument('--sign', type=float, default=-1.0)
     ap.add_argument('--yaw_sign', type=float, default=-1.0)
+    ap.add_argument('--feature', choices=['lane', 'curb', 'road'], default='lane', help='road markings or kerb edges')
+    ap.add_argument('--road_map', choices=['scan', 'fill'], default='scan', help='map road surface: row scan or flood fill')
+    ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
+    ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
+    ap.add_argument('--percam', action='store_true', help='compute the marking response per camera, then blend')
+    ap.add_argument('--photonorm', action='store_true', help='per-camera exposure normalisation before blending')
     ap.add_argument('--accum', type=int, default=0, help='+-frames of image responses accumulated')
     ap.add_argument('--accum_step', type=int, default=4)
     ap.add_argument('--ground3d', action='store_true', help='IPM onto the map road surface with road tilt')
@@ -229,6 +269,9 @@ def main():
             dyn = np.zeros((len(acc), 2)) if BEV.dyn is None else BEV.dyn
             dyn[:, 0] += A.pitch_per_accel * acc
             BEV.dyn = dyn
+    BEV.photonorm = A.photonorm
+    global ROADBEV
+    ROADBEV = RoadProbBEV(BEV) if A.feature == 'road' else None
     with mp.get_context('fork').Pool(A.workers, initializer=init_worker) as pool:
         res = pool.map(worker, chunks, chunksize=1)
     rows = np.array([r for c in res for r in c])

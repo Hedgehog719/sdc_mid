@@ -52,6 +52,10 @@ def main():
     ap.add_argument('--pole_fwd', type=float, default=0.5)
     ap.add_argument('--pole_lat', type=float, default=0.6)
     ap.add_argument('--no_bev', action='store_true')
+    ap.add_argument('--road', default='')
+    ap.add_argument('--road_pct', type=float, default=50)
+    ap.add_argument('--road_lat', type=float, default=0.5)
+    ap.add_argument('--road_fwd', type=float, default=5.0)
     a = ap.parse_args()
     ref = pd.read_csv(a.ref_csv)
     ts, _ = ply_frames(os.path.join(a.track_dir, 'raw_ply'))
@@ -98,6 +102,16 @@ def main():
                 Rr = np.array([[np.cos(y), -np.sin(y)], [np.sin(y), np.cos(y)]])
                 pc[k] = Rr @ np.diag([a.pole_fwd ** 2, a.pole_lat ** 2]) @ Rr.T
             tm = np.concatenate([tm, ptm]); zm = np.concatenate([zm, pzm]); cov = np.concatenate([cov, pc])
+        if a.road:
+            rz = np.load(a.road)
+            rm = rz['peak'] >= np.percentile(rz['peak'], a.road_pct)
+            rc = np.zeros((rm.sum(), 2, 2))
+            for k, y in enumerate(rz['pyaw'][rm]):
+                Rr = np.array([[np.cos(y), -np.sin(y)], [np.sin(y), np.cos(y)]])
+                rc[k] = Rr @ np.diag([a.road_fwd ** 2, a.road_lat ** 2]) @ Rr.T
+            tm = np.concatenate([tm, rz['ts'][rm]])
+            zm = np.concatenate([zm, np.stack([rz['mx'][rm], rz['my'][rm]], 1)])
+            cov = np.concatenate([cov, rc])
         st2 = rts_smooth(ts, tm, zm, psi, a.gnss_sigma, 1.0, a.qpos, huber=a.huber, meas_cov=cov)
         e = st2[:, :2] - ref[['x', 'y']].values
         yw = ref.yaw.values

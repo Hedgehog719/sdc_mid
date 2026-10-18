@@ -31,14 +31,23 @@ Leaderboard on 10-18 14:20: Track1 0.859 (team 13) vs ours 0.937; Track2 0.258 (
 BEV + pole matching re-run with prior = curated_p50_f0.3. It converges: pole fixes |fwd| median 0.89 -> 0.25 m,
 BEV fwd 0.55 -> 0.42 m, lat 0.21 -> 0.17 m, so the first-round pole corrections look real.
 
+## Road markings per camera + road region (kerbs / islands)
+- Lane response computed inside each camera before blending (exposure / white-balance seams no longer create
+  false edges): Track2 noisy-prior test median 0.64 -> 0.52 m, yaw 2.07 -> 1.73 deg.
+- Road region: SegFormer road (+ vehicles; YOLO areas neutral) in BEV vs the map road surface bounded by kerbs
+  (row scan of the detrended ground height). Lateral rms 0.55-0.58 m for the better half (prior 1.03 m).
+- Track2 drift simulation: old lanes + curated poles 0.599 -> per-camera lanes 0.571 -> + road region 0.566.
+- Track1 third iteration (per-camera lanes + poles round 2 + road) moves only 0.05-0.09 m from iter2: converged.
+
 ## Track1 (in order)
-1. curated_p50_f0.3        curated poles (fwd change vs best 0.52 m rms)
-2. iter2_f0.3              second iteration (0.60 m vs best, 0.28 m vs round 1)
-3. curated_occ_p50_f0.3    + occlusion check (occluders < 6 m, 2 m margin)
-4. iter2_f0.5
-5. curated_p50_f0.5
-6. pole_p50_f0.3           uncurated, for comparison
-7-8. time-lag probes on the best of 1-6
+1. iter3_pc_road           per-camera lanes + curated poles (round 2) + road region
+2. curated_p50_f0.3        curated poles (fwd change vs best 0.52 m rms)
+3. iter2_f0.3              second iteration (0.60 m vs best, 0.28 m vs round 1)
+4. iter3_pc
+5. curated_occ_p50_f0.3    + occlusion check (occluders < 6 m, 2 m margin)
+6. iter2_f0.5
+7. pole_p50_f0.3           uncurated, for comparison
+8-9. time-lag probes on the best of 1-7
 then combinations.
 
 ## Track2

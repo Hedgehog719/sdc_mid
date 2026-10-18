@@ -21,6 +21,18 @@ H = int((X_MAX - X_MIN) / RES)
 W = int(2 * Y_MAX / RES)
 
 
+def local_normalise(g, ok, k=31):
+    """Zero-mean / unit-std within a k x k window, computed only over this camera's valid pixels, so the three
+    cameras' different exposure and white balance do not leave seams (false edges) in the blended BEV."""
+    w = ok.astype(np.float32)
+    gw = np.where(ok, g, 0).astype(np.float32)
+    den = cv2.blur(w, (k, k)) + 1e-6
+    mean = cv2.blur(gw, (k, k)) / den
+    var = cv2.blur(gw * gw, (k, k)) / den - mean ** 2
+    out = (g - mean) / np.sqrt(np.maximum(var, 1.0))
+    return np.where(ok, out, 0).astype(np.float32)
+
+
 def bev_grid():
     r, c = np.mgrid[0:H, 0:W]
     x = X_MAX - (r + 0.5) * RES
@@ -48,6 +60,7 @@ class ImageBEV:
                 self.masks[c] = np.load(f)['masks']
         self.calib = (cam_height, pitch_deg, roll_deg, yaw_deg)
         self.dyn = None  # optional (N, 2) per-frame dynamic pitch/roll offsets in degrees
+        self.photonorm = False  # per-camera local mean/std normalisation before blending (exposure / white balance)
         self.set_calib(cam_height, pitch_deg, roll_deg, yaw_deg)
 
     def set_calib(self, cam_height, pitch_deg, roll_deg, yaw_deg):
@@ -66,6 +79,40 @@ class ImageBEV:
             mx[~v] = -1
             my[~v] = -1
             self.maps[c] = (mx, my, v)
+
+    def render_resp(self, i, fn):
+        """Per-camera feature response fn(gray_c, valid_c) blended afterwards (average where valid): exposure and
+        white-balance differences between cameras cannot create seam edges, since each response is computed
+        inside one camera's image only."""
+        if self.dyn is not None:
+            h, p, r, y = self.calib
+            self.set_calib(h, p + self.dyn[i, 0], r + self.dyn[i, 1], y)
+        acc = np.zeros((H, W), np.float32)
+        cnt = np.zeros((H, W), np.float32)
+        for c in self.cams:
+            img = cv2.imread(os.path.join(self.track_dir, f'{self.track}_images', f'{self.track}_{c}_images', self.names[c][i]),
+                             cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            bad = np.zeros(img.shape, np.uint8)
+            if c in self.masks:
+                m = np.unpackbits(self.masks[c][i], axis=1)[:, :img.shape[1] // 2]
+                bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+            if c == 'f' and self.hood is not None and self.hood.shape == img.shape:
+                bad |= self.hood.astype(np.uint8)
+            mx, my, v = self.maps[c]
+            g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
+            b = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
+            ok = v & (b == 0)
+            if ok.sum() < 100:
+                continue
+            r_ = fn(g, ok)
+            okr = cv2.erode(ok.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0  # this camera's interior only
+            acc[okr] += r_[okr]
+            cnt[okr] += 1
+        valid = cnt > 0
+        acc[valid] /= cnt[valid]
+        return acc, valid
 
     def render(self, i):
         """Return (gray BEV float32, valid mask)."""
@@ -89,6 +136,8 @@ class ImageBEV:
             g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
             b = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
             ok = v & (b == 0)
+            if self.photonorm:
+                g = local_normalise(g, ok)
             acc[ok] += g[ok]
             cnt[ok] += 1
         valid = cnt > 0
@@ -279,6 +328,217 @@ class ImageBEV3D(ImageBEV):
             if cname == 'f' and self.hood is not None and self.hood.shape == img.shape:
                 bad |= self.hood.astype(np.uint8)
             g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
+            bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
+            ok = v & (bm == 0)
+            acc[ok] += g[ok]
+            cnt[ok] += 1
+        valid = cnt > 0
+        acc[valid] /= cnt[valid]
+        return acc, valid
+
+
+def map_curb(xyz, pose_xy, yaw, step_min=0.08, step_max=0.40, win=0.4):
+    """Curb / median-island edges of the map in the vehicle BEV frame: cells where the local ground height
+    (lowest points per 0.1 m cell) jumps by step_min..step_max within win metres (kerbs, island edges);
+    larger jumps (walls, vehicles, poles) are rejected. Returns a float raster (step height, smoothed)."""
+    c, s = np.cos(yaw), np.sin(yaw)
+    d = xyz[:, :2] - pose_xy
+    x = c * d[:, 0] + s * d[:, 1]
+    y = -s * d[:, 0] + c * d[:, 1]
+    z = xyz[:, 2].astype(np.float32)
+    r = ((X_MAX - x) / RES).astype(np.int64)
+    col = ((Y_MAX - y) / RES).astype(np.int64)
+    ok = (r >= 0) & (r < H) & (col >= 0) & (col < W)
+    hmin = np.full(H * W, np.inf, np.float32)
+    np.minimum.at(hmin, r[ok] * W + col[ok], z[ok])
+    hmin = hmin.reshape(H, W)
+    valid = np.isfinite(hmin)
+    base = np.median(hmin[valid]) if valid.any() else 0.0
+    h = np.where(valid, hmin, base).astype(np.float32)
+    # fill isolated holes with the local minimum of valid neighbours (ground is the lowest surface)
+    filled = cv2.erode(np.where(valid, h, 1e4).astype(np.float32), np.ones((3, 3), np.uint8))
+    h = np.where(valid, h, np.where(filled < 1e3, filled, base)).astype(np.float32)
+    v3 = cv2.dilate(valid.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    k = max(3, int(win / RES) | 1)
+    ker = np.ones((k, k), np.uint8)
+    step = cv2.dilate(h, ker) - cv2.erode(h, ker)
+    curb = ((step > step_min) & (step < step_max) & v3).astype(np.uint8)
+    curb = line_open(curb)  # keep long kerb lines, drop vegetation / vehicle blobs
+    out = np.where(curb > 0, np.minimum(step, step_max), 0).astype(np.float32)
+    return cv2.GaussianBlur(out, (0, 0), 1.0)
+
+
+def line_open(img, length=2.0):
+    """Morphological opening with along-road and across-road line elements (keeps long straight structures)."""
+    L = max(3, int(length / RES))
+    a = cv2.morphologyEx(img, cv2.MORPH_OPEN, np.ones((L, 1), np.uint8))   # along the road (BEV rows)
+    b = cv2.morphologyEx(img, cv2.MORPH_OPEN, np.ones((1, L), np.uint8))   # across the road (intersections)
+    return np.maximum(a, b)
+
+
+def edge_response(gray, valid):
+    """Image BEV edge strength (kerb faces, shadows, material boundaries), contrast-normalised, invalid=0."""
+    g = gray.copy()
+    if valid.any():
+        g[~valid] = np.median(g[valid])
+    g = cv2.GaussianBlur(g, (0, 0), 1.0)
+    gx = cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3)
+    mag = np.sqrt(gx * gx + gy * gy)
+    loc = cv2.blur(mag, (31, 31)) + 1e-3
+    resp = np.clip(mag / loc, 0, 4).astype(np.float32)
+    resp = line_open(resp)  # projected tall objects make radial streaks; kerbs are along/across the road
+    vm = cv2.erode(valid.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
+    resp[~vm] = 0
+    return resp
+
+
+def map_road_region(xyz, pose_xy, yaw, step_max=0.08, win=0.4):
+    """Drivable road surface around the vehicle bounded by kerbs.
+
+    Lowest map point per 0.1 m cell, detrended by a robust plane (the map is tilted ~10 deg w.r.t. the vehicle
+    and roads have crossfall), median-filtered; flood fill from under the vehicle over cells whose local height
+    step within `win` is below step_max, so kerbs and island edges stop the fill. Returns float 0..1."""
+    c, s = np.cos(yaw), np.sin(yaw)
+    d = xyz[:, :2] - pose_xy
+    x = c * d[:, 0] + s * d[:, 1]
+    y = -s * d[:, 0] + c * d[:, 1]
+    z = xyz[:, 2]
+    r = ((X_MAX - x) / RES).astype(np.int64)
+    col = ((Y_MAX - y) / RES).astype(np.int64)
+    ok = (r >= 0) & (r < H) & (col >= 0) & (col < W)
+    hmin = np.full(H * W, np.inf)
+    np.minimum.at(hmin, r[ok] * W + col[ok], z[ok])
+    hmin = hmin.reshape(H, W)
+    valid = np.isfinite(hmin)
+    if valid.sum() < 200:
+        return np.zeros((H, W), np.float32)
+    rr, cc = np.nonzero(valid)
+    xs, ys, zs = X_MAX - rr * RES, Y_MAX - cc * RES, hmin[valid]
+    near = (np.abs(ys) < 4) & (xs < X_MIN + 12)  # road under / ahead of the vehicle
+    if near.sum() < 50:
+        near = np.ones_like(zs, bool)
+    keep = near.copy()
+    for _ in range(4):  # robust plane on the lowest surface near the vehicle
+        A = np.stack([xs[keep], ys[keep], np.ones(keep.sum())], 1)
+        coef = np.linalg.lstsq(A, zs[keep], rcond=None)[0]
+        res = zs - (coef[0] * xs + coef[1] * ys + coef[2])
+        keep = near & (np.abs(res) < max(3 * np.median(np.abs(res[keep])), 0.05))
+    gx, gy = np.meshgrid(Y_MAX - np.arange(W) * RES, X_MAX - np.arange(H) * RES)
+    plane = coef[0] * gy + coef[1] * gx + coef[2]
+    hd = np.where(valid, hmin - plane, np.nan).astype(np.float32)
+    big = np.where(valid, hd, 1e4).astype(np.float32)
+    fill = cv2.erode(big, np.ones((3, 3), np.uint8))
+    hd = np.where(valid, hd, np.where(fill < 1e3, fill, np.nan)).astype(np.float32)
+    known = np.isfinite(hd)
+    hk = np.where(known, hd, 0).astype(np.float32)
+    hk = cv2.medianBlur(hk, 5)
+    k = max(3, int(win / RES) | 1)
+    ker = np.ones((k, k), np.uint8)
+    step = cv2.dilate(np.where(known, hk, -1e4).astype(np.float32), ker) - cv2.erode(np.where(known, hk, 1e4).astype(np.float32), ker)
+    free = (known & (step < step_max) & (np.abs(hk) < 0.6)).astype(np.uint8)
+    seeds = [(int((X_MAX - xx) / RES), int(Y_MAX / RES) + dc) for xx in np.arange(X_MIN + 0.5, X_MIN + 8, 0.5) for dc in (-5, 0, 5)]
+    mask = np.zeros((H + 2, W + 2), np.uint8)
+    region = free.copy()
+    for (r0, c0) in seeds:
+        if 0 <= r0 < H and 0 <= c0 < W and region[r0, c0] == 1:
+            cv2.floodFill(region, mask, (c0, r0), 2, loDiff=0, upDiff=0, flags=4)
+    road = (region == 2).astype(np.float32)
+    road = cv2.morphologyEx(road, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+    return cv2.GaussianBlur(road, (0, 0), 1.5)
+
+
+def map_road_scan(xyz, pose_xy, yaw, curb_h=0.07, curb_run=0.3, gap_run=1.5, drop_h=0.25, smooth_rows=11):
+    """Road surface bounded by kerbs, found by scanning every BEV row outwards from the vehicle centre line.
+
+    Height is the lowest map point per cell, detrended by a robust plane fitted near the vehicle (map tilt, road
+    crossfall) and median-filtered. Scanning left and right, the boundary is the first place where the surface is
+    curb_h above the road for curb_run metres (kerb, island, sidewalk), drops by drop_h, or has no map data for
+    gap_run metres. Boundaries are median-smoothed along the road. Returns float 0..1."""
+    c, s = np.cos(yaw), np.sin(yaw)
+    d = xyz[:, :2] - pose_xy
+    x = c * d[:, 0] + s * d[:, 1]
+    y = -s * d[:, 0] + c * d[:, 1]
+    z = xyz[:, 2]
+    r = ((X_MAX - x) / RES).astype(np.int64)
+    col = ((Y_MAX - y) / RES).astype(np.int64)
+    ok = (r >= 0) & (r < H) & (col >= 0) & (col < W)
+    hmin = np.full(H * W, np.inf)
+    np.minimum.at(hmin, r[ok] * W + col[ok], z[ok])
+    hmin = hmin.reshape(H, W)
+    valid = np.isfinite(hmin)
+    if valid.sum() < 200:
+        return np.zeros((H, W), np.float32)
+    rr, cc = np.nonzero(valid)
+    xs, ys, zs = X_MAX - rr * RES, Y_MAX - cc * RES, hmin[valid]
+    near = (np.abs(ys) < 3) & (xs < X_MIN + 10)
+    if near.sum() < 50:
+        near = np.ones_like(zs, bool)
+    keep = near.copy()
+    for _ in range(4):
+        A = np.stack([xs[keep], ys[keep], np.ones(keep.sum())], 1)
+        coef = np.linalg.lstsq(A, zs[keep], rcond=None)[0]
+        res = zs - (coef[0] * xs + coef[1] * ys + coef[2])
+        keep = near & (np.abs(res) < max(3 * np.median(np.abs(res[keep])), 0.04))
+    gy, gx = np.meshgrid(Y_MAX - np.arange(W) * RES, X_MAX - np.arange(H) * RES)
+    hd = np.where(valid, hmin - (coef[0] * gx + coef[1] * gy + coef[2]), 0).astype(np.float32)
+    hd = cv2.medianBlur(hd, 5)
+    known = cv2.dilate(valid.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    nc, ng = max(1, int(curb_run / RES)), max(1, int(gap_run / RES))
+    stop_curb = known & (hd > curb_h)
+    stop_drop = known & (hd < -drop_h)
+    c0 = int(Y_MAX / RES)
+
+    def first_stop(side):  # side: (H, n) cells walking outwards from the centre
+        sc, sd, kn = side
+        run_c = cv2.filter2D(sc.astype(np.float32), -1, np.ones((1, nc), np.float32), anchor=(0, 0),
+                             borderType=cv2.BORDER_CONSTANT) >= nc - 0.5
+        run_g = cv2.filter2D((~kn).astype(np.float32), -1, np.ones((1, ng), np.float32), anchor=(0, 0),
+                             borderType=cv2.BORDER_CONSTANT) >= ng - 0.5
+        stop = run_c | sd | run_g
+        idx = np.where(stop.any(1), stop.argmax(1), stop.shape[1])
+        return idx
+
+    left = first_stop((stop_curb[:, c0::-1], stop_drop[:, c0::-1], known[:, c0::-1]))
+    right = first_stop((stop_curb[:, c0:], stop_drop[:, c0:], known[:, c0:]))
+    from scipy.ndimage import median_filter
+    left = median_filter(left, smooth_rows, mode='nearest')
+    right = median_filter(right, smooth_rows, mode='nearest')
+    cols = np.arange(W)[None, :]
+    road = ((cols >= (c0 - left)[:, None]) & (cols <= (c0 + right)[:, None])).astype(np.float32)
+    road[~known.any(1)] = 0
+    return cv2.GaussianBlur(road, (0, 0), 1.5)
+
+
+class RoadProbBEV:
+    """IPM of SegFormer road probability (quarter-res arrays) using an ImageBEV's projection maps."""
+
+    def __init__(self, bev):
+        self.bev = bev
+        d = os.path.join(bev.track_dir, 'road')
+        self.prob = {c: np.load(os.path.join(d, f'{c}.npz'))['road'] for c in bev.cams}
+        self.use_masks = True
+
+    def render(self, i):
+        b = self.bev
+        if b.dyn is not None:
+            h, p, r, y = b.calib
+            b.set_calib(h, p + b.dyn[i, 0], r + b.dyn[i, 1], y)
+        acc = np.zeros((H, W), np.float32)
+        cnt = np.zeros((H, W), np.float32)
+        for c in b.cams:
+            pr = self.prob[c][i].astype(np.float32) / 255.0
+            hq, wq = pr.shape
+            bad = np.zeros((hq * 4, wq * 4), np.uint8)
+            # YOLO road users are left out as *unknown* (neutral in the NCC, not "non-road"): projected car bodies
+            # would otherwise leak "road" beyond the kerb, since IPM assumes every pixel lies on the ground
+            if self.use_masks and c in b.masks:
+                m = np.unpackbits(b.masks[c][i], axis=1)[:, :wq * 2]
+                bad |= cv2.resize(m, (wq * 4, hq * 4), interpolation=cv2.INTER_NEAREST)
+            if c == 'f' and b.hood is not None and b.hood.shape == bad.shape:
+                bad |= b.hood.astype(np.uint8)
+            mx, my, v = b.maps[c]
+            g = cv2.remap(pr, mx / 4.0, my / 4.0, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
             bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
             ok = v & (bm == 0)
             acc[ok] += g[ok]
