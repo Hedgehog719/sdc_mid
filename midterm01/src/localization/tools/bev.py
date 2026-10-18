@@ -700,6 +700,7 @@ def map_road_level(xyz, pose_xy, yaw, raise_h=0.08, win=4.0, obst_h=0.35):
     return road, ~unknown
 
 
+ROAD_SLOPE = os.environ.get('SDC_ROAD_SLOPE', 'roll')  # 'smooth': artefact-free slope (see map_road_smooth)
 ROAD_LEVEL_TOL = 0.0   # v3 (ramp-proof road level) when > 0, e.g. 0.08
 ROAD_FILL_M2 = 0.0     # v3 small-hole filling when > 0, e.g. 3.0
 
@@ -733,9 +734,20 @@ def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True, f
     h = np.where(known, h, np.median(hmin[valid])).astype(np.float32)
     h = cv2.medianBlur(h, 5)
     b = max(1, int(round(base / RES)))
-    gx = (np.roll(h, -b, 1) - np.roll(h, b, 1)) / (2 * b * RES)
-    gy = (np.roll(h, -b, 0) - np.roll(h, b, 0)) / (2 * b * RES)
-    kn2 = known & np.roll(known, b, 0) & np.roll(known, -b, 0) & np.roll(known, b, 1) & np.roll(known, -b, 1)
+    if ROAD_SLOPE == 'smooth':
+        # gradient of a known-weighted smoothed surface: one missing cell only affects its neighbourhood
+        # ('roll' sampled h at +-b cells, so a single unknown / spiky cell punched 5 holes in a '+' pattern)
+        kf = known.astype(np.float32)
+        sig = b / 2.0
+        hs = cv2.GaussianBlur(np.where(known, h, 0).astype(np.float32), (0, 0), sig) / \
+            np.maximum(cv2.GaussianBlur(kf, (0, 0), sig), 1e-3)
+        gx = cv2.Sobel(hs, cv2.CV_32F, 1, 0, ksize=3) / (8 * RES)
+        gy = cv2.Sobel(hs, cv2.CV_32F, 0, 1, ksize=3) / (8 * RES)
+        kn2 = known & (cv2.blur(kf, (2 * b + 1, 2 * b + 1)) > 0.6)
+    else:
+        gx = (np.roll(h, -b, 1) - np.roll(h, b, 1)) / (2 * b * RES)
+        gy = (np.roll(h, -b, 0) - np.roll(h, b, 0)) / (2 * b * RES)
+        kn2 = known & np.roll(known, b, 0) & np.roll(known, -b, 0) & np.roll(known, b, 1) & np.roll(known, -b, 1)
     gx0, gy0 = np.median(gx[kn2]), np.median(gy[kn2])  # typical slope (map tilt / crossfall)
     slope = np.hypot(gx - gx0, gy - gy0)
     smooth = kn2 & (slope < slope_max)
