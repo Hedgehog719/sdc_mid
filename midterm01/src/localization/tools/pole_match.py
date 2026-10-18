@@ -229,7 +229,8 @@ def main():
         PRIOR[:, :2] += rng.normal(0, A.prior_noise[0], (n, 2))
         PRIOR[:, 2] += np.radians(rng.normal(0, A.prior_noise[1], n))
     POLES = np.load(os.path.join(A.track_dir, A.poles))
-    GROUND = GroundRaster(np.load(os.path.join(A.track_dir, 'map.npy'), mmap_mode='r'))
+    from bev_match import map_files
+    GROUND = GroundRaster(np.load(map_files(A.track_dir)[0], mmap_mode='r'))
     global NG
     NG = TiledMap(os.path.join(A.track_dir, 'map_nonground.npy')) if A.occlusion else None
     CAM = Cameras(os.path.join(A.track_dir, f'{track}_images', 'camera_info'))

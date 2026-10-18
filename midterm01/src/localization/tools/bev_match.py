@@ -28,9 +28,17 @@ from common import TiledMap, ply_frames, wrap  # noqa: E402
 A = None
 
 
+def map_files(track_dir):
+    """map / intensity files; SDC_MAP_TAG=<tag> selects map_<tag>.npy (e.g. clean_map.py output)."""
+    tag = os.environ.get('SDC_MAP_TAG', '')
+    sfx = f'_{tag}' if tag else ''
+    return os.path.join(track_dir, f'map{sfx}.npy'), os.path.join(track_dir, f'map_intensity{sfx}.npy')
+
+
 def load_map(track_dir):
-    M = TiledMap(os.path.join(track_dir, 'map.npy'), keep_order=True)
-    M.inten = np.load(os.path.join(track_dir, 'map_intensity.npy'), mmap_mode='r')[M.order]
+    fm, fi = map_files(track_dir)
+    M = TiledMap(fm, keep_order=True)
+    M.inten = np.load(fi, mmap_mode='r')[M.order]
     del M.order
     return M
 

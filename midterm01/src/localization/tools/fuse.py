@@ -67,6 +67,10 @@ def main():
     p.add_argument('--bev', nargs='*', default=[], help='bev_match.py npz file(s): map-to-image fixes fed to the RTS smoother')
     p.add_argument('--bev_lat_sigma', type=float, default=0.3)
     p.add_argument('--bev_fwd_sigma', type=float, default=5.0, help='large = lateral-only fix')
+    p.add_argument('--bev_aniso_k', type=float, default=0.0,
+                   help='>0: per-fix fwd sigma = clip(k / sharp_f, aniso_min, bev_fwd_sigma) (needs sharp_f in npz)')
+    p.add_argument('--bev_aniso_min', type=float, default=0.3)
+    p.add_argument('--bev_aniso_lat', action='store_true', help='also lat sigma = clip(k / sharp_l, aniso_min, 3 lat)')
     p.add_argument('--bev_min_speed', type=float, default=3.0)
     p.add_argument('--bev_huber', type=float, default=2.0)
     p.add_argument('--bev_peak_ref', type=float, default=0.0,
@@ -149,13 +153,24 @@ def main():
         if a.bev:
             st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, meas_sigma=sm)
             parts = [np.load(f) for f in a.bev]
-            b = {k: np.concatenate([q[k] for q in parts]) for k in ['ts', 'pyaw', 'mx', 'my', 'peak']}
+            keys = ['ts', 'pyaw', 'mx', 'my', 'peak']
+            if a.bev_aniso_k > 0:
+                keys += ['sharp_f', 'sharp_l']
+            b = {k: np.concatenate([q[k] for q in parts]) for k in keys}
             speed = np.interp(b['ts'].astype(float), ts.astype(float), np.abs(st0[:, 2]))
             m = speed > a.bev_min_speed
             yw = b['pyaw'][m]
             c, s_ = np.cos(yw), np.sin(yw)
             Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)
-            bc = Rr @ np.diag([a.bev_fwd_sigma ** 2, a.bev_lat_sigma ** 2]) @ Rr.transpose(0, 2, 1)
+            sf = np.full(m.sum(), a.bev_fwd_sigma)
+            sl = np.full(m.sum(), a.bev_lat_sigma)
+            if a.bev_aniso_k > 0:  # NCC peak distinctiveness along each axis -> per-fix anisotropic covariance
+                sf = np.clip(a.bev_aniso_k / np.maximum(b['sharp_f'][m], 1e-3), a.bev_aniso_min, a.bev_fwd_sigma)
+                if a.bev_aniso_lat:
+                    sl = np.clip(a.bev_aniso_k / np.maximum(b['sharp_l'][m], 1e-3), a.bev_aniso_min, 3 * a.bev_lat_sigma)
+            D = np.zeros((m.sum(), 2, 2))
+            D[:, 0, 0], D[:, 1, 1] = sf ** 2, sl ** 2
+            bc = Rr @ D @ Rr.transpose(0, 2, 1)
             if a.bev_peak_ref > 0:
                 sc = np.clip(a.bev_peak_ref / np.maximum(b['peak'][m], 1e-3), 0.5, 3.0)
                 bc = bc * (sc ** 2)[:, None, None]
