@@ -25,14 +25,25 @@ yaw-corrected (+0.5 / -0.5 deg). Optional occlusion check: pole samples hidden b
 structure (z-buffer of non-ground map points) are not scored; on Track2 (suburban, almost no occlusion, reference
 only ~0.23 m accurate) it shows no difference, so it is tested on Track1 (urban) via the leaderboard.
 
+Leaderboard on 10-18 14:20: Track1 0.859 (team 13) vs ours 0.937; Track2 0.258 (team 6) vs ours 0.283.
+
+## Second iteration (Track1)
+BEV + pole matching re-run with prior = curated_p50_f0.3. It converges: pole fixes |fwd| median 0.89 -> 0.25 m,
+BEV fwd 0.55 -> 0.42 m, lat 0.21 -> 0.17 m, so the first-round pole corrections look real.
+
 ## Track1 (in order)
 1. curated_p50_f0.3        curated poles (fwd change vs best 0.52 m rms)
-2. curated_occ_p50_f0.3    + occlusion check (occluders < 6 m, 2 m margin)
-3. curated_p50_f0.5
-4. pole_p50_f0.3           uncurated, for comparison
-5-6. time-lag probes on the new best; then combinations.
+2. iter2_f0.3              second iteration (0.60 m vs best, 0.28 m vs round 1)
+3. curated_occ_p50_f0.3    + occlusion check (occluders < 6 m, 2 m margin)
+4. iter2_f0.5
+5. curated_p50_f0.5
+6. pole_p50_f0.3           uncurated, for comparison
+7-8. time-lag probes on the best of 1-6
+then combinations.
 
 ## Track2
-1. curated_p50_f0.5
-2. pole_p50_f0.8
+1-4. error decomposition probes on the current best (x+-, yaw+-) -> remaining pos vs yaw error and yaw bias
+5. curated_p50_f0.5        (= yaw_q0.05_bev1.0_poles with BEV yaw 1.5)
+6. yaw_q0.05_bev1.0_poles
+7-8. yaw_q0.05_bev1.0, yaw_q0.07_bev1.0
 then combinations.
