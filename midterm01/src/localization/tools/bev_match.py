@@ -225,9 +225,11 @@ def main():
     ap.add_argument('--yaw_sign', type=float, default=-1.0)
     ap.add_argument('--feature', choices=['lane', 'curb', 'road'], default='lane', help='road markings or kerb edges')
     ap.add_argument('--road_map', choices=['scan', 'fill', 'smooth'], default='smooth', help='map road surface: row scan or flood fill')
+    ap.add_argument('--road_seg', default='road', help='segmentation subdir (road = SegFormer-B2, road_m2f = Mask2Former)')
+    ap.add_argument('--road_colour', action='store_true', help='average segmentation with a per-frame asphalt colour model')
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
-    ap.add_argument('--ground_mode', choices=['plane', 'local'], default='plane',
+    ap.add_argument('--ground_mode', choices=['plane', 'local', 'smooth'], default='plane',
                     help='map road surface reference: one plane under the vehicle, or a smooth local ground surface')
     ap.add_argument('--color', action='store_true', help='with --percam: add yellowness / redness marking channels')
     ap.add_argument('--percam', action='store_true', help='compute the marking response per camera, then blend')
@@ -305,7 +307,7 @@ def main():
     import bev as _bev
     _bev.GROUND_MODE = A.ground_mode
     global ROADBEV
-    ROADBEV = RoadProbBEV(BEV) if A.feature == 'road' else None
+    ROADBEV = RoadProbBEV(BEV, A.road_seg, 'seg_colour' if A.road_colour else 'road') if A.feature == 'road' else None
     with mp.get_context('fork').Pool(A.workers, initializer=init_worker) as pool:
         res = pool.map(worker, chunks, chunksize=1)
     rows = np.array([r for c in res for r in c])

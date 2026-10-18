@@ -224,7 +224,7 @@ def map_bev(xyz, intensity, pose_xy, yaw, plane_tol=0.25, rough_max=0.08):
     hrel = z - (coef[0] * x + coef[1] * y + coef[2])
     r = ((X_MAX - x) / RES).astype(np.int64)
     col = ((Y_MAX - y) / RES).astype(np.int64)
-    if GROUND_MODE == 'local':
+    if GROUND_MODE in ('local', 'smooth'):
         inb = (r >= 0) & (r < H) & (col >= 0) & (col < W)
         zmin = np.full(H * W, np.inf)
         np.minimum.at(zmin, r[inb] * W + col[inb], z[inb])
@@ -258,6 +258,9 @@ def map_bev(xyz, intensity, pose_xy, yaw, plane_tol=0.25, rough_max=0.08):
     rough_n = cv2.filter2D(rough, -1, k) / np.maximum(cnt_n, 1)
     road = (cnt_n >= 3) & (np.abs(hmean_n) < plane_tol) & (rough_n < rough_max)
     road = cv2.morphologyEx(road.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
+    if GROUND_MODE == 'smooth':  # road surface = smooth ground connected to the vehicle (local slope criterion)
+        rs, kn = map_road_smooth(xyz.astype(np.float64), pose_xy, yaw)
+        road = (rs > 0.5) & valid
     # fill ring gaps in intensity by normalised blur
     acc_f = cv2.filter2D(np.where(valid, acc, 0).astype(np.float32), -1, np.ones((3, 3), np.float32))
     cnt_f = cv2.filter2D(valid.astype(np.float32), -1, np.ones((3, 3), np.float32))
@@ -676,11 +679,43 @@ def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True):
 class RoadProbBEV:
     """IPM of SegFormer road probability (quarter-res arrays) using an ImageBEV's projection maps."""
 
-    def __init__(self, bev):
+    def __init__(self, bev, subdir='road', mode='road'):
+        """mode: 'road' = P(road + vehicles); 'road_minus_side' = (P(road) - P(sidewalk) + 1) / 2, which pushes the
+        kerb boundary (road <-> sidewalk) apart in the image probability."""
         self.bev = bev
-        d = os.path.join(bev.track_dir, 'road')
-        self.prob = {c: np.load(os.path.join(d, f'{c}.npz'))['road'] for c in bev.cams}
+        d = os.path.join(bev.track_dir, subdir)
+        z = {c: np.load(os.path.join(d, f'{c}.npz')) for c in bev.cams}
+        self.prob = {c: z[c]['road'] for c in bev.cams}
+        self.side = {c: z[c]['side'] for c in bev.cams} if mode == 'road_minus_side' and 'side' in z['f'] else None
         self.use_masks = True
+        self.colour = mode == 'seg_colour'  # average with a per-frame asphalt colour model (Lab) where both exist
+
+    def colour_prob(self, i, c, img_shape_full):
+        """Per-frame asphalt colour model: Lab statistics of the band just above the hood (front camera, no road
+        users, paint dropped); chroma tight, lightness loose (shadows, exposure). Returns full-res probability."""
+        b = self.bev
+        if c == 'f' or not hasattr(self, '_ref') or self._ref[0] != i:
+            img = cv2.imread(os.path.join(b.track_dir, f'{b.track}_images', f'{b.track}_f_images', b.names['f'][i]))
+            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
+            mk = cv2.resize(np.unpackbits(b.masks['f'][i], axis=1)[:, :img.shape[1] // 2], (img.shape[1], img.shape[0]),
+                            interpolation=cv2.INTER_NEAREST) > 0 if 'f' in b.masks else np.zeros(img.shape[:2], bool)
+            top = int(np.argmax(b.hood, axis=0).min()) if b.hood is not None else img.shape[0] - 120
+            rows = np.arange(img.shape[0])[:, None]
+            cols = np.arange(img.shape[1])[None, :]
+            band = (rows > top - 90) & (rows < top - 15) & (np.abs(cols - img.shape[1] // 2) < 260) & ~mk
+            if b.hood is not None:
+                band &= ~b.hood
+            sm = lab[band]
+            sm = sm[sm[:, 0] < np.percentile(sm[:, 0], 85)]
+            med = np.median(sm, 0)
+            sd = np.maximum(1.4826 * np.median(np.abs(sm - med), 0), [6, 2, 2])
+            self._ref = (i, med, sd)
+        _, med, sd = self._ref
+        img = cv2.imread(os.path.join(b.track_dir, f'{b.track}_images', f'{b.track}_{c}_images', b.names[c][i]))
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
+        d2 = (((lab[..., 1] - med[1]) / (3 * sd[1])) ** 2 + ((lab[..., 2] - med[2]) / (3 * sd[2])) ** 2
+              + ((lab[..., 0] - med[0]) / (6 * sd[0])) ** 2)
+        return cv2.GaussianBlur(np.exp(-0.5 * d2).astype(np.float32), (0, 0), 2)
 
     def render(self, i):
         b = self.bev
@@ -691,6 +726,8 @@ class RoadProbBEV:
         cnt = np.zeros((H, W), np.float32)
         for c in b.cams:
             pr = self.prob[c][i].astype(np.float32) / 255.0
+            if self.side is not None:
+                pr = np.clip((pr - self.side[c][i].astype(np.float32) / 255.0 + 1) / 2, 0, 1)
             hq, wq = pr.shape
             bad = np.zeros((hq * 4, wq * 4), np.uint8)
             # YOLO road users are left out as *unknown* (neutral in the NCC, not "non-road"): projected car bodies
@@ -702,6 +739,9 @@ class RoadProbBEV:
                 bad |= b.hood.astype(np.uint8)
             mx, my, v = b.maps[c]
             g = cv2.remap(pr, mx / 4.0, my / 4.0, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            if self.colour:
+                cpb = cv2.remap(self.colour_prob(i, c, None), mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+                g = 0.5 * (g + cpb)
             bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
             ok = v & (bm == 0)
             acc[ok] += g[ok]

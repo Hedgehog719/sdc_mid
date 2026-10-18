@@ -52,7 +52,22 @@ frames 0-450, +-5 m search):
 User idea: the IMU heading hardly changes at the start, so hold yaw constant and keep the path straight there
 (--start_hold 1.5: frames 0-264); it changes the start laterally by up to 0.3 m.
 
+## Road surface from local slope (user idea) and the camera kerb side
+Map road = smooth ground (local slope over 0.3 m minus the area's typical slope) connected to the vehicle; kerbs
+cut it. Agreement with the image road segmentation: Track1 0.94 on clean sections (was 0.47-0.61), start 0.30-0.40
+(was 0.06-0.14). Used for the road-region (kerb) feature only: as the road mask of lane matching it is worse
+(Track2 noisy prior 0.56 -> 2.34 m: the connected region drops other-carriageway markings).
+Camera side, 46-49 moving frames per track vs the map smooth road (median / worst quartile):
+B2 0.684/0.456 (T1), 0.705/0.472 (T2); Mask2Former 0.669/0.482, 0.697/0.465; M2F - sidewalk 0.609/0.390;
+Lab colour model 0.615/0.446; M2F + colour 0.685/0.527, 0.693/0.464 (best near range 0.70-0.73).
+Agreement is flat with range (0.58-0.73), the rest is definitional (other carriageway behind a raised median,
+flush sidewalks / driveways).
+Drift simulation (0.95 m): lanes + poles 0.566; + kerb/road 0.559; without lanes (poles + kerb) 0.657; kerb only
+0.875 -> lanes stay, kerbs added.
+
 ## Track1 (in order)
+0. iter4_lane_pole_curb_hold   lanes (distance acc.) + curated poles + kerb/road (slope map) + start hold
+0b. iter4_NOLANE_pole_curb_hold  user test: no lane markings (poles + kerb/road + start hold)
 1. iter3_pcd_hold          distance-accumulated lanes + curated poles + start hold
 2. iter3_pc                per-camera lanes + curated poles (round 2)
 3. iter3_pc_hold           start hold only
