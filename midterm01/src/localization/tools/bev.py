@@ -220,6 +220,29 @@ GROUND_MODE = 'plane'
 USE_EGO_MASK = True
 
 
+def road_profile(x, y, z, cross, strip=2.5, bin_m=2.0):
+    """Ground height along x (fwd) from the lane strip |y| < strip: low percentile per bin_m bin (crossfall
+    removed), gaps interpolated, lightly smoothed. Lateral tolerance stays that of the plane, so pavements and
+    parked scooters beside the road are still rejected while longitudinal dips / warps are followed."""
+    edges = np.arange(X_MIN - 1.0, X_MAX + bin_m + 1.0, bin_m)
+    zc = z - cross * y
+    m = np.abs(y) < strip
+    k = np.digitize(x[m], edges) - 1
+    prof = np.full(len(edges) - 1, np.nan)
+    for b in range(len(prof)):
+        zb = zc[m][k == b]
+        if len(zb) >= 20:
+            prof[b] = np.percentile(zb, 10)
+    cen = 0.5 * (edges[:-1] + edges[1:])
+    ok = np.isfinite(prof)
+    if ok.sum() < 2:
+        return np.full(len(x), np.percentile(zc, 5))
+    prof = np.interp(cen, cen[ok], prof[ok])
+    pad = np.r_[prof[0], prof, prof[-1]]
+    prof = np.median(np.stack([pad[:-2], pad[1:-1], pad[2:]]), 0)  # 3-bin median against cars in the strip
+    return np.interp(x, cen, prof)
+
+
 HYBRID_RATIO = 0.6  # GROUND_MODE 'hybrid': use the local ground when plane road < ratio x local road
 
 
@@ -259,6 +282,8 @@ def _map_bev(xyz, intensity, pose_xy, yaw, plane_tol, rough_max, mode):
     else:
         coef = np.array([0.0, 0.0, np.percentile(z, 5)])
     hrel = z - (coef[0] * x + coef[1] * y + coef[2])
+    if mode == 'profile':  # road height profile along the driving direction (follows warps of the map ground)
+        hrel = z - (road_profile(x, y, z, coef[1]) + coef[1] * y)
     r = ((X_MAX - x) / RES).astype(np.int64)
     col = ((Y_MAX - y) / RES).astype(np.int64)
     if mode in ('local', 'smooth'):

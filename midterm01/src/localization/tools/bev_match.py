@@ -231,7 +231,7 @@ def main():
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
     ap.add_argument('--hybrid_ratio', type=float, default=0.6, help='ground_mode hybrid: plane/local road threshold')
-    ap.add_argument('--ground_mode', choices=['plane', 'local', 'smooth', 'hybrid'], default='plane',
+    ap.add_argument('--ground_mode', choices=['plane', 'local', 'smooth', 'hybrid', 'profile'], default='plane',
                     help='map road surface reference: one plane under the vehicle, or a smooth local ground surface')
     ap.add_argument('--color', action='store_true', help='with --percam: add yellowness / redness marking channels')
     ap.add_argument('--percam', action='store_true', help='compute the marking response per camera, then blend')

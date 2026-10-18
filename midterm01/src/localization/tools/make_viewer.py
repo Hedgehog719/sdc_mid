@@ -35,8 +35,11 @@ def main():
     ap.add_argument('--step', type=int, default=15)
     ap.add_argument('--label', default='')
     ap.add_argument('--variant', default='', help='render into work/viewer/<Track>_<variant> for A/B comparison')
+    ap.add_argument('--ground_mode', default='plane', help='map road mask: plane | local | smooth | hybrid')
     ap.add_argument('--range', default='', help='lo:hi frames to (re)render; frames.json keeps all rendered frames')
     a = ap.parse_args()
+    import bev as _bev
+    _bev.GROUND_MODE = a.ground_mode
     track = os.path.basename(os.path.normpath(a.track_dir))
     out = os.path.join(os.path.dirname(__file__), '..', 'work', 'viewer', track + (f'_{a.variant}' if a.variant else ''))
     os.makedirs(out, exist_ok=True)
