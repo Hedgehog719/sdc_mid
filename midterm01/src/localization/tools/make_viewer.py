@@ -34,6 +34,7 @@ def main():
     ap.add_argument('traj_csv')
     ap.add_argument('--step', type=int, default=15)
     ap.add_argument('--label', default='')
+    ap.add_argument('--range', default='', help='lo:hi frames to (re)render; frames.json keeps all rendered frames')
     a = ap.parse_args()
     track = os.path.basename(os.path.normpath(a.track_dir))
     out = os.path.join(os.path.dirname(__file__), '..', 'work', 'viewer', track)
@@ -49,7 +50,8 @@ def main():
     imgdir = {c: os.path.join(a.track_dir, f'{track}_images', f'{track}_{c}_images') for c in cams}
     names = {c: sorted(os.listdir(imgdir[c])) for c in cams}
     frames = []
-    for i in range(0, len(tr), a.step):
+    lo, hi = (0, len(tr)) if not a.range else [int(v) for v in a.range.split(':')]
+    for i in range(lo, min(hi, len(tr)), a.step):
         x, y, yaw = tr.x[i], tr.y[i], tr.yaw[i]
         idx = M.query_idx(x, y, 42.0)
         pts, inten = M.pts[idx], M.inten[idx]
@@ -98,6 +100,9 @@ def main():
         frames.append(int(i))
         if len(frames) % 20 == 0:
             print(track, len(frames), flush=True)
+    fj = os.path.join(out, 'frames.json')
+    if a.range and os.path.exists(fj):
+        frames = sorted(set(frames) | set(json.load(open(fj))['frames']))
     json.dump({'track': track, 'frames': frames, 'label': a.label or os.path.basename(a.traj_csv)},
               open(os.path.join(out, 'frames.json'), 'w'))
     print('wrote', len(frames), 'keyframes to', out)

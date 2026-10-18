@@ -362,7 +362,8 @@ def map_curb(xyz, pose_xy, yaw, step_min=0.08, step_max=0.40, win=0.4):
     k = max(3, int(win / RES) | 1)
     ker = np.ones((k, k), np.uint8)
     step = cv2.dilate(h, ker) - cv2.erode(h, ker)
-    curb = ((step > step_min) & (step < step_max) & v3).astype(np.uint8)
+    tall = cv2.dilate((h - cv2.erode(h, np.ones((15, 15), np.uint8)) > step_max).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    curb = ((step > step_min) & (step < step_max) & v3 & ~tall).astype(np.uint8)  # no edges of vehicles / scooters
     curb = line_open(curb)  # keep long kerb lines, drop vegetation / vehicle blobs
     out = np.where(curb > 0, np.minimum(step, step_max), 0).astype(np.float32)
     return cv2.GaussianBlur(out, (0, 0), 1.0)
@@ -448,7 +449,8 @@ def map_road_region(xyz, pose_xy, yaw, step_max=0.08, win=0.4):
     return cv2.GaussianBlur(road, (0, 0), 1.5)
 
 
-def map_road_scan(xyz, pose_xy, yaw, curb_h=0.07, curb_run=0.3, gap_run=1.5, drop_h=0.25, smooth_rows=11):
+def map_road_scan(xyz, pose_xy, yaw, curb_h=0.07, curb_run=0.3, gap_run=1.5, drop_h=0.25, smooth_rows=11, obst_h=0.35,
+                  obst_run=6.0):
     """Road surface bounded by kerbs, found by scanning every BEV row outwards from the vehicle centre line.
 
     Height is the lowest map point per cell, detrended by a robust plane fitted near the vehicle (map tilt, road
@@ -485,8 +487,15 @@ def map_road_scan(xyz, pose_xy, yaw, curb_h=0.07, curb_run=0.3, gap_run=1.5, dro
     hd = cv2.medianBlur(hd, 5)
     known = cv2.dilate(valid.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     nc, ng = max(1, int(curb_run / RES)), max(1, int(gap_run / RES))
-    stop_curb = known & (hd > curb_h)
+    # kerbs / islands are 7-35 cm high; taller blobs on the road are vehicles or scooters left in the map when it
+    # was built: they are skipped (not a boundary) unless the obstacle is very wide (obst_run, e.g. a wall/building)
+    obst = known & (hd >= obst_h)
+    stop_curb = known & (hd > curb_h) & (hd < obst_h)
     stop_drop = known & (hd < -drop_h)
+    no = max(1, int(obst_run / RES))
+    wide_obst = cv2.filter2D(obst.astype(np.float32), -1, np.ones((1, no), np.float32), anchor=(0, 0),
+                             borderType=cv2.BORDER_CONSTANT) >= no - 0.5
+    known_scan = known & ~(obst & ~wide_obst)  # narrow obstacles count as unknown
     c0 = int(Y_MAX / RES)
 
     def first_stop(side):  # side: (H, n) cells walking outwards from the centre
@@ -499,8 +508,9 @@ def map_road_scan(xyz, pose_xy, yaw, curb_h=0.07, curb_run=0.3, gap_run=1.5, dro
         idx = np.where(stop.any(1), stop.argmax(1), stop.shape[1])
         return idx
 
-    left = first_stop((stop_curb[:, c0::-1], stop_drop[:, c0::-1], known[:, c0::-1]))
-    right = first_stop((stop_curb[:, c0:], stop_drop[:, c0:], known[:, c0:]))
+    stop_curb = stop_curb | (obst & wide_obst)
+    left = first_stop((stop_curb[:, c0::-1], stop_drop[:, c0::-1], known_scan[:, c0::-1]))
+    right = first_stop((stop_curb[:, c0:], stop_drop[:, c0:], known_scan[:, c0:]))
     from scipy.ndimage import median_filter
     left = median_filter(left, smooth_rows, mode='nearest')
     right = median_filter(right, smooth_rows, mode='nearest')
