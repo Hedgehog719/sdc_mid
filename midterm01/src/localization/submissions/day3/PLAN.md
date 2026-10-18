@@ -18,14 +18,21 @@ Track2 drift simulation (0.95 m GNSS drift):
 | **+ lane markings + poles (top-50% peaks, fwd sigma 0.3)** | **0.577** | **0.472** | **0.332** |
 Keeping weak pole matches (top 70%) can blow up (1.145) -> quality gating is essential.
 
-## Track1
-1. pole_p50_f0.3   (moves along-track by 0.52 m rms vs best)
-2. pole_p50_f0.5
-3. pole_p60_f0.3
-4-5. time-lag probes on the new best
-then combinations.
+## Hand-curated poles (pole_review_server.py, reviewed remotely)
+Track1: 21 of 101 route poles rejected (building shapes, protruding signboards, unclear objects);
+Track2: 9 of 129 rejected. Poles must also reach the ground now (drops hanging signboards), side cameras
+yaw-corrected (+0.5 / -0.5 deg). Optional occlusion check: pole samples hidden behind nearer static map
+structure (z-buffer of non-ground map points) are not scored; on Track2 (suburban, almost no occlusion, reference
+only ~0.23 m accurate) it shows no difference, so it is tested on Track1 (urban) via the leaderboard.
+
+## Track1 (in order)
+1. curated_p50_f0.3        curated poles (fwd change vs best 0.52 m rms)
+2. curated_occ_p50_f0.3    + occlusion check (occluders < 6 m, 2 m margin)
+3. curated_p50_f0.5
+4. pole_p50_f0.3           uncurated, for comparison
+5-6. time-lag probes on the new best; then combinations.
 
 ## Track2
-1. pole_p50_f0.5   (0.11 m fwd change; GNSS already accurate)
+1. curated_p50_f0.5
 2. pole_p50_f0.8
 then combinations.

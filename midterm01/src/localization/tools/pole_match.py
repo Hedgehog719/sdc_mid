@@ -21,7 +21,7 @@ from scipy.spatial.transform import Rotation
 sys.path.insert(0, os.path.dirname(__file__))
 from bev import GroundRaster  # noqa: E402
 from camera_model import Cameras  # noqa: E402
-from common import ply_frames  # noqa: E402
+from common import TiledMap, ply_frames  # noqa: E402
 
 A = None
 
@@ -56,6 +56,37 @@ def load_frame(i):
     return out
 
 
+def occlusion_masks(x, y, yaw, zv, Q0):
+    """Per camera, a boolean (n_poles, n_samples) mask of pole samples NOT hidden behind nearer static map
+    structure (trees, buildings, other poles), from a coarse z-buffer of non-ground map points."""
+    c, s = np.cos(yaw), np.sin(yaw)
+    pts = NG.query(x, y, A.max_range + 5.0).astype(np.float64)
+    d = pts[:, :2] - [x, y]
+    loc = np.stack([c * d[:, 0] + s * d[:, 1], -s * d[:, 0] + c * d[:, 1], pts[:, 2] - zv], 1)
+    loc = loc[loc[:, 0] > -2.0]
+    loc = loc[np.linalg.norm(loc, axis=1) < A.occ_near]  # only nearby occluders (roadside trees, poles next to the car)
+    rng = np.linalg.norm(loc, axis=1)
+    qs = Q0.reshape(-1, 3)
+    rs = np.linalg.norm(qs, axis=1)
+    out = {}
+    for cname in CAMS:
+        uv, ok = CAM.project(cname, loc @ RM)
+        w, h = CAM.cams[cname][3] // 4, CAM.cams[cname][4] // 4
+        zb = np.full(h * w, np.inf, np.float32)
+        ui = (uv[ok, 0] / 4).astype(int).clip(0, w - 1)
+        vi = (uv[ok, 1] / 4).astype(int).clip(0, h - 1)
+        np.minimum.at(zb, vi * w + ui, rng[ok].astype(np.float32))
+        zb = zb.reshape(h, w)
+        zb = np.where(np.isfinite(zb), zb, 1e6).astype(np.float32)
+        zb = cv2.erode(zb, np.ones((3, 3), np.uint8))  # fill gaps between scan points (min filter)
+        puv, pok = CAM.project(cname, qs @ RM)
+        pu = (puv[:, 0] / 4).astype(int).clip(0, w - 1)
+        pv = (puv[:, 1] / 4).astype(int).clip(0, h - 1)
+        vis = pok & (rs <= zb[pv, pu] + A.occ_margin)
+        out[cname] = vis.reshape(Q0.shape[:2])
+    return out
+
+
 def match_frame(i, prior):
     x, y, yaw = prior
     c, s = np.cos(yaw), np.sin(yaw)
@@ -72,6 +103,10 @@ def match_frame(i, prior):
     hs = np.linspace(0.6, 1.0, A.n_samples)[None, :] * np.minimum(P[:, 4:5], A.max_h)  # sample heights per pole
     zrel = P[:, 2:3] + hs - zv                                                         # (np, ns)
     tensors = load_frame(i)
+    occ = None
+    if A.occlusion:
+        Q0 = np.stack(np.broadcast_arrays(u[:, None], v[:, None], zrel), -1)  # zero-offset pole samples
+        occ = occlusion_masks(x, y, yaw, zv, Q0)
     fw = np.arange(-A.max_fwd, A.max_fwd + 1e-6, A.step)
     lt = np.arange(-A.max_lat, A.max_lat + 1e-6, A.step)
     FW, LT = np.meshgrid(fw, lt, indexing='ij')
@@ -87,6 +122,8 @@ def match_frame(i, prior):
         uv, ok = CAM.project(cname, q)
         uv = uv.reshape(nh, len(P), A.n_samples, 2)
         ok = ok.reshape(nh, len(P), A.n_samples)
+        if occ is not None:
+            ok = ok & occ[cname][None]
         du = np.gradient(uv, axis=2)
         nrm = np.stack([-du[..., 1], du[..., 0]], -1)
         nrm /= np.linalg.norm(nrm, axis=-1, keepdims=True) + 1e-9
@@ -176,6 +213,9 @@ def main():
     ap.add_argument('--accum', type=int, default=0, help='+-frames whose score grids are summed')
     ap.add_argument('--accum_step', type=int, default=3)
     ap.add_argument('--out_step', type=int, default=1)
+    ap.add_argument('--occlusion', action='store_true', help='skip pole samples hidden behind nearer static map structure')
+    ap.add_argument('--occ_margin', type=float, default=3.0)
+    ap.add_argument('--occ_near', type=float, default=10.0, help='only occluders closer than this to the camera')
     ap.add_argument('--prior_noise', type=float, nargs=2, default=[0.0, 0.0])
     ap.add_argument('--frames', default='')
     ap.add_argument('--workers', type=int, default=4)
@@ -190,6 +230,8 @@ def main():
         PRIOR[:, 2] += np.radians(rng.normal(0, A.prior_noise[1], n))
     POLES = np.load(os.path.join(A.track_dir, A.poles))
     GROUND = GroundRaster(np.load(os.path.join(A.track_dir, 'map.npy'), mmap_mode='r'))
+    global NG
+    NG = TiledMap(os.path.join(A.track_dir, 'map_nonground.npy')) if A.occlusion else None
     CAM = Cameras(os.path.join(A.track_dir, f'{track}_images', 'camera_info'))
     CAMS = ['fl', 'f', 'fr']
     IMGDIR = {c: os.path.join(A.track_dir, f'{track}_images', f'{track}_{c}_images') for c in CAMS}
