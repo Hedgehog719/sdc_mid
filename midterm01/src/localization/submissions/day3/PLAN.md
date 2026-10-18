@@ -40,10 +40,10 @@ BEV fwd 0.55 -> 0.42 m, lat 0.21 -> 0.17 m, so the first-round pole corrections 
 - Track1 third iteration (per-camera lanes + poles round 2 + road) moves only 0.05-0.09 m from iter2: converged.
 
 ## Track1 (in order)
-1. iter3_pc_road           per-camera lanes + curated poles (round 2) + road region
-2. curated_p50_f0.3        curated poles (fwd change vs best 0.52 m rms)
-3. iter2_f0.3              second iteration (0.60 m vs best, 0.28 m vs round 1)
-4. iter3_pc
+1. iter3_pc                per-camera lanes + curated poles (round 2)
+2. iter3_pc_road           + road region (weaker where the map contains vehicles, e.g. Track1 frames 0-260)
+3. curated_p50_f0.3        curated poles (fwd change vs best 0.52 m rms)
+4. iter2_f0.3              second iteration (0.60 m vs best, 0.28 m vs round 1)
 5. curated_occ_p50_f0.3    + occlusion check (occluders < 6 m, 2 m margin)
 6. iter2_f0.5
 7. pole_p50_f0.3           uncurated, for comparison
@@ -56,3 +56,10 @@ then combinations.
 6. yaw_q0.05_bev1.0_poles
 7-8. yaw_q0.05_bev1.0, yaw_q0.07_bev1.0
 then combinations.
+
+## Road region caveat (viewer review, Track1 frames 60 / 225)
+The image segmentation labels both carriageways as road while the kerb row scan stopped at the median, and
+skipping tall blobs let the scan run into the scooter-lined arcade. A road-level definition (cells at the local
+road height, detrended for the ~10 deg map tilt; raised = sidewalk / islands; tall = unknown) matches the
+segmentation better on clean map sections (Track1 frame 800 corr 0.53) but near the Track1 start the map road is
+covered by vehicles captured at mapping time, so there is nothing to match. Road region is therefore secondary.

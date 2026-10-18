@@ -520,6 +520,54 @@ def map_road_scan(xyz, pose_xy, yaw, curb_h=0.07, curb_run=0.3, gap_run=1.5, dro
     return cv2.GaussianBlur(road, (0, 0), 1.5)
 
 
+def map_road_level(xyz, pose_xy, yaw, raise_h=0.08, win=4.0, obst_h=0.35):
+    """Road surface defined like the image segmentation 'road': every cell at road level, whichever carriageway.
+
+    Lowest map point per 0.1 m cell (holes filled with local minima, median-filtered). A cell is raised (sidewalk,
+    median island, traffic island) if it is more than raise_h above the lowest surface within `win` metres; cells
+    much higher (>= obst_h: vehicles / scooters left in the map, walls) are unknown. Returns (road 0..1, known)
+    so unknown cells can be treated as neutral in the correlation."""
+    c, s = np.cos(yaw), np.sin(yaw)
+    d = xyz[:, :2] - pose_xy
+    x = c * d[:, 0] + s * d[:, 1]
+    y = -s * d[:, 0] + c * d[:, 1]
+    z = xyz[:, 2]
+    r = ((X_MAX - x) / RES).astype(np.int64)
+    col = ((Y_MAX - y) / RES).astype(np.int64)
+    ok = (r >= 0) & (r < H) & (col >= 0) & (col < W)
+    hmin = np.full(H * W, np.inf)
+    np.minimum.at(hmin, r[ok] * W + col[ok], z[ok])
+    hmin = hmin.reshape(H, W).astype(np.float32)
+    valid = np.isfinite(hmin)
+    if valid.sum() < 200:
+        return np.zeros((H, W), np.float32), np.zeros((H, W), bool)
+    # detrend: the map is tilted ~10 deg w.r.t. the vehicle (and roads have crossfall / grade)
+    rr, cc = np.nonzero(valid)
+    xs, ys, zs = X_MAX - rr * RES, Y_MAX - cc * RES, hmin[valid].astype(np.float64)
+    keep = zs < np.percentile(zs, 60)
+    for _ in range(5):
+        A = np.stack([xs[keep], ys[keep], np.ones(keep.sum())], 1)
+        coef = np.linalg.lstsq(A, zs[keep], rcond=None)[0]
+        res = zs - A.dot(coef) if False else zs - (coef[0] * xs + coef[1] * ys + coef[2])
+        keep = np.abs(res) < max(2.5 * np.median(np.abs(res[keep])), 0.05)
+    gy, gx = np.meshgrid(Y_MAX - np.arange(W) * RES, X_MAX - np.arange(H) * RES)
+    hmin = np.where(valid, hmin - (coef[0] * gx + coef[1] * gy + coef[2]), np.inf).astype(np.float32)
+    big = np.where(valid, hmin, 1e4).astype(np.float32)
+    fill = cv2.erode(big, np.ones((5, 5), np.uint8))
+    h = np.where(valid, hmin, fill)
+    known = h < 1e3
+    h = np.where(known, h, 0).astype(np.float32)
+    h = cv2.medianBlur(h, 5)
+    k = max(3, int(win / RES) | 1)
+    low = cv2.erode(np.where(known, h, 1e4).astype(np.float32), np.ones((k, k), np.uint8))   # local lowest surface
+    low = cv2.blur(np.minimum(low, 1e3), (k // 2 | 1, k // 2 | 1))                             # smooth the reference
+    above = h - low
+    road = (above < raise_h).astype(np.float32)
+    unknown = (above >= obst_h) | ~known
+    road = cv2.GaussianBlur(road, (0, 0), 1.0)
+    return road, ~unknown
+
+
 class RoadProbBEV:
     """IPM of SegFormer road probability (quarter-res arrays) using an ImageBEV's projection maps."""
 
