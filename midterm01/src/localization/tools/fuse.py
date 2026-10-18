@@ -76,6 +76,7 @@ def main():
     p.add_argument('--bev_aniso_k', type=float, default=0.0,
                    help='>0: per-fix fwd sigma = clip(k / sharp_f, aniso_min, bev_fwd_sigma) (needs sharp_f in npz)')
     p.add_argument('--bev_aniso_min', type=float, default=0.3)
+    p.add_argument('--psi_csv', default='', help='CSV whose yaw is the heading input of the position RTS')
     p.add_argument('--bev_keep_edge', action='store_true',
                    help='keep BEV fixes whose yaw hit the search limit (default: dropped, they are unreliable)')
     p.add_argument('--bev_aniso_lat', action='store_true', help='also lat sigma = clip(k / sharp_l, aniso_min, 3 lat)')
@@ -143,6 +144,12 @@ def main():
             psi_fn = lambda t: s.imu_yaw_cf(t, a.yaw_cf_sigma, a.yaw_cf_ref)  # noqa: E731
         elif a.yaw_src != 'path':
             psi_fn = s.imu_yaw
+        if a.psi_csv:  # heading input of the position RTS from an earlier, better-headed solution
+            from scipy.interpolate import interp1d
+            _pc = pd.read_csv(a.psi_csv)
+            _f = interp1d(ts.astype(np.float64), np.unwrap(_pc.yaw.values), bounds_error=False,
+                          fill_value=(_pc.yaw.values[0], _pc.yaw.values[-1]))
+            psi_fn = lambda t, f=_f: f(np.atleast_1d(t).astype(np.float64))  # noqa: E731
         tm, zm, sm = s.gt, s.gxyz[:, :2], np.full(len(s.gt), a.rts_sigma)
         if a.reg and a.rts_scan_sigma > 0:
             z = {k: np.concatenate([np.load(f)[k] for f in a.reg]) for k in ['ts', 'T', 'P', 'inlier', 'map_keep']}

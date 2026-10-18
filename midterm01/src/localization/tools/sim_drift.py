@@ -59,6 +59,9 @@ def main():
     ap.add_argument('--aniso_k', type=float, default=0.0, help='>0: BEV fwd sigma = clip(k / sharp_f, aniso_min, fwd_sigma)')
     ap.add_argument('--aniso_min', type=float, default=0.3)
     ap.add_argument('--aniso_lat', action='store_true', help='also lat sigma = clip(k / sharp_l, aniso_min, 3 bev_sigma)')
+    ap.add_argument('--psi_noise', type=float, default=0.0, help='deg rms of a slow heading error (IMU-like), tau 20 s')
+    ap.add_argument('--qlat', type=float, default=None, help='cross-track process noise (fuse --rts_qlat)')
+    ap.add_argument('--qacc', type=float, default=1.0)
     ap.add_argument('--keep_edge', action='store_true', help='keep BEV fixes at the yaw search limit')
     ap.add_argument('--out_csv', default='', help='write the fused trajectory (x, y; reference yaw) as a prior CSV')
     ap.add_argument('--dump', default='', help='save per-frame fwd/lat errors (npz)')
@@ -78,6 +81,8 @@ def main():
     tg = np.arange(ts[0], ts[-1], 0.25e9)
     gx = np.stack([np.interp(tg, ts, dr.x), np.interp(tg, ts, dr.y)], 1)
     yaw_u = np.unwrap(ref.yaw.values)
+    if a.psi_noise > 0:  # the fusion's heading comes from the IMU in reality, not from the reference
+        yaw_u = yaw_u + np.radians(drift(len(ref), dt, a.psi_noise * np.sqrt(2), 20.0, a.seed + 7)[:, 0])
     psi = lambda t: np.interp(np.atleast_1d(t).astype(float), ts.astype(float), yaw_u)  # noqa: E731
     report('drifted GNSS', dr[['x', 'y']].values, ref)
     st = rts_smooth(ts, tg, gx, psi, a.gnss_sigma, 1.0, a.qpos)
@@ -127,7 +132,7 @@ def main():
             tm = np.concatenate([tm, rz['ts'][rm]])
             zm = np.concatenate([zm, np.stack([rz['mx'][rm], rz['my'][rm]], 1)])
             cov = np.concatenate([cov, rc])
-        st2 = rts_smooth(ts, tm, zm, psi, a.gnss_sigma, 1.0, a.qpos, huber=a.huber, meas_cov=cov)
+        st2 = rts_smooth(ts, tm, zm, psi, a.gnss_sigma, a.qacc, a.qpos, huber=a.huber, meas_cov=cov, q_lat=a.qlat)
         e = st2[:, :2] - ref[['x', 'y']].values
         yw = ref.yaw.values
         ef = np.cos(yw) * e[:, 0] + np.sin(yw) * e[:, 1]
