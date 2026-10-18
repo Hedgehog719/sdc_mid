@@ -45,7 +45,13 @@ TA baseline (C++): `cd /root/midterm && colcon build && source install/setup.bas
 | + Kalman/RTS smoothing with IMU heading | **1.087** (q 0.2) | 0.459 (q 0.4) |
 | yaw reference = heading of travel | 1.100 | 0.350 |
 | + yaw bias from offset probes (+0.29 / +0.22 deg) | 1.0786 | **0.3411** |
-| + **map-to-image BEV road-marking fixes in RTS** (lat 0.5 m, fwd 2.0 m) | **1.0042** | 0.358 (weak: 0.342) |
+| + map-to-image BEV road-marking fixes in RTS (lat 0.5 m, fwd 2.0 m) | 1.0042 | 0.358 (weak: 0.342) |
+| + lag probe / mean bias (T2) | | 0.3328 |
+| + NHC RTS, BEV quality weights, roll + suspension pitch, **yaw offset RTS (fused-path heading + BEV yaw)** | **0.9370** | **0.2826** |
+
+Day-2 single-change results (Track1 / Track2): yaw offset RTS 0.972 / 0.283 (largest gain), NHC cross-track
+0.1: 0.995 (0.05: 1.064), BEV variants 1.001-1.005, yaw-offset q 0.02 / 0.03 / 0.05 / 0.1 / 0.2 on T2:
+0.360 / 0.315 / 0.283 / 0.284 / 0.291.
 
 ### Map-to-image localization (scan matching against the LiDAR map)
 The image-derived point clouds are too distorted for direct registration (offline test on Track2 with a
