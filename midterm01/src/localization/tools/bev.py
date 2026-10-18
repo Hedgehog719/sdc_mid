@@ -220,7 +220,24 @@ GROUND_MODE = 'plane'
 USE_EGO_MASK = True
 
 
+HYBRID_RATIO = 0.6  # GROUND_MODE 'hybrid': use the local ground when plane road < ratio x local road
+
+
 def map_bev(xyz, intensity, pose_xy, yaw, plane_tol=0.25, rough_max=0.08):
+    """Road-surface intensity BEV; GROUND_MODE 'hybrid' keeps the single plane unless it clearly fails.
+
+    The single plane fails where the map's road surface is warped (Track1 start: the map ground dips ~1 m within
+    10 m while the real street is flat), leaving most of the road outside plane_tol. Then the local ground is
+    used for the map road mask (the image IPM stays flat, which is right for the real road).
+    """
+    if GROUND_MODE != 'hybrid':
+        return _map_bev(xyz, intensity, pose_xy, yaw, plane_tol, rough_max, GROUND_MODE)
+    mp = _map_bev(xyz, intensity, pose_xy, yaw, plane_tol, rough_max, 'plane')
+    ml = _map_bev(xyz, intensity, pose_xy, yaw, plane_tol, rough_max, 'local')
+    return ml if mp[1].mean() < HYBRID_RATIO * ml[1].mean() else mp
+
+
+def _map_bev(xyz, intensity, pose_xy, yaw, plane_tol, rough_max, mode):
     """Road-surface intensity BEV of map points around pose (vehicle BEV frame).
 
     Road = cells whose lowest points lie on the local road plane (fitted under the vehicle) within plane_tol
@@ -244,7 +261,7 @@ def map_bev(xyz, intensity, pose_xy, yaw, plane_tol=0.25, rough_max=0.08):
     hrel = z - (coef[0] * x + coef[1] * y + coef[2])
     r = ((X_MAX - x) / RES).astype(np.int64)
     col = ((Y_MAX - y) / RES).astype(np.int64)
-    if GROUND_MODE in ('local', 'smooth'):
+    if mode in ('local', 'smooth'):
         inb = (r >= 0) & (r < H) & (col >= 0) & (col < W)
         zmin = np.full(H * W, np.inf)
         np.minimum.at(zmin, r[inb] * W + col[inb], z[inb])
@@ -278,7 +295,7 @@ def map_bev(xyz, intensity, pose_xy, yaw, plane_tol=0.25, rough_max=0.08):
     rough_n = cv2.filter2D(rough, -1, k) / np.maximum(cnt_n, 1)
     road = (cnt_n >= 3) & (np.abs(hmean_n) < plane_tol) & (rough_n < rough_max)
     road = cv2.morphologyEx(road.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
-    if GROUND_MODE == 'smooth':  # road surface = smooth ground connected to the vehicle (local slope criterion)
+    if mode == 'smooth':  # road surface = smooth ground connected to the vehicle (local slope criterion)
         rs, kn = map_road_smooth(xyz.astype(np.float64), pose_xy, yaw)
         road = (rs > 0.5) & valid
     # fill ring gaps in intensity by normalised blur
