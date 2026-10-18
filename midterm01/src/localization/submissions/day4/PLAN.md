@@ -32,3 +32,19 @@ If not improved -> report and wait (day3/PLAN.md remains available).
 - Hand-marked pairs (41, /calib) solved jointly with per-frame pose nuisance give nearly the same rotations
   (fl (-0.5, +0.3, +0.7), f (-0.5, +0.3, +0.3), fr (+0.2, +0.2, -2.2)); camera height 1.52 m (not too high).
 - Track2 drift simulation: 0.558 -> 0.547 (lateral 0.292 -> 0.254; lane fixes lateral rms 0.51 -> 0.28 m).
+
+## 03:45 status / to do after the 27-min pause (user: full review of map + logic, then final runs + submit)
+Leader: T1 0.760 (ours 0.93699), T2 0.257 (ours 0.28263). Quota resets 08:00 (both tracks used 15/15 today).
+Done (sim T2-drift): 0.547 -> 0.326 (profile ground, min_speed 0, aniso k=0.01 lat, clean map, drop yaw-edge fixes).
+Rejected: iteration with fused prior (0.345), map blob filter (0.335), isolated-point removal (no change),
+pinned single height, per-block level correction (only pitch mode works -> map_clean6 for T1).
+Pending results: c_bm_t2 (real T2, clean+profile), c_rds_drift / c6_rds_t1 (artefact-free slope kerb map).
+T1 candidate ready: submissions/day4b/track1/new_c6e.csv (yaw mean aligned to the 0.93699 file).
+Review checklist:
+ 1. map: clean_map on both maps (other stationary periods? T1 map end removed), 0.15 m double ground layer
+    (lidar pitch bias) effects on lanes/kerb/pole heights, ego roof line, T2 start.
+ 2. bev_match: signs, sharp_f/sharp_l axes, edge handling, accumulation (PRIOR_REL) at low speed, dyn attitude.
+ 3. fuse: covariances, huber, gating, start_hold, yaw RTS inputs, yaw mean alignment, T1 time_shift (not applied).
+ 4. pole_match / road fixes with clean maps; kerb slope fix.
+ 5. T2: BEV position fixes on top of GNSS (consistency check of high-sharpness fixes first).
+ 6. decide finals, run, submit after 08:00 (estimated best first; stop a track once it improves).
