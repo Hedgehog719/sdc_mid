@@ -16,6 +16,66 @@ import pandas as pd
 from scipy.spatial import cKDTree
 
 
+def level_pitch(a, P, I, xyz, fix_path, z_ref):
+    """Per block: fit height offset + slope along the path to its own-lane road points (lowest layer per 1 m),
+    referred to the level road at z_ref, and subtract it (pitch / height error of scans after the stop)."""
+    sp = np.r_[0, np.cumsum(np.hypot(*np.diff(fix_path, axis=0).T))]
+    tree = cKDTree(fix_path)
+    d, j = tree.query(xyz[:, :2], distance_upper_bound=40.0)
+    near = np.isfinite(d)
+    jj = np.where(near, j, 0)
+    hx, hy = np.gradient(fix_path[:, 0]), np.gradient(fix_path[:, 1])
+    n = np.hypot(hx, hy)
+    hx, hy = hx / n, hy / n
+    lat = -hy[jj] * (xyz[:, 0] - fix_path[jj, 0]) + hx[jj] * (xyz[:, 1] - fix_path[jj, 1])
+    sa = sp[jj] + hx[jj] * (xyz[:, 0] - fix_path[jj, 0]) + hy[jj] * (xyz[:, 1] - fix_path[jj, 1])
+    strip = near & (np.abs(lat) < a.strip) & (d < a.strip + 0.5)
+    zc = xyz[:, 2].copy()
+    K = a.block
+    nfix = 0
+    for b in range((len(P) + K - 1) // K):
+        sl = slice(b * K, min((b + 1) * K, len(P)))
+        m = strip[sl]
+        if m.sum() < 300:
+            continue
+        ss, zz = sa[sl][m], xyz[sl][m, 2] - z_ref
+        keep = np.abs(zz) < 1.0
+        ss, zz = ss[keep], zz[keep]
+        if len(ss) < 300:
+            continue
+        bins = np.floor(ss).astype(int)
+        ub = np.unique(bins)
+        bs, bz = [], []
+        for u in ub:
+            zb = zz[bins == u]
+            if len(zb) >= 10:
+                bs.append(u + 0.5)
+                bz.append(np.percentile(zb, 20))
+        bs, bz = np.array(bs), np.array(bz)
+        if len(bs) < 5 or np.ptp(bs) < 5:
+            continue
+        w = np.ones(len(bs), bool)
+        for _ in range(3):
+            coef = np.polyfit(bs[w], bz[w], 1)
+            rr = bz - np.polyval(coef, bs)
+            w = np.abs(rr) < max(2.5 * np.median(np.abs(rr[w])), 0.05)
+        lo_s, hi_s = bs.min() - 10, bs.max() + 10
+        corr_at = lambda q: np.polyval(coef, np.clip(q, lo_s, hi_s))  # noqa: E731
+        span = np.abs(corr_at(np.array([bs.min(), bs.max()])))
+        if span.max() <= a.tol:
+            continue
+        blk_s = np.where(near[sl], sa[sl], np.clip(sa[sl], lo_s, hi_s))
+        zc[sl] = xyz[sl][:, 2] - corr_at(blk_s)
+        nfix += 1
+        print(f'  block {b * K / 1e6:7.3f}M  s {bs.min():5.1f}..{bs.max():5.1f} m  offset {coef[1] + coef[0] * bs.mean():+.2f} m '
+              f'slope {np.degrees(np.arctan(coef[0])):+.2f} deg -> corrected')
+    print(f'pitch-corrected {nfix} blocks')
+    out = np.asarray(P).copy()
+    out[:, 2] = zc.astype(out.dtype)
+    np.save(os.path.join(a.track_dir, f'map_{a.tag_out}.npy'), out)
+    np.save(os.path.join(a.track_dir, f'map_intensity_{a.tag_out}.npy'), np.asarray(I))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('track_dir')
@@ -29,7 +89,8 @@ def main():
     ap.add_argument('--tol', type=float, default=0.10)
     ap.add_argument('--block', type=int, default=20000)
     ap.add_argument('--tilt', action='store_true', help='correct: also remove the block ground tilt (ill-posed for sweep sectors)')
-    ap.add_argument('--mode', choices=['remove', 'correct'], default='correct',
+    ap.add_argument('--strip', type=float, default=1.5, help='pitch mode: half width (m) of the own-lane strip')
+    ap.add_argument('--mode', choices=['remove', 'correct', 'pitch'], default='pitch',
                     help='correct: subtract the block\'s ground plane offset (keeps coverage); remove: drop the block')
     a = ap.parse_args()
     P = np.load(os.path.join(a.track_dir, f'map_{a.tag_in}.npy'), mmap_mode='r')
@@ -53,6 +114,8 @@ def main():
     lo = np.percentile(zr, 5)
     z_ref = float(np.median(zr[zr < lo + 0.3]))
     print(f'reference road height (frames {r0}-{r1}): {z_ref:.3f} m from {len(zr)} points')
+    if a.mode == 'pitch':
+        return level_pitch(a, P, I, xyz, fix_path, z_ref)
     d, _ = tree_fix.query(xyz[:, :2], distance_upper_bound=a.corridor)
     inc = np.isfinite(d)
     K = a.block

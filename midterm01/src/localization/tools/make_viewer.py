@@ -35,6 +35,7 @@ def main():
     ap.add_argument('--step', type=int, default=15)
     ap.add_argument('--label', default='')
     ap.add_argument('--variant', default='', help='render into work/viewer/<Track>_<variant> for A/B comparison')
+    ap.add_argument('--show_curb', action='store_true', help='draw map_curb (cyan); not used by the matchers')
     ap.add_argument('--road_edge', choices=['smooth', 'scan'], default='smooth',
                     help='yellow outline: smooth = map road used by the kerb matcher; scan = old row-scan heuristic')
     ap.add_argument('--ground_mode', default='plane', help='map road mask: plane | local | smooth | hybrid')
@@ -71,6 +72,8 @@ def main():
             edge = (rs > 0.5).astype(np.uint8)
         edge = (edge - cv2.erode(edge, np.ones((3, 3), np.uint8))) > 0
         curb = map_curb(pts.astype(np.float64), np.array([x, y]), yaw) > 0.03
+        if not a.show_curb:  # map_curb (height steps) is not used by the matchers; double ground layers flood it
+            curb = np.zeros_like(curb)
         layers = [(to_vehicle(lanes, 1.5), (0, 0, 255), 1), (to_vehicle(curb, 1.5), (255, 255, 0), 1),
                   (to_vehicle(edge, 1.5), (0, 230, 255), 2)]
         c_, s_ = np.cos(yaw), np.sin(yaw)
