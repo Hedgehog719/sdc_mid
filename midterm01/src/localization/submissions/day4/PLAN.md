@@ -48,3 +48,13 @@ Review checklist:
  4. pole_match / road fixes with clean maps; kerb slope fix.
  5. T2: BEV position fixes on top of GNSS (consistency check of high-sharpness fixes first).
  6. decide finals, run, submit after 08:00 (estimated best first; stop a track once it improves).
+
+## 04:05 review results (sim T2-drift 0.547 -> 0.262) and final candidates (submissions/day4/final/)
+Review findings: yaw-edge BEV fixes (bug), process noise retuned (gnss 0.5 / qpos 0.1 / qlat 0.05; old
+values were for weak fixes), heading input from a better-headed first pass (tight qlat follows the RTS
+heading), D-pad artefact in the kerb slope map (bug), pole weights (pct 60, fwd 0.4). Lever arm checked on T2
+(fixes vs unbiased GNSS: lat ~0, fwd +0.05..0.17): fine. Three T2 archive copies held same-named T1 files: fixed.
+T2 start (stationary, 7.5 % of frames): clean-map BEV yaw (peak 0.35) and the map lane direction (-17.0 deg)
+say the start yaw is -17.0..-17.4; current best has -18.6 -> stronger BEV yaw weight (0.7 deg).
+Track1: 1) t1_fin.csv  2) t1_c6e_backup.csv (old process noise)  3) day4/track1/cal_planned.csv
+Track2: decided after the small-drift sim (position fixes or not); yaw: t2_yawbev0.7.csv, then t2_yawonly.csv

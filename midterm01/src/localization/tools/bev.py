@@ -700,7 +700,7 @@ def map_road_level(xyz, pose_xy, yaw, raise_h=0.08, win=4.0, obst_h=0.35):
     return road, ~unknown
 
 
-ROAD_SLOPE = os.environ.get('SDC_ROAD_SLOPE', 'roll')  # 'smooth': artefact-free slope (see map_road_smooth)
+ROAD_SLOPE = os.environ.get('SDC_ROAD_SLOPE', 'smooth')  # 'smooth': artefact-free slope (see map_road_smooth)
 ROAD_LEVEL_TOL = 0.0   # v3 (ramp-proof road level) when > 0, e.g. 0.08
 ROAD_FILL_M2 = 0.0     # v3 small-hole filling when > 0, e.g. 3.0
 
