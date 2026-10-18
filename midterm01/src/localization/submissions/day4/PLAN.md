@@ -1,4 +1,18 @@
-# Next submission window (2026-10-19 08:00 Taiwan time) — user instruction
+# Next submission window (2026-10-19 08:00 Taiwan time) — UPDATED 03:30 per user
+
+User (03:25): "有更準確的 消除大問題的版本就取代原本要提交的檔案 ... 等預估最佳結果出現再交" ->
+submit the estimated-best NEW version first (even after 08:00 if still computing); if a track improves, STOP
+that track and wait for the user's reply. The cal_* files below are the fallback.
+
+New pipeline (Track2 drift sim 0.547 -> 0.341):
+- maps cleaned of the mapping vehicle's stationary scans (tools/clean_map.py; T1 18 %, T2 33 % of points:
+  SLAM height/attitude drift + queued cars at the track starts) and the Track1 start levelled
+  (tools/level_start.py --mode pitch, road level with frames 210-330 -> map_clean6)
+- lane map with the road-profile ground mode (--ground_mode profile)
+- BEV fixes at all speeds (--bev_min_speed 0) with per-fix anisotropic covariance from the NCC peak
+  distinctiveness (--bev_aniso_k 0.01 --bev_aniso_lat)
+
+## Original plan (fallback)
 
 Submit FIRST the calibrated extended-BEV versions; if they beat the current best, STOP and wait for the user's reply.
 
