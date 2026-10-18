@@ -50,6 +50,59 @@ def side_view(M, px, py, zb, h, size=(140, 240)):
     return img
 
 
+NS = 16
+
+
+def find_views(k, px, py, zb, h, u, v, r, frames, zv, C, cams, masks, Rm, n_views=2):
+    """Up to n_views (frame, cam) views at different ranges: >= half of the pole visible, least YOLO-masked,
+    range close to 12 m preferred; falls back to the nearest frame (<= 60 m) if nothing better exists."""
+    hs = np.linspace(0.0, min(h, 6.0), NS)
+    cand = []
+    order = np.argsort(np.abs(r - 12.0))
+    for j in order:
+        if r[j] > 60 or r[j] < 3:
+            continue
+        i = frames[j]
+        pts = np.stack([np.full(NS, u[j]), np.full(NS, v[j]), zb + hs - zv[i]], 1) @ Rm
+        for cam in cams:
+            uv, ok = C.project(cam, pts)
+            if ok.mean() < 0.5:
+                continue
+            mk = np.unpackbits(masks[cam][i], axis=1)
+            mx = np.clip((uv[ok, 0] / 2).astype(int), 0, mk.shape[1] - 1)
+            my = np.clip((uv[ok, 1] / 2).astype(int), 0, mk.shape[0] - 1)
+            mfrac = float(mk[my, mx].mean())
+            cost = abs(r[j] - 12.0) / 4.0 + 6.0 * mfrac + (0.0 if 4 <= r[j] <= 40 else 5.0) + (0.0 if cam == 'f' else 0.3)
+            cand.append((cost, i, cam, uv, ok, float(r[j]), mfrac))
+        if len(cand) > 60:
+            break
+    cand.sort(key=lambda c: c[0])
+    views = []
+    for c_ in cand:
+        if all(abs(c_[5] - w[4]) > 5.0 for w in views):
+            views.append(c_[1:])
+        if len(views) == n_views:
+            break
+    return views
+
+
+def crop_view(img, uv, ok):
+    p = uv[ok]
+    x0 = int(np.median(p[:, 0]))
+    top, bot = int(p[:, 1].min()), int(p[:, 1].max())
+    hpx = max(bot - top, 60)
+    y0, y1 = max(top - hpx // 3, 0), min(bot + hpx // 3, img.shape[0])
+    half = max(int(0.45 * (y1 - y0)), 80)
+    xa, xb = max(x0 - half, 0), min(x0 + half, img.shape[1])
+    crop = img[y0:y1, xa:xb].copy()
+    for (pu, pv) in [p[np.argmax(p[:, 1])], p[np.argmin(p[:, 1])]]:
+        pu, pv = int(pu) - xa, int(pv) - y0
+        cv2.line(crop, (pu - 20, pv), (pu - 8, pv), (0, 0, 255), 2)
+        cv2.line(crop, (pu + 8, pv), (pu + 20, pv), (0, 0, 255), 2)
+    sc = 240.0 / max(crop.shape[0], 1)
+    return cv2.resize(crop, (max(int(crop.shape[1] * sc), 1), 240))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('track_dir')
@@ -81,53 +134,23 @@ def main():
         v = -s * d[:, 0] + c * d[:, 1]
         r = np.hypot(u, v)
         n_seen = int(((r > 4) & (r < 35)).sum())
-        best = None
-        for j in np.argsort(np.abs(r - 12.0)):
-            if not (8 <= r[j] <= 20):
-                continue
-            i = frames[j]
-            hs = np.array([0.0, min(h, 6.0)])
-            pts = np.stack([np.full(2, u[j]), np.full(2, v[j]), zb + hs - zv[i]], 1) @ Rm
-            for cam in cams:
-                uv, ok = C.project(cam, pts)
-                if not ok.all():
-                    continue
-                mk = np.unpackbits(masks[cam][i], axis=1)
-                mx, my = (uv[:, 0] / 2).astype(int), (uv[:, 1] / 2).astype(int)
-                if mk[np.clip(my, 0, mk.shape[0] - 1), np.clip(mx, 0, mk.shape[1] - 1)].any():
-                    continue
-                best = (i, cam, uv, r[j])
-                break
-            if best:
-                break
-        crop_b64 = ''
-        if best:
-            i, cam, uv, rr = best
+        if n_seen == 0:  # never within the matching range of the route: not used by pole_match, skip
+            continue
+        views = find_views(k, px, py, zb, h, u, v, r, frames, zv, C, cams, masks, Rm)
+        imgs_b64, srcs = [], []
+        for (i, cam, uv, ok, rr, mfrac) in views:
             img = cv2.imread(os.path.join(imgdir[cam], names[cam][i]))
-            x0 = int(uv[:, 0].mean())
-            top, bot = int(uv[1, 1]), int(uv[0, 1])
-            hpx = max(bot - top, 40)
-            y0, y1 = max(top - hpx // 3, 0), min(bot + hpx // 4, img.shape[0])
-            half = max(int(0.45 * (y1 - y0)), 60)
-            xa, xb = max(x0 - half, 0), min(x0 + half, img.shape[1])
-            crop = img[y0:y1, xa:xb].copy()
-            for (pu, pv) in uv:
-                pu, pv = int(pu) - xa, int(pv) - y0
-                cv2.line(crop, (pu - 18, pv), (pu - 7, pv), (0, 0, 255), 2)
-                cv2.line(crop, (pu + 7, pv), (pu + 18, pv), (0, 0, 255), 2)
-            sc = 240.0 / max(crop.shape[0], 1)
-            crop = cv2.resize(crop, (max(int(crop.shape[1] * sc), 1), 240))
-            crop_b64 = b64jpg(crop)
-            src = f'frame {i} cam {cam} {rr:.0f} m'
-        else:
-            src = 'no clear view (8-20 m, unmasked)'
+            imgs_b64.append(b64jpg(crop_view(img, uv, ok)))
+            srcs.append(f'frame {i} {cam} {rr:.0f} m' + (f' ({100 * mfrac:.0f}% masked)' if mfrac > 0 else ''))
+        crop_b64 = imgs_b64
+        src = ' | '.join(srcs) if srcs else 'never within 60 m of the route'
         cards.append({'id': k, 'x': round(float(px), 2), 'y': round(float(py), 2), 'h': round(float(h), 1),
-                      'seen': n_seen, 'src': src, 'img': crop_b64, 'side': b64jpg(side_view(M, px, py, zb, h))})
-        if k % 25 == 0:
-            print(f'{k}/{len(P)}', flush=True)
+                      'seen': n_seen, 'src': src, 'imgs': crop_b64, 'side': b64jpg(side_view(M, px, py, zb, h))})
+        if len(cards) % 25 == 0:
+            print(f'{len(cards)} cards ({k}/{len(P)} poles scanned)', flush=True)
     html = PAGE.replace('__TRACK__', track).replace('__DATA__', json.dumps(cards))
     open(a.out_html, 'w').write(html)
-    print('wrote', a.out_html, len(cards), 'poles')
+    print('wrote', a.out_html, len(cards), 'poles near the route (of', len(P), 'in the map)')
 
 
 PAGE = r'''<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
@@ -139,10 +162,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,sans
 header{position:sticky;top:0;z-index:2;background:var(--bg);padding:10px 16px;border-bottom:1px solid #8883;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 header b{font-size:16px}.pill{padding:2px 8px;border-radius:10px;background:#8882}
 button,select{font:inherit;padding:5px 10px;border-radius:6px;border:1px solid #8886;background:var(--card);color:var(--ink);cursor:pointer}
-main{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;padding:12px 16px}
+main{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:12px;padding:12px 16px}
 .card{background:var(--card);border-radius:10px;padding:8px;border:3px solid var(--unk);outline:none}
 .card.keep{border-color:var(--keep)}.card.reject{border-color:var(--rej);opacity:.55}.card:focus{box-shadow:0 0 0 3px var(--focus)}
-.imgs{display:flex;gap:6px;align-items:flex-start;height:240px}.imgs img{height:240px;border-radius:6px;max-width:190px;object-fit:cover}
+.imgs{display:flex;gap:6px;align-items:flex-start;height:240px}.imgs{overflow-x:auto}.imgs img{height:240px;border-radius:6px;max-width:220px;object-fit:cover}
 .none{width:180px;height:240px;display:flex;align-items:center;justify-content:center;color:var(--mute);border:1px dashed #8886;border-radius:6px;text-align:center;padding:6px}
 .meta{color:var(--mute);font-size:12px;margin:6px 0}.row{display:flex;gap:6px}
 .row button.k{border-color:var(--keep)}.row button.r{border-color:var(--rej)}
@@ -165,9 +188,9 @@ function render(){
   for (const p of DATA){
     const d = dec[p.id] || 'unk';
     if (f === 'unk' && d !== 'unk') continue; if (f === 'keep' && d !== 'keep') continue;
-    if (f === 'reject' && d !== 'reject') continue; if (f === 'noimg' && p.img) continue;
+    if (f === 'reject' && d !== 'reject') continue; if (f === 'noimg' && p.imgs.length) continue;
     const el = document.createElement('div'); el.className = 'card ' + (d === 'unk' ? '' : d); el.tabIndex = 0; el.dataset.id = p.id;
-    el.innerHTML = `<div class="imgs">${p.img ? `<img src="${p.img}" alt="camera">` : `<div class="none">${p.src}</div>`}<img src="${p.side}" alt="lidar side view"></div>
+    el.innerHTML = `<div class="imgs">${p.imgs.length ? p.imgs.map(s => `<img src="${s}" alt="camera">`).join('') : `<div class="none">${p.src}</div>`}<img src="${p.side}" alt="lidar side view"></div>
       <div class="meta">#${p.id} · 高 ${p.h} m · 可見 ${p.seen} 次 · (${p.x}, ${p.y}) · ${p.src}</div>
       <div class="row"><button class="k">保留 K</button><button class="r">剔除 R</button><button class="u">取消 U</button></div>`;
     el.querySelector('.k').onclick = () => set(p.id, 'keep'); el.querySelector('.r').onclick = () => set(p.id, 'reject');

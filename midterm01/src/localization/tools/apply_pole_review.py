@@ -16,7 +16,11 @@ ap.add_argument('--drop_undecided', action='store_true', help='keep only poles e
 a = ap.parse_args()
 P = np.load(os.path.join(a.track_dir, 'poles.npy'))
 r = json.load(open(a.review_json))
-keep = set(r['keep']) | (set() if a.drop_undecided else set(r.get('undecided', [])))
+# poles far from the route are not on the review page and never used; they stay in the file unless dropped
+if a.drop_undecided:
+    keep = set(r['keep'])
+else:
+    keep = set(range(len(P))) - set(r['reject'])
 idx = np.array(sorted(keep), int)
 np.save(os.path.join(a.track_dir, 'poles_curated.npy'), P[idx])
 print(f"{r['track']}: {len(idx)} of {len(P)} poles kept ({len(r['reject'])} rejected) -> poles_curated.npy")
