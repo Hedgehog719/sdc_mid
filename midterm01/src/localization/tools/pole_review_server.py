@@ -173,6 +173,56 @@ loadMask();
 </script></body></html>'''
 
 
+CALIB_PAGE = r'''<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Camera calibration pairs</title>
+<style>
+:root{--bg:#f6f7f9;--ink:#1d2330;--mute:#6b7280;--card:#fff;--acc:#2563eb}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--ink:#e6e9ee;--mute:#9aa3af;--card:#1b2027}}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,sans-serif}
+header{position:sticky;top:0;background:var(--bg);padding:8px 16px;border-bottom:1px solid #8883;display:flex;gap:8px;flex-wrap:wrap;align-items:center;z-index:2}
+button,select{font:inherit;padding:4px 10px;border-radius:6px;border:1px solid #8886;background:var(--card);color:var(--ink);cursor:pointer}
+button.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}main{padding:10px 16px}canvas{max-width:100%;display:block;border-radius:6px;cursor:crosshair}
+.mute{color:var(--mute);font-size:12px}
+</style></head><body>
+<header><b>相機校正：地圖車道線 ↔ 影像</b><select id="fr"></select><span id="cams"></span>
+<label><input type="checkbox" id="showpts" checked> 顯示地圖點</label>
+<button id="undo">刪除最後一組</button><span id="st" class="mute"></span></header>
+<main><div class="mute">步驟：① 點一個<b style="color:#ff3030">紅點</b>（地圖車道線投影的位置，會選到最近的點並變黃）；② 再點影像中<b>同一段車道線實際的位置</b>（白線上對應的點）。
+綠線＝已完成的對應（從地圖投影位置指向實際位置）。每組都會自動存檔。建議每台相機在不同幀、畫面不同位置（中央、邊緣、近、遠）各標 10–20 組，邊緣越多越能校正魚眼失真。</div>
+<canvas id="cv"></canvas></main>
+<script>
+const FR=__FRAMES__; let cam='f', fi=0, pts=[], pairs=[], sel=null, img=new Image();
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d'), frs=document.getElementById('fr'), cams=document.getElementById('cams');
+FR.forEach((f,k)=>{const o=document.createElement('option'); o.value=k; o.textContent=f[0]+' frame '+f[1]; frs.appendChild(o);});
+['fl','f','fr'].forEach(c=>{const b=document.createElement('button'); b.textContent=c; b.onclick=()=>{cam=c; load();}; cams.appendChild(b);});
+frs.onchange=()=>{fi=+frs.value; load();}; document.getElementById('showpts').onchange=draw;
+async function load(){const [t,f]=FR[fi]; sel=null;
+  [...cams.children].forEach(b=>b.className=b.textContent===cam?'on':'');
+  pts=(await (await fetch('/api/calibpts/'+t+'/'+f+'/'+cam)).json()).points||[];
+  pairs=(await (await fetch('/api/calibpairs')).json()).pairs||[];
+  img.onload=draw; img.src='/hoodimg/'+t+'/'+cam+'/'+f+'.jpg';}
+function mine(){const [t,f]=FR[fi]; return pairs.filter(p=>p.track===t&&p.frame===f&&p.cam===cam);}
+function draw(){if(!img.width)return; cv.width=img.width; cv.height=img.height; ctx.drawImage(img,0,0);
+  if(document.getElementById('showpts').checked){ctx.fillStyle='rgba(255,40,40,0.9)'; pts.forEach(p=>ctx.fillRect(p.uv[0]-2,p.uv[1]-2,4,4));}
+  mine().forEach(p=>{ctx.strokeStyle='#00e000'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(p.uv_map[0],p.uv_map[1]); ctx.lineTo(p.uv_img[0],p.uv_img[1]); ctx.stroke();
+    ctx.fillStyle='#00e000'; ctx.beginPath(); ctx.arc(p.uv_img[0],p.uv_img[1],5,0,7); ctx.fill();});
+  if(sel){ctx.fillStyle='#ffff00'; ctx.beginPath(); ctx.arc(sel.uv[0],sel.uv[1],7,0,7); ctx.fill();}
+  document.getElementById('st').textContent=`這台相機這一幀 ${mine().length} 組，全部 ${pairs.length} 組`;}
+cv.onclick=async e=>{const r=cv.getBoundingClientRect(); const x=(e.clientX-r.left)*cv.width/r.width, y=(e.clientY-r.top)*cv.height/r.height;
+  if(!sel){let best=null,bd=1e9; pts.forEach(p=>{const d=(p.uv[0]-x)**2+(p.uv[1]-y)**2; if(d<bd){bd=d;best=p;}}); if(best&&bd<900){sel=best; draw();} return;}
+  const [t,f]=FR[fi]; const pr={track:t,frame:f,cam:cam,xyz:sel.xyz,uv_map:sel.uv,uv_img:[Math.round(x*10)/10,Math.round(y*10)/10]};
+  sel=null; pairs.push(pr); draw();
+  await fetch('/api/calibpairs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({add:pr})});};
+document.getElementById('undo').onclick=async()=>{const m=mine(); if(!m.length)return; const last=m[m.length-1];
+  pairs=pairs.filter(p=>p!==last); draw(); await fetch('/api/calibpairs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({remove:last})});};
+load();
+</script></body></html>'''
+
+
+def calib_pairs_path():
+    return os.path.join(ROOT, 'calib_pairs.json')
+
+
 def hood_path(cam):
     return os.path.join(ROOT, f'ego_mask_{cam}.json')
 
@@ -208,9 +258,21 @@ class H(BaseHTTPRequestHandler):
                 rows.append(f'<li><a href="/{t}.html">{t} 桿子審核</a> — {total} poles, decided {len(d)} ｜ '
                             f'<a href="/viewer/{t}">{t} 定位檢視</a> ｜ <a href="/compare/{t}">{t} 版本對比</a></li>')
             rows.append('<li><a href="/hood">自車遮罩編輯（引擎蓋／車體）</a></li>')
+            rows.append('<li><a href="/calib">相機校正：標地圖車道線 ↔ 影像對應點</a></li>')
             return self._send(200, '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
                                    '<title>Pole review</title><body style="font:16px system-ui;padding:16px">'
                                    '<h2>Pole review</h2><ul>' + ''.join(rows) + '</ul></body>')
+        if p in ('/calib', '/calib/'):
+            d = os.path.join(ROOT, 'calib_pts')
+            fr = sorted({(n.split('_')[0], int(n.split('_')[1])) for n in os.listdir(d)}) if os.path.isdir(d) else []
+            return self._send(200, CALIB_PAGE.replace('__FRAMES__', json.dumps([list(x) for x in fr])))
+        m = re.fullmatch(r'/api/calibpts/(Track[12])/(\d{1,5})/(f|fl|fr)', p)
+        if m:
+            f = os.path.join(ROOT, 'calib_pts', f'{m.group(1)}_{int(m.group(2))}_{m.group(3)}.json')
+            return self._send(200, open(f).read() if os.path.exists(f) else '{}', 'application/json')
+        if p == '/api/calibpairs':
+            f = calib_pairs_path()
+            return self._send(200, open(f).read() if os.path.exists(f) else '{"pairs": []}', 'application/json')
         if p in ('/hood', '/hood/'):
             return self._send(200, HOOD_PAGE)
         m = re.fullmatch(r'/hoodimg/(Track[12])/(f|fl|fr)/(\d{1,5})\.jpg', p)
@@ -254,6 +316,35 @@ class H(BaseHTTPRequestHandler):
         self._send(404, 'not found')
 
     def do_POST(self):
+        if self.path.split('?')[0] == '/api/calibpairs':
+            n = int(self.headers.get('Content-Length', 0))
+            if n > 100_000:
+                return self._send(413, 'too large')
+            try:
+                j = json.loads(self.rfile.read(n))
+                f = calib_pairs_path()
+                data = json.load(open(f)) if os.path.exists(f) else {'pairs': []}
+                if 'add' in j:
+                    q = j['add']
+                    rec = {'track': str(q['track']), 'frame': int(q['frame']), 'cam': str(q['cam']),
+                           'xyz': [float(v) for v in q['xyz']], 'uv_map': [float(v) for v in q['uv_map']],
+                           'uv_img': [float(v) for v in q['uv_img']]}
+                    if rec['cam'] not in ('f', 'fl', 'fr') or rec['track'] not in TRACKS:
+                        raise ValueError('bad cam/track')
+                    data['pairs'].append(rec)
+                if 'remove' in j:
+                    q = j['remove']
+                    for k in range(len(data['pairs']) - 1, -1, -1):
+                        r_ = data['pairs'][k]
+                        if r_['track'] == q['track'] and r_['frame'] == q['frame'] and r_['cam'] == q['cam'] and r_['uv_img'] == q['uv_img']:
+                            data['pairs'].pop(k)
+                            break
+            except Exception as e:  # noqa: BLE001
+                return self._send(400, f'bad request: {e}')
+            tmp = calib_pairs_path() + '.tmp'
+            json.dump(data, open(tmp, 'w'))
+            os.replace(tmp, calib_pairs_path())
+            return self._send(200, json.dumps({'ok': True, 'n': len(data['pairs'])}), 'application/json')
         mh = re.fullmatch(r'/api/hood/(f|fl|fr)', self.path.split('?')[0])
         if mh:
             n = int(self.headers.get('Content-Length', 0))
