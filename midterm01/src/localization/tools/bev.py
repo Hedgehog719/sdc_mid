@@ -686,6 +686,8 @@ class RoadProbBEV:
         d = os.path.join(bev.track_dir, subdir)
         z = {c: np.load(os.path.join(d, f'{c}.npz')) for c in bev.cams}
         self.prob = {c: z[c]['road'] for c in bev.cams}
+        # road users from the segmentation itself (if saved): unknown, neither road nor non-road
+        self.obj = {c: z[c]['obj'] for c in bev.cams} if 'obj' in z['f'] else None
         self.side = {c: z[c]['side'] for c in bev.cams} if mode == 'road_minus_side' and 'side' in z['f'] else None
         self.use_masks = True
         self.colour = mode == 'seg_colour'  # average with a per-frame asphalt colour model (Lab) where both exist
@@ -756,6 +758,9 @@ class RoadProbBEV:
             if self.use_masks and c in b.masks:
                 m = np.unpackbits(b.masks[c][i], axis=1)[:, :wq * 2]
                 bad |= cv2.resize(m, (wq * 4, hq * 4), interpolation=cv2.INTER_NEAREST)
+            if self.obj is not None:
+                ob = cv2.dilate((self.obj[c][i] > 100).astype(np.uint8), np.ones((5, 5), np.uint8))
+                bad |= cv2.resize(ob, (wq * 4, hq * 4), interpolation=cv2.INTER_NEAREST)
             if c == 'f' and b.hood is not None and b.hood.shape == bad.shape:
                 bad |= b.hood.astype(np.uint8)
             mx, my, v = b.maps[c]

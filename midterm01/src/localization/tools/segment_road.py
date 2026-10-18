@@ -27,6 +27,7 @@ def main():
     ap.add_argument('--model', choices=['segformer', 'mask2former'], default='segformer')
     ap.add_argument('--m2f_path', default='/root/data/weights/m2f_cs', help='local Mask2Former Swin-L Cityscapes')
     ap.add_argument('--out', default='road')
+    ap.add_argument('--road_only', action='store_true', help='road class only (vehicles / people saved as obj)')
     a = ap.parse_args()
     track = os.path.basename(os.path.normpath(a.track_dir))
     out_dir = os.path.join(a.track_dir, a.out)
@@ -49,7 +50,7 @@ def main():
     for cam in ['f', 'fl', 'fr']:
         d = os.path.join(a.track_dir, f'{track}_images', f'{track}_{cam}_images')
         names = sorted(os.listdir(d))
-        res, res_side = [], []
+        res, res_side, res_obj = [], [], []
         for b in range(0, len(names), a.batch):
             imgs = [np.ascontiguousarray(cv2.imread(os.path.join(d, n))[:, :, ::-1]) for n in names[b:b + a.batch]]
             h, w = imgs[0].shape[:2]
@@ -57,14 +58,19 @@ def main():
                 x = proc(images=imgs, return_tensors='pt')['pixel_values'].cuda().half()
                 p = class_probs(x)
                 p = torch.nn.functional.interpolate(p, size=(h // 4, w // 4), mode='bilinear')
-                road = p[:, 0] + p[:, 13:19].sum(1)   # road + car, truck, bus, train, motorcycle, bicycle
+                if a.road_only:
+                    road = p[:, 0]                       # road only; road users stored separately as 'obj'
+                else:
+                    road = p[:, 0] + p[:, 13:19].sum(1)  # (old) road + vehicles
                 side = p[:, 1]
+                obj = p[:, 11:19].sum(1)                 # person, rider, car, truck, bus, train, motorcycle, bicycle
             res.append((road.clamp(0, 1).cpu().numpy() * 255).astype(np.uint8))
             res_side.append((side.cpu().numpy() * 255).astype(np.uint8))
+            res_obj.append((obj.clamp(0, 1).cpu().numpy() * 255).astype(np.uint8))
             if b % 400 == 0:
                 print(cam, b, '/', len(names), flush=True)
         np.savez_compressed(os.path.join(out_dir, f'{cam}.npz'), names=np.array(names), road=np.concatenate(res),
-                            side=np.concatenate(res_side))
+                            side=np.concatenate(res_side), obj=np.concatenate(res_obj))
         print('saved', cam, flush=True)
 
 
