@@ -56,6 +56,7 @@ def main():
     ap.add_argument('--road_pct', type=float, default=50)
     ap.add_argument('--road_lat', type=float, default=0.5)
     ap.add_argument('--road_fwd', type=float, default=5.0)
+    ap.add_argument('--dump', default='', help='save per-frame fwd/lat errors (npz)')
     a = ap.parse_args()
     ref = pd.read_csv(a.ref_csv)
     ts, _ = ply_frames(os.path.join(a.track_dir, 'raw_ply'))
@@ -119,6 +120,8 @@ def main():
         el = -np.sin(yw) * e[:, 0] + np.cos(yw) * e[:, 1]
         report(f'RTS(GNSS+fixes)', st2[:, :2], ref)
         print(f'                    fwd rms {np.sqrt(np.mean(ef ** 2)):.3f}  lat rms {np.sqrt(np.mean(el ** 2)):.3f}')
+        if a.dump:
+            np.savez(a.dump, ts=ts, ef=ef, el=el, x=ref.x.values, y=ref.y.values, yaw=yw)
 
 
 if __name__ == '__main__':
