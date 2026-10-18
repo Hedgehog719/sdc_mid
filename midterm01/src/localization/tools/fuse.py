@@ -82,6 +82,10 @@ def main():
     p.add_argument('--yaw_rts_base', type=float, default=1.0, help='s, baseline for the motion heading')
     p.add_argument('--yaw_rts_sigpos', type=float, default=0.15, help='m, position noise of the heading reference')
     p.add_argument('--yaw_rts_bev', type=float, default=0.0, help='>0: also use BEV yaw fixes with this sigma (deg)')
+    p.add_argument('--pole', default='', help='pole_match.py npz: pole-landmark fixes (along-track constraint)')
+    p.add_argument('--pole_pct', type=float, default=50, help='keep pole fixes whose peak is above this percentile')
+    p.add_argument('--pole_fwd_sigma', type=float, default=0.3)
+    p.add_argument('--pole_lat_sigma', type=float, default=0.6)
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -152,6 +156,18 @@ def main():
             cov = np.concatenate([cov, bc])
             huber = a.bev_huber
             print('BEV fixes used: %d / %d' % (m.sum(), len(m)))
+        if a.pole:
+            pz = np.load(a.pole)
+            pm = pz['peak'] >= np.percentile(pz['peak'], a.pole_pct)
+            yw = pz['pyaw'][pm]
+            c, s_ = np.cos(yw), np.sin(yw)
+            Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)
+            pc = Rr @ np.diag([a.pole_fwd_sigma ** 2, a.pole_lat_sigma ** 2]) @ Rr.transpose(0, 2, 1)
+            tm = np.concatenate([tm, pz['ts'][pm]])
+            zm = np.concatenate([zm, np.stack([pz['mx'][pm], pz['my'][pm]], 1)])
+            cov = np.concatenate([cov, pc])
+            huber = a.bev_huber
+            print('pole fixes used: %d / %d' % (pm.sum(), len(pm)))
         tz = None
         if a.zupt_speed > 0:
             st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov)

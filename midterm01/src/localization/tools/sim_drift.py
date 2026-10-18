@@ -47,6 +47,11 @@ def main():
     ap.add_argument('--fwd_sigma', type=float, default=0.0, help='>0: anisotropic BEV fix (fwd sigma, lat=bev_sigma)')
     ap.add_argument('--min_speed', type=float, default=3.0)
     ap.add_argument('--peak_ref', type=float, default=0.0)
+    ap.add_argument('--pole', default='')
+    ap.add_argument('--pole_pct', type=float, default=50, help='keep pole fixes with peak above this percentile')
+    ap.add_argument('--pole_fwd', type=float, default=0.5)
+    ap.add_argument('--pole_lat', type=float, default=0.6)
+    ap.add_argument('--no_bev', action='store_true')
     a = ap.parse_args()
     ref = pd.read_csv(a.ref_csv)
     ts, _ = ply_frames(os.path.join(a.track_dir, 'raw_ply'))
@@ -81,8 +86,25 @@ def main():
             Rr = np.array([[np.cos(y), -np.sin(y)], [np.sin(y), np.cos(y)]])
             sc = np.clip(a.peak_ref / max(z['peak'][m][k], 1e-3), 0.5, 3.0) if a.peak_ref > 0 else 1.0
             cov[len(tg) + k] = Rr @ np.diag([sf ** 2, a.bev_sigma ** 2]) @ Rr.T * sc ** 2
+        if a.no_bev:
+            tm, zm, cov = tm[:len(tg)], zm[:len(tg)], cov[:len(tg)]
+        if a.pole:
+            pz = np.load(a.pole)
+            pm = pz['peak'] >= np.percentile(pz['peak'], a.pole_pct)
+            ptm = pz['ts'][pm]
+            pzm = np.stack([pz['mx'][pm], pz['my'][pm]], 1)
+            pc = np.zeros((pm.sum(), 2, 2))
+            for k, y in enumerate(pz['pyaw'][pm]):
+                Rr = np.array([[np.cos(y), -np.sin(y)], [np.sin(y), np.cos(y)]])
+                pc[k] = Rr @ np.diag([a.pole_fwd ** 2, a.pole_lat ** 2]) @ Rr.T
+            tm = np.concatenate([tm, ptm]); zm = np.concatenate([zm, pzm]); cov = np.concatenate([cov, pc])
         st2 = rts_smooth(ts, tm, zm, psi, a.gnss_sigma, 1.0, a.qpos, huber=a.huber, meas_cov=cov)
-        report(f'RTS(GNSS+BEV n={m.sum()})', st2[:, :2], ref)
+        e = st2[:, :2] - ref[['x', 'y']].values
+        yw = ref.yaw.values
+        ef = np.cos(yw) * e[:, 0] + np.sin(yw) * e[:, 1]
+        el = -np.sin(yw) * e[:, 0] + np.cos(yw) * e[:, 1]
+        report(f'RTS(GNSS+fixes)', st2[:, :2], ref)
+        print(f'                    fwd rms {np.sqrt(np.mean(ef ** 2)):.3f}  lat rms {np.sqrt(np.mean(el ** 2)):.3f}')
 
 
 if __name__ == '__main__':
