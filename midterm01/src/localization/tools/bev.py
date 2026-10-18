@@ -52,6 +52,17 @@ class ImageBEV:
         if hood is not None:
             a = hood if hood.ndim == 2 else hood[..., 0]  # white (RGB) = ego hood; alpha is constant
             self.hood = a > 127
+        # hand-drawn ego-vehicle masks (pole_review_server /hood -> tools/ego_mask.py), same car for both tracks:
+        # front replaces the supplied hood mask, side cameras get their visible body corners masked
+        self.ego = {}
+        if USE_EGO_MASK:
+            wdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work')
+            for c in cams:
+                f = os.path.join(wdir, f'ego_mask_{c}.png')
+                if os.path.exists(f):
+                    self.ego[c] = cv2.imread(f, cv2.IMREAD_GRAYSCALE) > 0
+            if 'f' in self.ego:
+                self.hood = self.ego['f']
         self.masks = {}
         mdir = os.path.join(track_dir, 'masks')
         for c in cams:
@@ -62,6 +73,15 @@ class ImageBEV:
         self.dyn = None  # optional (N, 2) per-frame dynamic pitch/roll offsets in degrees
         self.photonorm = False  # per-camera local mean/std normalisation before blending (exposure / white balance)
         self.set_calib(cam_height, pitch_deg, roll_deg, yaw_deg)
+
+    def ego_bad(self, c, shape):
+        """uint8 mask of the own vehicle in camera c (front: hood; sides: body corners), zeros if none."""
+        m = self.ego.get(c)
+        if m is None and c == 'f':
+            m = self.hood
+        if m is None or m.shape != tuple(shape[:2]):
+            return np.zeros(shape[:2], np.uint8)
+        return m.astype(np.uint8)
 
     def set_calib(self, cam_height, pitch_deg, roll_deg, yaw_deg):
         from scipy.spatial.transform import Rotation
@@ -97,8 +117,7 @@ class ImageBEV:
             if c in self.masks:
                 m = np.unpackbits(self.masks[c][i], axis=1)[:, :img.shape[1] // 2]
                 bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
-            if c == 'f' and self.hood is not None and self.hood.shape == bad.shape:
-                bad |= self.hood.astype(np.uint8)
+            bad |= self.ego_bad(c, bad.shape)
             mx, my, v = self.maps[c]
             col = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
             b = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
@@ -135,8 +154,7 @@ class ImageBEV:
             if c in self.masks:
                 m = np.unpackbits(self.masks[c][i], axis=1)[:, :img.shape[1] // 2]
                 bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
-            if c == 'f' and self.hood is not None and self.hood.shape == img.shape:
-                bad |= self.hood.astype(np.uint8)
+            bad |= self.ego_bad(c, img.shape)
             mx, my, v = self.maps[c]
             g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
             b = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
@@ -167,8 +185,7 @@ class ImageBEV:
             if c in self.masks:
                 m = np.unpackbits(self.masks[c][i], axis=1)[:, :img.shape[1] // 2]
                 bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
-            if c == 'f' and self.hood is not None and self.hood.shape == img.shape:
-                bad |= self.hood.astype(np.uint8)
+            bad |= self.ego_bad(c, img.shape)
             mx, my, v = self.maps[c]
             g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
             b = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
@@ -198,6 +215,7 @@ def local_ground(hmin, valid, open_m=1.5, smooth_m=1.0):
 
 
 GROUND_MODE = 'plane'
+USE_EGO_MASK = True
 
 
 def map_bev(xyz, intensity, pose_xy, yaw, plane_tol=0.25, rough_max=0.08):
@@ -391,8 +409,7 @@ class ImageBEV3D(ImageBEV):
             if cname in self.masks:
                 m = np.unpackbits(self.masks[cname][i], axis=1)[:, :img.shape[1] // 2]
                 bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
-            if cname == 'f' and self.hood is not None and self.hood.shape == img.shape:
-                bad |= self.hood.astype(np.uint8)
+            bad |= self.ego_bad(cname, img.shape)
             g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
             bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
             ok = v & (bm == 0)
@@ -797,8 +814,7 @@ class RoadProbBEV:
             if self.obj is not None:
                 ob = cv2.dilate((self.obj[c][i] > 100).astype(np.uint8), np.ones((5, 5), np.uint8))
                 bad |= cv2.resize(ob, (wq * 4, hq * 4), interpolation=cv2.INTER_NEAREST)
-            if c == 'f' and b.hood is not None and b.hood.shape == bad.shape:
-                bad |= b.hood.astype(np.uint8)
+            bad |= b.ego_bad(c, bad.shape)
             mx, my, v = b.maps[c]
             g = cv2.remap(pr, mx / 4.0, my / 4.0, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
             if self.colour:

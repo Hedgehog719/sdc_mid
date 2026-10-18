@@ -50,8 +50,8 @@ def load_frame(i):
             m = np.unpackbits(MASKS[c][i], axis=1)[:, :img.shape[1] // 2]
             mask = cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST) > 0
             mask = cv2.dilate(mask.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
-        if c == 'f' and HOOD is not None:
-            mask = HOOD if mask is None else (mask | HOOD)
+        if c in EGO:
+            mask = EGO[c] if mask is None else (mask | EGO[c])
         out[c] = edge_tensor(img, mask)
     return out
 
@@ -239,6 +239,13 @@ def main():
     MASKS = {c: np.load(os.path.join(A.track_dir, 'masks', f'{c}.npz'))['masks'] for c in CAMS}
     hood = cv2.imread(os.path.join(A.track_dir, f'{track}_images', 'camera_info', 'gige_100_f_hdr_mask.png'))
     HOOD = hood[..., 0] > 127 if hood is not None else None
+    global EGO
+    EGO = {'f': HOOD} if HOOD is not None else {}
+    wdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work')
+    for c in CAMS:  # hand-drawn ego-vehicle masks override / extend the supplied hood mask
+        f = os.path.join(wdir, f'ego_mask_{c}.png')
+        if os.path.exists(f):
+            EGO[c] = cv2.imread(f, cv2.IMREAD_GRAYSCALE) > 0
     RM = Rotation.from_euler('ZYX', [A.yaw_mount, 0, 0], degrees=True).as_matrix()
     # R_OPT is applied inside Cameras.project; RM is the rig mounting (same convention as bev.ImageBEV)
     lo, hi, st = 0, n, 1

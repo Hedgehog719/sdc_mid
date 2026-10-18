@@ -29,8 +29,7 @@ def colour_bev(B, i):
     for c in B.cams:
         img = cv2.imread(os.path.join(B.track_dir, f'{B.track}_images', f'{B.track}_{c}_images', B.names[c][i]))
         bad = np.zeros(img.shape[:2], np.uint8)
-        if c == 'f' and B.hood is not None:
-            bad |= B.hood.astype(np.uint8)
+        bad |= B.ego_bad(c, bad.shape)
         mx, my, v = B.maps[c]
         g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
         bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
