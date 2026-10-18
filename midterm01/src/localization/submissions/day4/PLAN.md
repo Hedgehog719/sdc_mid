@@ -57,4 +57,7 @@ heading), D-pad artefact in the kerb slope map (bug), pole weights (pct 60, fwd 
 T2 start (stationary, 7.5 % of frames): clean-map BEV yaw (peak 0.35) and the map lane direction (-17.0 deg)
 say the start yaw is -17.0..-17.4; current best has -18.6 -> stronger BEV yaw weight (0.7 deg).
 Track1: 1) t1_fin.csv  2) t1_c6e_backup.csv (old process noise)  3) day4/track1/cal_planned.csv
-Track2: decided after the small-drift sim (position fixes or not); yaw: t2_yawbev0.7.csv, then t2_yawonly.csv
+Track2: 1) t2_pos.csv (GNSS + BEV/pole/kerb position fixes, gnss 0.3 / qpos 0.1 / qlat 0.05, heading from
+  t2_yawbev0.7, BEV yaw 0.7 deg; small-drift sim 0.278 -> 0.244, never worse; start: fixes say 0.5 m right of
+  GNSS at the stop next to a bus)  2) t2_yawbev0.7.csv (yaw only)  3) t2_yawonly.csv
+Order rule: submit 1); if it beats the best -> stop that track and wait for the user; else submit 2), etc.
