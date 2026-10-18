@@ -715,7 +715,28 @@ class RoadProbBEV:
         lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
         d2 = (((lab[..., 1] - med[1]) / (3 * sd[1])) ** 2 + ((lab[..., 2] - med[2]) / (3 * sd[2])) ** 2
               + ((lab[..., 0] - med[0]) / (6 * sd[0])) ** 2)
-        return cv2.GaussianBlur(np.exp(-0.5 * d2).astype(np.float32), (0, 0), 2)
+        prob = cv2.GaussianBlur(np.exp(-0.5 * d2).astype(np.float32), (0, 0), 2)
+        # keep only asphalt-coloured pixels connected to the road just in front of / beside the car: grey sky,
+        # building walls and signs have similar colour but are not connected to the road surface
+        hh, ww = prob.shape
+        cand = (prob > 0.35).astype(np.uint8)
+        if c in b.masks:  # road users break the road into pieces; let the road connect through them
+            mk = cv2.resize(np.unpackbits(b.masks[c][i], axis=1)[:, :ww // 2], (ww, hh), interpolation=cv2.INTER_NEAREST)
+            cand = np.maximum(cand, mk)
+        if c == 'f' and b.hood is not None:
+            cand[b.hood] = 0
+        n, lab_ = cv2.connectedComponents(cv2.morphologyEx(cand, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)), connectivity=4)
+        if c == 'f':
+            top = int(np.argmax(b.hood, axis=0).min()) if b.hood is not None else hh - 120
+            seed = lab_[max(top - 60, 0):max(top - 10, 1), ww // 2 - 200:ww // 2 + 200]
+        else:  # side cameras: the road next to the car is at the bottom, towards the vehicle side
+            seed = lab_[hh - 120:hh - 20, :]
+        ids = np.unique(seed[seed > 0])
+        if len(ids):
+            counts = np.bincount(seed[seed > 0].ravel())
+            ids = [k for k in ids if counts[k] > 0.05 * (seed > 0).sum()]
+            prob = prob * np.isin(lab_, ids)
+        return prob
 
     def render(self, i):
         b = self.bev
