@@ -56,6 +56,9 @@ def main():
     ap.add_argument('--road_pct', type=float, default=50)
     ap.add_argument('--road_lat', type=float, default=0.5)
     ap.add_argument('--road_fwd', type=float, default=5.0)
+    ap.add_argument('--aniso_k', type=float, default=0.0, help='>0: BEV fwd sigma = clip(k / sharp_f, aniso_min, fwd_sigma)')
+    ap.add_argument('--aniso_min', type=float, default=0.3)
+    ap.add_argument('--aniso_lat', action='store_true', help='also lat sigma = clip(k / sharp_l, aniso_min, 3 bev_sigma)')
     ap.add_argument('--dump', default='', help='save per-frame fwd/lat errors (npz)')
     a = ap.parse_args()
     ref = pd.read_csv(a.ref_csv)
@@ -87,10 +90,16 @@ def main():
         cov[:len(tg)] = np.eye(2) * a.gnss_sigma ** 2
         yw = z['pyaw'][m]
         sf = a.fwd_sigma if a.fwd_sigma > 0 else a.bev_sigma
+        aniso = a.aniso_k > 0 and 'sharp_f' in z
         for k, y in enumerate(yw):
             Rr = np.array([[np.cos(y), -np.sin(y)], [np.sin(y), np.cos(y)]])
             sc = np.clip(a.peak_ref / max(z['peak'][m][k], 1e-3), 0.5, 3.0) if a.peak_ref > 0 else 1.0
-            cov[len(tg) + k] = Rr @ np.diag([sf ** 2, a.bev_sigma ** 2]) @ Rr.T * sc ** 2
+            sfk, slk = sf, a.bev_sigma
+            if aniso:
+                sfk = float(np.clip(a.aniso_k / max(z['sharp_f'][m][k], 1e-3), a.aniso_min, sf))
+                if a.aniso_lat:
+                    slk = float(np.clip(a.aniso_k / max(z['sharp_l'][m][k], 1e-3), a.aniso_min, 3 * a.bev_sigma))
+            cov[len(tg) + k] = Rr @ np.diag([sfk ** 2, slk ** 2]) @ Rr.T * sc ** 2
         if a.no_bev:
             tm, zm, cov = tm[:len(tg)], zm[:len(tg)], cov[:len(tg)]
         if a.pole:

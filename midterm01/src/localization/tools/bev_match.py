@@ -183,7 +183,17 @@ def match_frame(i, prior):
     # ahead by dr*RES (x = X_MAX - r*RES) and to the right by dc*RES... sign verified with eval (A.sign)
     fwd = A.sign * dr * RES
     lat = A.sign * dc * RES
-    return mx, mx - second, fwd, lat, A.yaw_sign * dyaw
+    # per-axis distinctiveness: best score >= 1 m away along each axis (narrow band through the peak). Parallel
+    # lane lines give a flat ridge along fwd (low sharp_f); crosswalks / stop lines / text make fwd distinct.
+    r0, c0 = loc[1], loc[0]
+    far = int(1.0 / RES)
+    band = res[:, max(c0 - 2, 0):c0 + 3].max(axis=1)
+    idx = np.abs(np.arange(len(band)) - r0) >= far
+    sharp_f = mx - (band[idx].max() if idx.any() else -1.0)
+    band = res[max(r0 - 2, 0):r0 + 3, :].max(axis=0)
+    idx = np.abs(np.arange(len(band)) - c0) >= far
+    sharp_l = mx - (band[idx].max() if idx.any() else -1.0)
+    return mx, mx - second, fwd, lat, A.yaw_sign * dyaw, sharp_f, sharp_l
 
 
 def worker(chunk):
@@ -194,10 +204,10 @@ def worker(chunk):
         r = match_frame(i, (x, y, yaw))
         if r is None:
             continue
-        peak, sharp, fwd, lat, dyaw = r
+        peak, sharp, fwd, lat, dyaw, sharp_f, sharp_l = r
         c, s = np.cos(yaw), np.sin(yaw)
         meas = (x + c * fwd - s * lat, y + s * fwd + c * lat, yaw + dyaw)
-        out.append((i, x, y, yaw, *meas, peak, sharp, fwd, lat, dyaw))
+        out.append((i, x, y, yaw, *meas, peak, sharp, fwd, lat, dyaw, sharp_f, sharp_l))
         if n % 50 == 0:
             print(f'[{chunk[0]}] frame {i} {time.time() - t0:.0f}s peak={peak:.3f} sharp={sharp:.3f} '
                   f'fwd={fwd:.2f} lat={lat:.2f} dyaw={np.degrees(dyaw):.2f}', flush=True)
@@ -317,7 +327,7 @@ def main():
         res = pool.map(worker, chunks, chunksize=1)
     rows = np.array([r for c in res for r in c])
     ts, _ = ply_frames(os.path.join(A.track_dir, 'raw_ply'))
-    keys = ['idx', 'px', 'py', 'pyaw', 'mx', 'my', 'myaw', 'peak', 'sharp', 'fwd', 'lat', 'dyaw']
+    keys = ['idx', 'px', 'py', 'pyaw', 'mx', 'my', 'myaw', 'peak', 'sharp', 'fwd', 'lat', 'dyaw', 'sharp_f', 'sharp_l']
     outd = {k: rows[:, j] for j, k in enumerate(keys)}
     outd['idx'] = outd['idx'].astype(int)
     outd['ts'] = ts[outd['idx']]
