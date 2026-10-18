@@ -160,6 +160,7 @@ def main():
     ap.add_argument('track_dir')
     ap.add_argument('prior_csv')
     ap.add_argument('output_npz')
+    ap.add_argument('--poles', default='poles.npy', help='poles file in the track dir (e.g. poles_curated.npy)')
     ap.add_argument('--cam_height', type=float, default=1.5)
     ap.add_argument('--yaw_mount', type=float, default=-1.5)
     ap.add_argument('--min_range', type=float, default=4.0)
@@ -187,7 +188,7 @@ def main():
         rng = np.random.default_rng(0)
         PRIOR[:, :2] += rng.normal(0, A.prior_noise[0], (n, 2))
         PRIOR[:, 2] += np.radians(rng.normal(0, A.prior_noise[1], n))
-    POLES = np.load(os.path.join(A.track_dir, 'poles.npy'))
+    POLES = np.load(os.path.join(A.track_dir, A.poles))
     GROUND = GroundRaster(np.load(os.path.join(A.track_dir, 'map.npy'), mmap_mode='r'))
     CAM = Cameras(os.path.join(A.track_dir, f'{track}_images', 'camera_info'))
     CAMS = ['fl', 'f', 'fr']
