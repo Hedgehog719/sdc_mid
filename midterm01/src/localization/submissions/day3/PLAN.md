@@ -66,8 +66,11 @@ Drift simulation (0.95 m): lanes + poles 0.566; + kerb/road 0.559; without lanes
 0.875 -> lanes stay, kerbs added.
 
 ## Track1 (in order)
-0. iter4_lane_pole_curb_hold   lanes (distance acc.) + curated poles + kerb/road (slope map) + start hold
+0. iter4_lane_pole_curb_hold   lanes (distance acc.) + curated poles + kerb/road (road-only Mask2Former vs slope
+                               map v1) + start hold
 0b. iter4_NOLANE_pole_curb_hold  user test: no lane markings (poles + kerb/road + start hold)
+0c. iter4_curbv3_hold          kerb map v3 (road-level criterion vs wheelchair ramps, small holes filled): Track2
+                               sim slightly worse (0.561 vs 0.558) but ramps are an urban (Track1) issue
 1. iter3_pcd_hold          distance-accumulated lanes + curated poles + start hold
 2. iter3_pc                per-camera lanes + curated poles (round 2)
 3. iter3_pc_hold           start hold only
