@@ -59,6 +59,7 @@ def main():
     ap.add_argument('--aniso_k', type=float, default=0.0, help='>0: BEV fwd sigma = clip(k / sharp_f, aniso_min, fwd_sigma)')
     ap.add_argument('--aniso_min', type=float, default=0.3)
     ap.add_argument('--aniso_lat', action='store_true', help='also lat sigma = clip(k / sharp_l, aniso_min, 3 bev_sigma)')
+    ap.add_argument('--keep_edge', action='store_true', help='keep BEV fixes at the yaw search limit')
     ap.add_argument('--out_csv', default='', help='write the fused trajectory (x, y; reference yaw) as a prior CSV')
     ap.add_argument('--dump', default='', help='save per-frame fwd/lat errors (npz)')
     a = ap.parse_args()
@@ -85,6 +86,9 @@ def main():
         z = np.load(a.bev)
         speed = np.interp(z['ts'].astype(float), ts.astype(float), np.abs(st[:, 2]))
         m = (z['sharp'] > a.sharp) & (speed > a.min_speed)
+        if not a.keep_edge:  # yaw at the search limit: optimum outside, unreliable
+            dd = np.abs(np.degrees(z['dyaw']))
+            m &= np.abs(dd - dd.max()) >= 0.01
         tm = np.concatenate([tg, z['ts'][m]])
         zm = np.concatenate([gx, np.stack([z['mx'][m], z['my'][m]], 1)])
         cov = np.zeros((len(tm), 2, 2))

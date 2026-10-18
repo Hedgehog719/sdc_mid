@@ -34,6 +34,12 @@ def robust_smooth(v, w, sigma, iters=3, huber=1.0):
     return s
 
 
+def bev_edge(dyaw):
+    """BEV fixes whose yaw hit the +-max_yaw search limit (the optimum lies outside: unreliable)."""
+    d = np.abs(np.degrees(dyaw))
+    return np.abs(d - d.max()) < 0.01 if len(d) else np.zeros(0, bool)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('track_dir')
@@ -70,6 +76,8 @@ def main():
     p.add_argument('--bev_aniso_k', type=float, default=0.0,
                    help='>0: per-fix fwd sigma = clip(k / sharp_f, aniso_min, bev_fwd_sigma) (needs sharp_f in npz)')
     p.add_argument('--bev_aniso_min', type=float, default=0.3)
+    p.add_argument('--bev_keep_edge', action='store_true',
+                   help='keep BEV fixes whose yaw hit the search limit (default: dropped, they are unreliable)')
     p.add_argument('--bev_aniso_lat', action='store_true', help='also lat sigma = clip(k / sharp_l, aniso_min, 3 lat)')
     p.add_argument('--bev_min_speed', type=float, default=3.0)
     p.add_argument('--bev_huber', type=float, default=2.0)
@@ -153,12 +161,14 @@ def main():
         if a.bev:
             st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, meas_sigma=sm)
             parts = [np.load(f) for f in a.bev]
-            keys = ['ts', 'pyaw', 'mx', 'my', 'peak']
+            keys = ['ts', 'pyaw', 'mx', 'my', 'peak', 'dyaw']
             if a.bev_aniso_k > 0:
                 keys += ['sharp_f', 'sharp_l']
             b = {k: np.concatenate([q[k] for q in parts]) for k in keys}
             speed = np.interp(b['ts'].astype(float), ts.astype(float), np.abs(st0[:, 2]))
             m = speed > a.bev_min_speed
+            if not a.bev_keep_edge:
+                m &= ~bev_edge(b['dyaw'])
             yw = b['pyaw'][m]
             c, s_ = np.cos(yw), np.sin(yw)
             Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)
@@ -260,6 +270,9 @@ def main():
             parts = [np.load(f) for f in a.bev]
             bt = np.concatenate([q['ts'] for q in parts])
             byaw = np.concatenate([q['myaw'] for q in parts])
+            if not a.bev_keep_edge:
+                ok = ~bev_edge(np.concatenate([q['dyaw'] for q in parts]))
+                bt, byaw = bt[ok], byaw[ok]
             mt = np.concatenate([mt, bt])
             my_ = np.concatenate([my_, byaw])
             ms = np.concatenate([ms, np.full(len(bt), np.radians(a.yaw_rts_bev))])
