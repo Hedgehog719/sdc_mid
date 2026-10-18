@@ -86,21 +86,41 @@ def find_views(k, px, py, zb, h, u, v, r, frames, zv, C, cams, masks, Rm, n_view
     return views
 
 
+def snap_shift(img, uv, ok, search=80):
+    """Horizontal pixel shift (+-search) of the projected pole that maximises the image edge energy across it."""
+    g = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32), (0, 0), 1.0)
+    gx = np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3))
+    gx = cv2.GaussianBlur(gx, (0, 0), 2.0)
+    p = uv[ok]
+    best, bs = -1, 0
+    for s_ in range(-search, search + 1, 2):
+        xi = np.clip((p[:, 0] + s_).astype(int), 0, img.shape[1] - 1)
+        yi = np.clip(p[:, 1].astype(int), 0, img.shape[0] - 1)
+        e = gx[yi, xi].mean()
+        if e > best:
+            best, bs = e, s_
+    return bs
+
+
 def crop_view(img, uv, ok):
+    shift = snap_shift(img, uv, ok)
     p = uv[ok]
     x0 = int(np.median(p[:, 0]))
     top, bot = int(p[:, 1].min()), int(p[:, 1].max())
     hpx = max(bot - top, 60)
     y0, y1 = max(top - hpx // 3, 0), min(bot + hpx // 3, img.shape[0])
-    half = max(int(0.45 * (y1 - y0)), 80)
+    half = max(int(0.45 * (y1 - y0)), 80 + abs(shift))
     xa, xb = max(x0 - half, 0), min(x0 + half, img.shape[1])
     crop = img[y0:y1, xa:xb].copy()
     for (pu, pv) in [p[np.argmax(p[:, 1])], p[np.argmin(p[:, 1])]]:
         pu, pv = int(pu) - xa, int(pv) - y0
         cv2.line(crop, (pu - 20, pv), (pu - 8, pv), (0, 0, 255), 2)
         cv2.line(crop, (pu + 8, pv), (pu + 20, pv), (0, 0, 255), 2)
+        qu = pu + shift
+        cv2.line(crop, (qu - 14, pv + 6), (qu - 6, pv + 6), (0, 200, 0), 2)
+        cv2.line(crop, (qu + 6, pv + 6), (qu + 14, pv + 6), (0, 200, 0), 2)
     sc = 240.0 / max(crop.shape[0], 1)
-    return cv2.resize(crop, (max(int(crop.shape[1] * sc), 1), 240))
+    return cv2.resize(crop, (max(int(crop.shape[1] * sc), 1), 240)), shift
 
 
 def main():
@@ -140,8 +160,9 @@ def main():
         imgs_b64, srcs = [], []
         for (i, cam, uv, ok, rr, mfrac) in views:
             img = cv2.imread(os.path.join(imgdir[cam], names[cam][i]))
-            imgs_b64.append(b64jpg(crop_view(img, uv, ok)))
-            srcs.append(f'frame {i} {cam} {rr:.0f} m' + (f' ({100 * mfrac:.0f}% masked)' if mfrac > 0 else ''))
+            crop, shift = crop_view(img, uv, ok)
+            imgs_b64.append(b64jpg(crop))
+            srcs.append(f'frame {i} {cam} {rr:.0f} m, snap {shift:+d} px' + (f' ({100 * mfrac:.0f}% masked)' if mfrac > 0 else ''))
         crop_b64 = imgs_b64
         src = ' | '.join(srcs) if srcs else 'never within 60 m of the route'
         cards.append({'id': k, 'x': round(float(px), 2), 'y': round(float(py), 2), 'h': round(float(h), 1),
@@ -176,7 +197,7 @@ main{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:
 <select id="flt"><option value="all">全部</option><option value="unk">未決定</option><option value="keep">保留</option><option value="reject">剔除</option><option value="noimg">沒有截圖</option></select>
 <button id="allkeep">未決定的全部保留</button>
 <button id="exp">匯出 JSON</button>
-<span class="help">鍵盤：← → 移動，K 保留，R 剔除，U 取消。左：相機截圖（紅色刻度＝桿子底和頂的投影位置）；右：LiDAR 側視圖（綠線＝地面，刻度每 1 m）。</span>
+<span class="help">鍵盤：← → 移動，K 保留，R 剔除，U 取消。左：相機截圖（紅色＝用目前軌跡投影的桿底／桿頂；綠色＝左右 80 px 內影像邊緣最強的位置，紅綠差距反映軌跡誤差）；右：LiDAR 側視圖（綠線＝地面，刻度每 1 m）。</span>
 </header><main id="grid"></main>
 <script>
 const DATA = __DATA__; const KEY = 'pole_review___TRACK__';

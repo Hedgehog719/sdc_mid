@@ -47,7 +47,8 @@ def main():
     # slices: index i covers hag 0.5+0.5i .. 1.0+0.5i ; 1-4 m -> i = 1..6 ; 1-3 m -> i = 1..4
     occ = [((bits >> i) & 1).astype(np.uint8) for i in range(15)]
     n14 = sum(occ[i] for i in range(1, 7))
-    cand = n14 >= a.min_slices
+    reaches_ground = (occ[0] | occ[1]).astype(bool)  # 0.5-1.5 m occupied: excludes hanging signboards / awnings
+    cand = (n14 >= a.min_slices) & reaches_ground
     # isolation ring on the union of the 1-3 m slices
     mid = np.clip(sum(occ[i] for i in range(1, 5)), 0, 1).astype(np.float32)
     r_in, r_out = int(round(0.6 / res)), int(round(1.5 / res))

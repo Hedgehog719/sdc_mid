@@ -24,9 +24,15 @@ class Cameras:
                 T_cam_front = np.linalg.inv(np.array(extr[EXTR_KEYS[cam]]['matrix'], np.float64))
             self.cams[cam] = (K, D, T_cam_front, info['image_width'], info['image_height'])
 
+    yaw_fix = {'f': 0.0, 'fl': 0.5, 'fr': -0.5}  # deg, from calib_cam_yaw.py on Track2 poles
+
     def project(self, cam, pts_flu):
         """Return pixel coords (N,2) and a validity mask for points given in the front FLU frame."""
         K, D, T, w, h = self.cams[cam]
+        if self.yaw_fix.get(cam, 0.0):
+            a = np.radians(self.yaw_fix[cam])
+            Rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1.0]])
+            pts_flu = pts_flu @ Rz
         p = pts_flu @ R_OPT_FLU.T
         p = p @ T[:3, :3].T + T[:3, 3]
         valid = p[:, 2] > 0.3
