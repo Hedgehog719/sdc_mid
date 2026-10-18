@@ -90,6 +90,10 @@ def main():
     p.add_argument('--road_pct', type=float, default=50)
     p.add_argument('--road_lat_sigma', type=float, default=0.5)
     p.add_argument('--road_fwd_sigma', type=float, default=5.0)
+    p.add_argument('--start_hold', type=float, default=0.0,
+                   help='>0: while the IMU heading has changed less than this (deg) since the start and speed < '
+                        '--start_speed, hold the yaw constant and put the positions on a straight line')
+    p.add_argument('--start_speed', type=float, default=4.0)
     p.add_argument('--dump', default='', help='optional npz with corrections for inspection')
     a = p.parse_args()
 
@@ -260,6 +264,27 @@ def main():
         y = gaussian_filter1d(y, a.smooth_xy, mode='nearest')
     if a.smooth_yaw > 0:
         yw = gaussian_filter1d(yw, a.smooth_yaw, mode='nearest')
+    if a.start_hold > 0:
+        # start segment: slow, straight, IMU heading nearly constant -> constant yaw and a straight path
+        imu0 = np.degrees(np.unwrap(s.imu_rot(ts).as_euler('ZYX')[:, 0]))
+        tt = (ts - ts[0]) * 1e-9
+        spd = np.hypot(np.gradient(x, tt), np.gradient(y, tt))
+        moved = (np.abs(imu0 - imu0[0]) > a.start_hold) | (spd > a.start_speed)
+        n0 = int(np.argmax(moved)) if moved.any() else n
+        if n0 > 30:
+            psi0 = np.angle(np.mean(np.exp(1j * yw[:n0])))
+            c0, s0 = np.cos(psi0), np.sin(psi0)
+            along = c0 * x[:n0] + s0 * y[:n0]
+            lat = np.median(-s0 * x[:n0] + c0 * y[:n0])
+            # blend back into the free trajectory over 1 s to avoid a step
+            w = np.ones(n0)
+            nb = min(28, n0)
+            w[-nb:] = np.linspace(1, 0, nb)
+            xl, yl = c0 * along - s0 * lat, s0 * along + c0 * lat
+            x[:n0] = w * xl + (1 - w) * x[:n0]
+            y[:n0] = w * yl + (1 - w) * y[:n0]
+            yw[:n0] = np.unwrap(w * psi0 + (1 - w) * np.unwrap(yw[:n0] - psi0 + psi0))
+            print(f'start hold: frames 0-{n0} ({tt[n0]:.1f} s), yaw fixed at {np.degrees(psi0):.2f} deg')
     if a.time_shift != 0.0:
         tt = (ts - ts[0]) * 1e-9
         x = np.interp(tt + a.time_shift, tt, x)

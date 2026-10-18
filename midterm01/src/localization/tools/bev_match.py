@@ -52,12 +52,32 @@ def pix_affine(dx, dy, dpsi):
     return (np.linalg.inv(Ap) @ Tm @ Ap)[:2]
 
 
+def neighbour_frames(i):
+    """Frames accumulated with frame i: by path distance (+-accum_dist m, one per accum_ds m) so that slow driving
+    (Track1 start, 1-2.5 m/s) still sees as much road as normal driving; otherwise a fixed frame window."""
+    if A.accum_dist <= 0:
+        return [j for j in range(i - A.accum, i + A.accum + 1, A.accum_step) if 0 <= j < len(PRIOR_REL)]
+    s = PATH_S
+    lo = np.searchsorted(s, s[i] - A.accum_dist)
+    hi = np.searchsorted(s, s[i] + A.accum_dist, side='right')
+    cand = np.arange(lo, hi)
+    if len(cand) == 0:
+        return [i]
+    # one frame per accum_ds metres of travel (and at least every accum_step frames when nearly stationary)
+    key = np.floor((s[cand] - s[i]) / A.accum_ds).astype(int)
+    _, first = np.unique(key, return_index=True)
+    sel = set(cand[first].tolist()) | {i}
+    if len(sel) < 5:  # nearly stationary: fall back to the time window
+        sel |= {j for j in range(i - A.accum, i + A.accum + 1, A.accum_step) if 0 <= j < len(PRIOR_REL)}
+    return sorted(sel)
+
+
 def accumulated_response(i, road_d):
     """Image lane response of frame i, averaged with neighbours warped by the prior's relative motion."""
     xi, yi, yawi = PRIOR_REL[i]
     acc = np.zeros((H, W), np.float32)
     cnt = np.zeros((H, W), np.float32)
-    for j in range(i - A.accum, i + A.accum + 1, A.accum_step):
+    for j in neighbour_frames(i):
         if j < 0 or j >= len(PRIOR_REL):
             continue
         if A.feature == 'road':
@@ -208,6 +228,8 @@ def main():
     ap.add_argument('--photonorm', action='store_true', help='per-camera exposure normalisation before blending')
     ap.add_argument('--accum', type=int, default=0, help='+-frames of image responses accumulated')
     ap.add_argument('--accum_step', type=int, default=4)
+    ap.add_argument('--accum_dist', type=float, default=0.0, help='>0: accumulate by path distance (+- metres)')
+    ap.add_argument('--accum_ds', type=float, default=0.7, help='metres of travel between accumulated frames')
     ap.add_argument('--ground3d', action='store_true', help='IPM onto the map road surface with road tilt')
     ap.add_argument('--dyn_attitude', action='store_true', help='add IMU high-pass pitch/roll (braking, bumps)')
     ap.add_argument('--dyn_roll_only', action='store_true', help='use only the IMU roll (side tilt from bumps)')
@@ -225,6 +247,8 @@ def main():
     PRIOR = ref[['x', 'y', 'yaw']].values.copy()
     global PRIOR_REL
     PRIOR_REL = PRIOR.copy()  # relative motion for accumulation comes from the un-noised smooth trajectory
+    global PATH_S
+    PATH_S = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(PRIOR_REL[:, 0]), np.diff(PRIOR_REL[:, 1])))])
     if A.prior_noise[0] > 0 or A.prior_noise[1] > 0:
         rng = np.random.default_rng(0)
         PRIOR[:, :2] += rng.normal(0, A.prior_noise[0], (n, 2))
