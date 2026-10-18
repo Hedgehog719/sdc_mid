@@ -3,6 +3,7 @@
 
 GET  /                      index with links to the tracks
 GET  /<Track>.html          review page (decisions are loaded from / saved to the server)
+GET  /viewer/<Track>        keyframe viewer (make_viewer.py output): map features projected with a trajectory
 GET  /api/<Track>           current decisions
 POST /api/<Track>           {"dec": {id: "keep"|"reject"}} -> work/pole_review_<Track>.json (apply_pole_review format)
 
@@ -39,6 +40,45 @@ SYNC = r'''
 </script></body>'''
 
 
+VIEWER_DIR = os.path.join(ROOT, 'viewer')
+VIEWER_PAGE = r'''<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Viewer __TRACK__</title>
+<style>
+:root{--bg:#f6f7f9;--ink:#1d2330;--mute:#6b7280;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--ink:#e6e9ee;--mute:#9aa3af;--card:#1b2027}}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,sans-serif}
+header{position:sticky;top:0;background:var(--bg);padding:8px 16px;border-bottom:1px solid #8883;display:flex;gap:10px;flex-wrap:wrap;align-items:center;z-index:2}
+input[type=range]{flex:1;min-width:200px}button{font:inherit;padding:4px 10px;border-radius:6px;border:1px solid #8886;background:var(--card);color:var(--ink)}
+main{padding:10px 16px}img{max-width:100%;border-radius:6px;display:block}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-top:10px}.bev{width:min(600px,100%)}
+.leg span{display:inline-block;margin-right:12px}.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px}
+.mute{color:var(--mute);font-size:12px}
+</style></head><body>
+<header><b>__TRACK__</b><span class="mute" id="lab"></span>
+<button id="prev">◀</button><input type="range" id="sl" min="0" value="0"><button id="next">▶</button>
+<span id="fr"></span></header>
+<main>
+<div class="leg"><span><i class="sw" style="background:#f00"></i>地圖路面標線</span><span><i class="sw" style="background:#ffe600"></i>地圖道路邊界（路緣／分隔島）</span>
+<span><i class="sw" style="background:#0ff"></i>地圖路緣高度落差</span><span><i class="sw" style="background:#0f0"></i>篩選後的桿子</span>
+<span class="mute">左前｜前｜右前相機，用此軌跡投影；位置對得準＝定位準</span></div>
+<img id="kf" alt="cameras">
+<div class="row"><img id="bev" class="bev" alt="bev"><div class="mute" style="max-width:420px">俯視圖（車頭朝上，3–30 m）：灰＝影像的標線響應（三台相機各自計算），藍＝影像分割出的道路，
+紅＝地圖標線，黃＝地圖道路邊界，青＝地圖路緣。紅點落在灰白線上、黃線貼著藍色區域邊緣，代表定位對準。鍵盤 ← → 切換。</div></div>
+</main>
+<script>
+const T='__TRACK__'; let F=[];
+fetch('/viewer/'+T+'/frames.json').then(r=>r.json()).then(j=>{F=j.frames;document.getElementById('lab').textContent=j.label;
+  const s=document.getElementById('sl'); s.max=F.length-1; s.oninput=()=>show(+s.value); show(0);});
+function show(k){k=Math.max(0,Math.min(F.length-1,k)); const i=String(F[k]).padStart(5,'0');
+  document.getElementById('sl').value=k; document.getElementById('fr').textContent='frame '+F[k]+' ('+(k+1)+'/'+F.length+')';
+  document.getElementById('kf').src='/viewer/'+T+'/kf_'+i+'.jpg'; document.getElementById('bev').src='/viewer/'+T+'/bev_'+i+'.jpg';}
+document.getElementById('prev').onclick=()=>show(+document.getElementById('sl').value-1);
+document.getElementById('next').onclick=()=>show(+document.getElementById('sl').value+1);
+document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')show(+document.getElementById('sl').value+1);
+  if(e.key==='ArrowLeft')show(+document.getElementById('sl').value-1);});
+</script></body></html>'''
+
+
 def decisions_path(track):
     return os.path.join(ROOT, f'pole_review_{track}.json')
 
@@ -67,10 +107,21 @@ class H(BaseHTTPRequestHandler):
                 if os.path.exists(decisions_path(t)):
                     d = json.load(open(decisions_path(t))).get('dec', {})
                 total = len(n_poles(t))
-                rows.append(f'<li><a href="/{t}.html">{t}</a> — {total} poles, decided {len(d)}</li>')
+                rows.append(f'<li><a href="/{t}.html">{t} 桿子審核</a> — {total} poles, decided {len(d)} ｜ '
+                            f'<a href="/viewer/{t}">{t} 定位檢視</a></li>')
             return self._send(200, '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
                                    '<title>Pole review</title><body style="font:16px system-ui;padding:16px">'
                                    '<h2>Pole review</h2><ul>' + ''.join(rows) + '</ul></body>')
+        m = re.fullmatch(r'/viewer/(Track[12])/?', p)
+        if m:
+            return self._send(200, VIEWER_PAGE.replace('__TRACK__', m.group(1)))
+        m = re.fullmatch(r'/viewer/(Track[12])/((?:kf|bev)_\d{5}\.jpg|frames\.json)', p)
+        if m:
+            f = os.path.join(VIEWER_DIR, m.group(1), m.group(2))
+            if not os.path.exists(f):
+                return self._send(404, 'not found')
+            ctype = 'application/json' if f.endswith('.json') else 'image/jpeg'
+            return self._send(200, open(f, 'rb').read(), ctype)
         m = re.fullmatch(r'/(Track[12])\.html', p)
         if m:
             t = m.group(1)
