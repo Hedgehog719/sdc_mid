@@ -22,7 +22,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
 from bev import (H, RES, W, X_MAX, Y_MAX, GroundRaster, ImageBEV, ImageBEV3D, edge_response, lane_response,  # noqa: E402
-                 RoadProbBEV, map_bev, map_curb, map_road_region, map_road_scan)
+                 RoadProbBEV, map_bev, map_curb, map_road_region, map_road_scan, map_road_smooth)
 from common import TiledMap, ply_frames, wrap  # noqa: E402
 
 A = None
@@ -122,7 +122,12 @@ def match_frame(i, prior):
     idx = MAP.query_idx(x, y, 42.0)
     mg, road = map_bev(MAP.pts[idx], MAP.inten[idx], np.array([x, y]), yaw)
     if A.feature == 'road':
-        ref = (map_road_scan if A.road_map == 'scan' else map_road_region)(MAP.pts[idx], np.array([x, y]), yaw)
+        if A.road_map == 'smooth':  # smooth ground connected to the vehicle (low local slope; kerbs cut it)
+            ref, kn = map_road_smooth(MAP.pts[idx], np.array([x, y]), yaw)
+            ref = ref.copy()
+            ref[~kn] = ref[kn].mean() if kn.any() else 0.5  # unknown map cells are neutral
+        else:
+            ref = (map_road_scan if A.road_map == 'scan' else map_road_region)(MAP.pts[idx], np.array([x, y]), yaw)
         road = np.ones_like(road, bool)
     elif A.feature == 'curb':
         ref = map_curb(MAP.pts[idx], np.array([x, y]), yaw)
@@ -219,7 +224,7 @@ def main():
     ap.add_argument('--sign', type=float, default=-1.0)
     ap.add_argument('--yaw_sign', type=float, default=-1.0)
     ap.add_argument('--feature', choices=['lane', 'curb', 'road'], default='lane', help='road markings or kerb edges')
-    ap.add_argument('--road_map', choices=['scan', 'fill'], default='scan', help='map road surface: row scan or flood fill')
+    ap.add_argument('--road_map', choices=['scan', 'fill', 'smooth'], default='smooth', help='map road surface: row scan or flood fill')
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
     ap.add_argument('--ground_mode', choices=['plane', 'local'], default='plane',

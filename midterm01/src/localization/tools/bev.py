@@ -631,6 +631,48 @@ def map_road_level(xyz, pose_xy, yaw, raise_h=0.08, win=4.0, obst_h=0.35):
     return road, ~unknown
 
 
+def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True):
+    """Road = smooth ground: cells whose local height slope (over `base` metres) is below slope_max after removing
+    the typical slope of the area (the map is tilted ~10 deg w.r.t. the vehicle). Gentle grades, crests and
+    crossfall pass; kerbs and island edges (10-20 cm drops) are steep and cut the region. With `connect`, only the
+    smooth region connected to the cells ahead of the vehicle is kept. Returns (road 0..1, known)."""
+    c, s = np.cos(yaw), np.sin(yaw)
+    d = xyz[:, :2] - pose_xy
+    x = c * d[:, 0] + s * d[:, 1]
+    y = -s * d[:, 0] + c * d[:, 1]
+    z = xyz[:, 2]
+    r = ((X_MAX - x) / RES).astype(np.int64)
+    col = ((Y_MAX - y) / RES).astype(np.int64)
+    ok = (r >= 0) & (r < H) & (col >= 0) & (col < W)
+    hmin = np.full(H * W, np.inf)
+    np.minimum.at(hmin, r[ok] * W + col[ok], z[ok])
+    hmin = hmin.reshape(H, W).astype(np.float32)
+    valid = np.isfinite(hmin)
+    if valid.sum() < 200:
+        return np.zeros((H, W), np.float32), np.zeros((H, W), bool)
+    h = np.where(valid, hmin, 1e4).astype(np.float32)
+    for k in (3, 5):  # fill small scan gaps with local minima
+        h = np.where(h > 1e3, cv2.erode(h, np.ones((k, k), np.uint8)), h)
+    known = h < 1e3
+    h = np.where(known, h, np.median(hmin[valid])).astype(np.float32)
+    h = cv2.medianBlur(h, 5)
+    b = max(1, int(round(base / RES)))
+    gx = (np.roll(h, -b, 1) - np.roll(h, b, 1)) / (2 * b * RES)
+    gy = (np.roll(h, -b, 0) - np.roll(h, b, 0)) / (2 * b * RES)
+    kn2 = known & np.roll(known, b, 0) & np.roll(known, -b, 0) & np.roll(known, b, 1) & np.roll(known, -b, 1)
+    gx0, gy0 = np.median(gx[kn2]), np.median(gy[kn2])  # typical slope (map tilt / crossfall)
+    slope = np.hypot(gx - gx0, gy - gy0)
+    smooth = kn2 & (slope < slope_max)
+    if connect:
+        lab_n, lab = cv2.connectedComponents(smooth.astype(np.uint8), connectivity=4)
+        seeds = [(int((X_MAX - xx) / RES), int(Y_MAX / RES) + dc) for xx in np.arange(X_MIN + 0.5, X_MIN + 8, 0.5)
+                 for dc in (-8, 0, 8)]
+        ids = {lab[r0, c0] for r0, c0 in seeds if 0 <= r0 < H and 0 <= c0 < W and lab[r0, c0] > 0}
+        smooth = np.isin(lab, list(ids)) if ids else smooth
+    road = cv2.morphologyEx(smooth.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)).astype(np.float32)
+    return cv2.GaussianBlur(road, (0, 0), 1.0), kn2
+
+
 class RoadProbBEV:
     """IPM of SegFormer road probability (quarter-res arrays) using an ImageBEV's projection maps."""
 
