@@ -150,6 +150,12 @@ def match_frame(i, prior):
         ref[~road] = 0
     else:
         ref = lane_response(mg, road)
+        if A.map_min_blob > 0:  # isolated bright map specks (studs, sparse rings) are not markings
+            n, lab, st, _ = cv2.connectedComponentsWithStats((ref > 1.0).astype(np.uint8), connectivity=8)
+            small = np.flatnonzero(st[:, cv2.CC_STAT_AREA] < A.map_min_blob)
+            small = small[small > 0]
+            if len(small):
+                ref = np.where(np.isin(lab, small), 0, ref).astype(ref.dtype)
     p = int(A.max_shift / RES)
     padded = cv2.copyMakeBorder(ref, p, p, p, p, cv2.BORDER_CONSTANT,
                                 value=float(ref.mean()) if A.feature == 'road' else 0).astype(np.float32)
@@ -253,6 +259,7 @@ def main():
     ap.add_argument('--road_colour', action='store_true', help='average segmentation with a per-frame asphalt colour model')
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
+    ap.add_argument('--map_min_blob', type=int, default=0, help='>0: drop map marking blobs smaller than this (cells)')
     ap.add_argument('--pin_z', type=float, default=None, help='road height assumed level (map frame) for --pin_frames')
     ap.add_argument('--pin_frames', default='', help='lo:hi frames that use the pinned road height')
     ap.add_argument('--hybrid_ratio', type=float, default=0.6, help='ground_mode hybrid: plane/local road threshold')
