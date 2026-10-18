@@ -68,6 +68,7 @@ def main():
     ap.add_argument('--step', type=int, default=60)
     ap.add_argument('--cams', nargs='+', default=['fl', 'fr', 'f'])
     ap.add_argument('--eval', default='', help='only score: json of per-camera rot fixes (or "none")')
+    ap.add_argument('--out', default='', help='output json (default work/cam_rot_fix.json, the active calibration)')
     a = ap.parse_args()
     ref = pd.read_csv(a.ref_csv)
     ts, _ = ply_frames(os.path.join(a.track_dir, 'raw_ply'))
@@ -125,7 +126,7 @@ def main():
             print(f'   step {step}: yaw {cur[0]:+.2f} pitch {cur[1]:+.2f} roll {cur[2]:+.2f} -> NCC {best:.4f}', flush=True)
         result[c] = [round(v, 3) for v in cur]
         C.rot_fix[c] = tuple(cur)
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work', 'cam_rot_fix.json')
+    out = a.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work', 'cam_rot_fix.json')
     json.dump(result, open(out, 'w'), indent=1)
     print('saved', out, result)
 
