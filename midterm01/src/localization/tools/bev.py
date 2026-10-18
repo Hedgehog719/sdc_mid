@@ -80,6 +80,43 @@ class ImageBEV:
             my[~v] = -1
             self.maps[c] = (mx, my, v)
 
+    def render_resp_color(self, i, fn):
+        """Like render_resp, but the marking response is the max over luminance, yellowness ((R+G)/2-B) and
+        redness (R-(G+B)/2): yellow lane / island lines and red kerb lines have little luminance contrast on asphalt
+        but are clear in colour, and painted lines are visible in the LiDAR reflectivity."""
+        if self.dyn is not None:
+            h, p, r, y = self.calib
+            self.set_calib(h, p + self.dyn[i, 0], r + self.dyn[i, 1], y)
+        acc = np.zeros((H, W), np.float32)
+        cnt = np.zeros((H, W), np.float32)
+        for c in self.cams:
+            img = cv2.imread(os.path.join(self.track_dir, f'{self.track}_images', f'{self.track}_{c}_images', self.names[c][i]))
+            if img is None:
+                continue
+            bad = np.zeros(img.shape[:2], np.uint8)
+            if c in self.masks:
+                m = np.unpackbits(self.masks[c][i], axis=1)[:, :img.shape[1] // 2]
+                bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+            if c == 'f' and self.hood is not None and self.hood.shape == bad.shape:
+                bad |= self.hood.astype(np.uint8)
+            mx, my, v = self.maps[c]
+            col = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
+            b = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
+            ok = v & (b == 0)
+            if ok.sum() < 100:
+                continue
+            B_, G_, R_ = col[..., 0], col[..., 1], col[..., 2]
+            lum = 0.114 * B_ + 0.587 * G_ + 0.299 * R_
+            yel = np.maximum((R_ + G_) / 2 - B_, 0)
+            red = np.maximum(R_ - (G_ + B_) / 2, 0)
+            r_ = np.maximum.reduce([fn(lum, ok), fn(yel, ok), fn(red, ok)])
+            okr = cv2.erode(ok.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+            acc[okr] += r_[okr]
+            cnt[okr] += 1
+        valid = cnt > 0
+        acc[valid] /= cnt[valid]
+        return acc, valid
+
     def render_resp(self, i, fn):
         """Per-camera feature response fn(gray_c, valid_c) blended afterwards (average where valid): exposure and
         white-balance differences between cameras cannot create seam edges, since each response is computed

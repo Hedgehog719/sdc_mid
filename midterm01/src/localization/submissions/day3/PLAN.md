@@ -39,15 +39,29 @@ BEV fwd 0.55 -> 0.42 m, lat 0.21 -> 0.17 m, so the first-round pole corrections 
 - Track2 drift simulation: old lanes + curated poles 0.599 -> per-camera lanes 0.571 -> + road region 0.566.
 - Track1 third iteration (per-camera lanes + poles round 2 + road) moves only 0.05-0.09 m from iter2: converged.
 
+## Track1 start segment (frames 0-264, < 3 m/s)
+Viewer review (frames 60/90/225): the map is clean there (no vehicles; the clutter came from the single-plane
+ground model on a section whose road height varies 0.7 m within 30 m). Tested on the start segment (lane fixes,
+frames 0-450, +-5 m search):
+| variant | median fix | frame-to-frame jump | at search bound |
+|---|---|---|---|
+| frame window (current) | 1.07 m | 0.53 m | 11 % |
+| **path-distance accumulation (+-10 m)** | **0.75 m** | **0.29 m** | **3 %** |
+| + local ground | 1.40 m | 0.52 m | 18 % |
+| + colour channels (yellow / red paint) | 0.72 m | 0.40 m | 13 % (Track2 also worse: 0.56 -> 0.89 m) |
+User idea: the IMU heading hardly changes at the start, so hold yaw constant and keep the path straight there
+(--start_hold 1.5: frames 0-264); it changes the start laterally by up to 0.3 m.
+
 ## Track1 (in order)
-1. iter3_pc                per-camera lanes + curated poles (round 2)
-2. iter3_pc_road           + road region (weaker where the map contains vehicles, e.g. Track1 frames 0-260)
-3. curated_p50_f0.3        curated poles (fwd change vs best 0.52 m rms)
-4. iter2_f0.3              second iteration (0.60 m vs best, 0.28 m vs round 1)
-5. curated_occ_p50_f0.3    + occlusion check (occluders < 6 m, 2 m margin)
-6. iter2_f0.5
-7. pole_p50_f0.3           uncurated, for comparison
-8-9. time-lag probes on the best of 1-7
+1. iter3_pcd_hold          distance-accumulated lanes + curated poles + start hold
+2. iter3_pc                per-camera lanes + curated poles (round 2)
+3. iter3_pc_hold           start hold only
+4. iter3_pcd_lowspd        distance-accumulated lanes also used below 3 m/s
+5. iter3_pc_road           + road region
+6. curated_p50_f0.3        curated poles (fwd change vs best 0.52 m rms)
+7. iter2_f0.3              second iteration
+8. curated_occ_p50_f0.3    + occlusion check (occluders < 6 m, 2 m margin)
+9-10. time-lag probes on the best of 1-8
 then combinations.
 
 ## Track2

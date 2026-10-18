@@ -83,7 +83,7 @@ def accumulated_response(i, road_d):
         if A.feature == 'road':
             r, v = ROADBEV.render(j)
         elif A.percam and A.feature == 'lane':
-            r, v = BEV.render_resp(j, lane_response)
+            r, v = (BEV.render_resp_color if A.color else BEV.render_resp)(j, lane_response)
         else:
             g, v = BEV.render_pose(j, *PRIOR_REL[j]) if A.ground3d else BEV.render(j)
             r = edge_response(g, v) if A.feature == 'curb' else lane_response(g, v)
@@ -145,7 +145,7 @@ def match_frame(i, prior):
             base = base.copy()
             base[~v] = base[v].mean() if v.any() else 0.5
         elif A.percam and A.feature == 'lane':
-            base, v = BEV.render_resp(i, lane_response)
+            base, v = (BEV.render_resp_color if A.color else BEV.render_resp)(i, lane_response)
             base = base * road_d
         else:
             g, v = BEV.render_pose(i, *PRIOR_REL[i]) if A.ground3d else BEV.render(i)
@@ -224,6 +224,7 @@ def main():
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
     ap.add_argument('--ground_mode', choices=['plane', 'local'], default='plane',
                     help='map road surface reference: one plane under the vehicle, or a smooth local ground surface')
+    ap.add_argument('--color', action='store_true', help='with --percam: add yellowness / redness marking channels')
     ap.add_argument('--percam', action='store_true', help='compute the marking response per camera, then blend')
     ap.add_argument('--photonorm', action='store_true', help='per-camera exposure normalisation before blending')
     ap.add_argument('--accum', type=int, default=0, help='+-frames of image responses accumulated')
