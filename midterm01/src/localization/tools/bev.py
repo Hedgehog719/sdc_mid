@@ -634,7 +634,8 @@ def map_road_level(xyz, pose_xy, yaw, raise_h=0.08, win=4.0, obst_h=0.35):
     return road, ~unknown
 
 
-def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True):
+def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True, fill_hole_m2=3.0, standing_h=0.0,
+                    level_tol=0.08):
     """Road = smooth ground: cells whose local height slope (over `base` metres) is below slope_max after removing
     the typical slope of the area (the map is tilted ~10 deg w.r.t. the vehicle). Gentle grades, crests and
     crossfall pass; kerbs and island edges (10-20 cm drops) are steep and cut the region. With `connect`, only the
@@ -666,14 +667,49 @@ def map_road_smooth(xyz, pose_xy, yaw, slope_max=0.25, base=0.3, connect=True):
     gx0, gy0 = np.median(gx[kn2]), np.median(gy[kn2])  # typical slope (map tilt / crossfall)
     slope = np.hypot(gx - gx0, gy - gy0)
     smooth = kn2 & (slope < slope_max)
+    if level_tol > 0:
+        # road level: a smooth quadratic surface fitted to the smooth cells near / ahead of the vehicle (robust,
+        # iteratively dropping cells above it). Sidewalks are ~15 cm higher, so cells more than level_tol above the
+        # road level are excluded even when a gentle wheelchair ramp connects them to the road.
+        gyy, gxx = np.meshgrid(Y_MAX - np.arange(W) * RES, X_MAX - np.arange(H) * RES)
+        F = lambda u, v: np.stack([np.ones_like(u), u, v, u * u, v * v, u * v], -1)  # noqa: E731
+        sel = smooth & (np.abs(gyy) < 6) & (gxx < X_MIN + 15)
+        if sel.sum() > 200:
+            u0, v0, z0 = gxx[sel], gyy[sel], h[sel]
+            keep = np.ones(len(z0), bool)
+            for _ in range(5):
+                coef = np.linalg.lstsq(F(u0[keep], v0[keep]), z0[keep], rcond=None)[0]
+                res = z0 - F(u0, v0) @ coef
+                keep = res < max(2.5 * np.median(np.abs(res[keep])), 0.03)   # drop raised cells (sidewalk)
+            level = F(gxx, gyy) @ coef
+            smooth &= (h - level) < level_tol
     if connect:
         lab_n, lab = cv2.connectedComponents(smooth.astype(np.uint8), connectivity=4)
         seeds = [(int((X_MAX - xx) / RES), int(Y_MAX / RES) + dc) for xx in np.arange(X_MIN + 0.5, X_MIN + 8, 0.5)
                  for dc in (-8, 0, 8)]
         ids = {lab[r0, c0] for r0, c0 in seeds if 0 <= r0 < H and 0 <= c0 < W and lab[r0, c0] > 0}
         smooth = np.isin(lab, list(ids)) if ids else smooth
-    road = cv2.morphologyEx(smooth.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)).astype(np.float32)
-    return cv2.GaussianBlur(road, (0, 0), 1.0), kn2
+    road = cv2.morphologyEx(smooth.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
+    known_out = kn2.copy()
+    if standing_h > 0:
+        # objects standing in the map (vehicles / scooters parked when it was built, planters...): lowest point well
+        # above the local ground. They are UNKNOWN, not non-road: if the object is gone today the image shows road,
+        # and if a car parks there today the image segmentation marks it as unknown -> neither case biases the match
+        g = local_ground(np.where(valid, hmin, np.inf).astype(np.float32), valid)
+        standing = valid & (hmin - g > standing_h)
+        standing = cv2.dilate(standing.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+        known_out &= ~standing
+    if fill_hole_m2 > 0:
+        # small holes inside the road: patched pavement, manholes, drains, scan noise, multi-pass seams
+        from scipy import ndimage
+        holes = ndimage.binary_fill_holes(road) & ~road
+        lab_h, nh = ndimage.label(holes)
+        if nh:
+            sizes = ndimage.sum(holes, lab_h, np.arange(1, nh + 1)) * RES * RES
+            small = np.isin(lab_h, np.flatnonzero(sizes <= fill_hole_m2) + 1)
+            road = road | small
+    road = road.astype(np.float32)
+    return cv2.GaussianBlur(road, (0, 0), 1.0), known_out
 
 
 class RoadProbBEV:
