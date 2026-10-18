@@ -243,6 +243,7 @@ def road_profile(x, y, z, cross, strip=2.5, bin_m=2.0):
     return np.interp(x, cen, prof)
 
 
+PIN_Z = 0.0  # GROUND_MODE 'pinned': assumed road height (map frame)
 HYBRID_RATIO = 0.6  # GROUND_MODE 'hybrid': use the local ground when plane road < ratio x local road
 
 
@@ -284,6 +285,10 @@ def _map_bev(xyz, intensity, pose_xy, yaw, plane_tol, rough_max, mode):
     hrel = z - (coef[0] * x + coef[1] * y + coef[2])
     if mode == 'profile':  # road height profile along the driving direction (follows warps of the map ground)
         hrel = z - (road_profile(x, y, z, coef[1]) + coef[1] * y)
+    win = plane_tol + 0.3
+    if mode == 'pinned':  # road assumed level at PIN_Z (map ground there is corrupted); only points near it count
+        hrel = z - PIN_Z
+        win = plane_tol
     r = ((X_MAX - x) / RES).astype(np.int64)
     col = ((Y_MAX - y) / RES).astype(np.int64)
     if mode in ('local', 'smooth'):
@@ -294,7 +299,7 @@ def _map_bev(xyz, intensity, pose_xy, yaw, plane_tol, rough_max, mode):
         gsurf = local_ground(zmin.astype(np.float32), np.isfinite(zmin))
         hrel = np.full(len(z), 1e3)
         hrel[inb] = z[inb] - gsurf[r[inb], col[inb]]
-    ok = (r >= 0) & (r < H) & (col >= 0) & (col < W) & (np.abs(hrel) < plane_tol + 0.3)
+    ok = (r >= 0) & (r < H) & (col >= 0) & (col < W) & (np.abs(hrel) < win)
     r, col, hr, it = r[ok], col[ok], hrel[ok], intensity[ok]
     hmin = np.full((H, W), np.inf)
     np.minimum.at(hmin, (r, col), hr)

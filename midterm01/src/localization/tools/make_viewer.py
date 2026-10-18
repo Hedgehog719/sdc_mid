@@ -17,7 +17,7 @@ import pandas as pd
 from scipy.spatial.transform import Rotation
 
 sys.path.insert(0, os.path.dirname(__file__))
-from bev import (H, RES, W, X_MAX, Y_MAX, ImageBEV, RoadProbBEV, bev_grid, lane_response, map_bev, map_curb,  # noqa: E402
+from bev import (map_road_smooth, H, RES, W, X_MAX, Y_MAX, ImageBEV, RoadProbBEV, bev_grid, lane_response, map_bev, map_curb,  # noqa: E402
                  map_road_scan)
 from bev_match import load_map  # noqa: E402
 from camera_model import Cameras  # noqa: E402
@@ -35,6 +35,8 @@ def main():
     ap.add_argument('--step', type=int, default=15)
     ap.add_argument('--label', default='')
     ap.add_argument('--variant', default='', help='render into work/viewer/<Track>_<variant> for A/B comparison')
+    ap.add_argument('--road_edge', choices=['smooth', 'scan'], default='smooth',
+                    help='yellow outline: smooth = map road used by the kerb matcher; scan = old row-scan heuristic')
     ap.add_argument('--ground_mode', default='plane', help='map road mask: plane | local | smooth | hybrid')
     ap.add_argument('--range', default='', help='lo:hi frames to (re)render; frames.json keeps all rendered frames')
     a = ap.parse_args()
@@ -61,8 +63,12 @@ def main():
         pts, inten = M.pts[idx], M.inten[idx]
         mg, road = map_bev(pts, inten, np.array([x, y]), yaw)
         lanes = lane_response(mg, road) > 1.5
-        rs = map_road_scan(pts.astype(np.float64), np.array([x, y]), yaw)
-        edge = (rs > 0.5).astype(np.uint8)
+        if a.road_edge == 'smooth':  # the kerb matcher's map road (slope-based, connected to the vehicle)
+            rs, kn = map_road_smooth(pts.astype(np.float64), np.array([x, y]), yaw)
+            edge = ((rs > 0.5) & kn).astype(np.uint8)
+        else:
+            rs = map_road_scan(pts.astype(np.float64), np.array([x, y]), yaw)
+            edge = (rs > 0.5).astype(np.uint8)
         edge = (edge - cv2.erode(edge, np.ones((3, 3), np.uint8))) > 0
         curb = map_curb(pts.astype(np.float64), np.array([x, y]), yaw) > 0.03
         layers = [(to_vehicle(lanes, 1.5), (0, 0, 255), 1), (to_vehicle(curb, 1.5), (255, 255, 0), 1),

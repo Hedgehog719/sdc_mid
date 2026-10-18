@@ -127,6 +127,11 @@ def subpix(res, loc):
 
 def match_frame(i, prior):
     x, y, yaw = prior
+    if A.pin_frames:  # map ground corrupted here: assume the road level with the trusted road further on
+        import bev as _bev
+        lo, hi = [int(v) for v in A.pin_frames.split(':')]
+        _bev.GROUND_MODE = 'pinned' if lo <= i < hi else A.ground_mode
+        _bev.PIN_Z = A.pin_z
     idx = MAP.query_idx(x, y, 42.0)
     mg, road = map_bev(MAP.pts[idx], MAP.inten[idx], np.array([x, y]), yaw)
     if A.feature == 'road':
@@ -248,8 +253,10 @@ def main():
     ap.add_argument('--road_colour', action='store_true', help='average segmentation with a per-frame asphalt colour model')
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
+    ap.add_argument('--pin_z', type=float, default=None, help='road height assumed level (map frame) for --pin_frames')
+    ap.add_argument('--pin_frames', default='', help='lo:hi frames that use the pinned road height')
     ap.add_argument('--hybrid_ratio', type=float, default=0.6, help='ground_mode hybrid: plane/local road threshold')
-    ap.add_argument('--ground_mode', choices=['plane', 'local', 'smooth', 'hybrid', 'profile'], default='plane',
+    ap.add_argument('--ground_mode', choices=['plane', 'local', 'smooth', 'hybrid', 'profile', 'pinned'], default='plane',
                     help='map road surface reference: one plane under the vehicle, or a smooth local ground surface')
     ap.add_argument('--color', action='store_true', help='with --percam: add yellowness / redness marking channels')
     ap.add_argument('--percam', action='store_true', help='compute the marking response per camera, then blend')
