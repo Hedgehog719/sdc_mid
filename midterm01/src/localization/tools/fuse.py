@@ -109,6 +109,7 @@ def main():
     p.add_argument('--pole_pct', type=float, default=50, help='keep pole fixes whose peak is above this percentile')
     p.add_argument('--pole_fwd_sigma', type=float, default=0.3)
     p.add_argument('--pole_lat_sigma', type=float, default=0.6)
+    p.add_argument('--pole_min_speed', type=float, default=0.0, help='drop pole fixes below this speed (m/s)')
     p.add_argument('--road', default='', help='bev_match.py --feature road npz: lateral fixes from the road region')
     p.add_argument('--road_pct', type=float, default=50)
     p.add_argument('--road_lat_sigma', type=float, default=0.5)
@@ -209,6 +210,9 @@ def main():
         if a.pole:
             pz = np.load(a.pole)
             pm = pz['peak'] >= np.percentile(pz['peak'], a.pole_pct)
+            if a.pole_min_speed > 0:  # pole association breaks down when (nearly) stationary
+                st_p = rts_smooth(ts, s.gt, s.gxyz[:, :2], psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos)
+                pm &= np.interp(pz['ts'].astype(float), ts.astype(float), np.abs(st_p[:, 2])) >= a.pole_min_speed
             yw = pz['pyaw'][pm]
             c, s_ = np.cos(yw), np.sin(yw)
             Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)

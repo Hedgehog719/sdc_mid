@@ -51,6 +51,8 @@ def main():
     ap.add_argument('--pole_pct', type=float, default=50, help='keep pole fixes with peak above this percentile')
     ap.add_argument('--pole_fwd', type=float, default=0.5)
     ap.add_argument('--pole_lat', type=float, default=0.6)
+    ap.add_argument('--pole_dt', type=float, default=0.0, help='s; pole fixes moved forward by speed*dt (lag bias)')
+    ap.add_argument('--pole_min_speed', type=float, default=0.0)
     ap.add_argument('--no_bev', action='store_true')
     ap.add_argument('--road', default='')
     ap.add_argument('--road_pct', type=float, default=50)
@@ -115,8 +117,12 @@ def main():
         if a.pole:
             pz = np.load(a.pole)
             pm = pz['peak'] >= np.percentile(pz['peak'], a.pole_pct)
+            pspd = np.interp(pz['ts'].astype(float), ts.astype(float), np.abs(st[:, 2]))
+            pm &= pspd >= a.pole_min_speed
             ptm = pz['ts'][pm]
             pzm = np.stack([pz['mx'][pm], pz['my'][pm]], 1)
+            if a.pole_dt:
+                pzm = pzm + (pspd[pm] * a.pole_dt)[:, None] * np.stack([np.cos(pz['pyaw'][pm]), np.sin(pz['pyaw'][pm])], 1)
             pc = np.zeros((pm.sum(), 2, 2))
             for k, y in enumerate(pz['pyaw'][pm]):
                 Rr = np.array([[np.cos(y), -np.sin(y)], [np.sin(y), np.cos(y)]])
