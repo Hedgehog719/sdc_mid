@@ -59,6 +59,7 @@ def main():
     ap.add_argument('--aniso_k', type=float, default=0.0, help='>0: BEV fwd sigma = clip(k / sharp_f, aniso_min, fwd_sigma)')
     ap.add_argument('--aniso_min', type=float, default=0.3)
     ap.add_argument('--aniso_lat', action='store_true', help='also lat sigma = clip(k / sharp_l, aniso_min, 3 bev_sigma)')
+    ap.add_argument('--out_csv', default='', help='write the fused trajectory (x, y; reference yaw) as a prior CSV')
     ap.add_argument('--dump', default='', help='save per-frame fwd/lat errors (npz)')
     a = ap.parse_args()
     ref = pd.read_csv(a.ref_csv)
@@ -129,6 +130,10 @@ def main():
         el = -np.sin(yw) * e[:, 0] + np.cos(yw) * e[:, 1]
         report(f'RTS(GNSS+fixes)', st2[:, :2], ref)
         print(f'                    fwd rms {np.sqrt(np.mean(ef ** 2)):.3f}  lat rms {np.sqrt(np.mean(el ** 2)):.3f}')
+        if a.out_csv:
+            o = ref.copy()
+            o['x'], o['y'] = st2[:, 0], st2[:, 1]
+            o.to_csv(a.out_csv, index=False)
         if a.dump:
             np.savez(a.dump, ts=ts, ef=ef, el=el, x=ref.x.values, y=ref.y.values, yaw=yw)
 
