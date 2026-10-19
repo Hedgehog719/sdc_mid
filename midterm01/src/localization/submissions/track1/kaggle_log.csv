@@ -1,4 +1,5 @@
 ref,fileName,date,description,status,publicScore,privateScore
+57373293,t1_fin_start.csv,2026-10-19 00:02:54.410000,t1_fin_start,SubmissionStatus.COMPLETE,0.70845,
 57330732,t1_final_q0.2.csv,2026-10-18 00:07:19.517000,t1_final_q0.2,SubmissionStatus.COMPLETE,0.94702,
 57330728,t1_final_q0.1_bev1.0.csv,2026-10-18 00:07:14.707000,t1_final_q0.1_bev1.0,SubmissionStatus.COMPLETE,0.93699,
 57330721,t1_final_q0.1.csv,2026-10-18 00:07:09.253000,t1_final_q0.1,SubmissionStatus.COMPLETE,0.93834,

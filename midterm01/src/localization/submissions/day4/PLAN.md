@@ -72,3 +72,9 @@ Track2: 1) final/t2_pos2.csv (position+yaw fixes, start refined with +-6 deg sea
         3) final/t2_yawonly.csv
 Rule: first file per track; if it beats the track's best (T1 0.93699, T2 0.28263) stop that track and wait for
 the user; otherwise next file.
+
+## 08:03 RESULTS
+Track1: t1_fin_start 0.70845 (best was 0.93699) -> improved, stopped (1 submission used).
+Track2: t2_pos2 0.32087, t2_yawbev0.7 0.32591, t2_pos2_bestyaw 0.29868 (best 0.28263) -> no improvement, stopped
+  (3 used). On T2 (accurate GNSS) both the BEV position fixes (+0.016) and the stronger BEV yaw / map-consistent
+  start yaw (+0.03..0.04) hurt; t2_yawonly not submitted (also changes yaw). Waiting for the user.

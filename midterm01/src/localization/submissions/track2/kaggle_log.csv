@@ -1,4 +1,7 @@
 ref,fileName,date,description,status,publicScore,privateScore
+57373542,t2_pos2_bestyaw.csv,2026-10-19 00:04:45.123000,t2_pos2_bestyaw,SubmissionStatus.COMPLETE,0.29868,
+57373479,t2_yawbev0.7.csv,2026-10-19 00:04:08.963000,t2_yawbev0.7,SubmissionStatus.COMPLETE,0.32591,
+57373380,t2_pos2.csv,2026-10-19 00:03:28.147000,t2_pos2,SubmissionStatus.COMPLETE,0.32087,
 57330771,t2_traj_bev_q0.1_nhc.csv,2026-10-18 00:07:51.740000,t2_traj_bev_q0.1_nhc,SubmissionStatus.COMPLETE,0.28291,
 57330757,t2_traj_bev_q0.2.csv,2026-10-18 00:07:45.287000,t2_traj_bev_q0.2,SubmissionStatus.COMPLETE,0.29124,
 57330750,t2_traj_bev_q0.1.csv,2026-10-18 00:07:40.593000,t2_traj_bev_q0.1,SubmissionStatus.COMPLETE,0.28442,
