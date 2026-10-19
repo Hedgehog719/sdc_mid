@@ -11,7 +11,7 @@ import numpy as np
 
 def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos=0.05, huber=3.0,
                meas_sigma=None, meas_cov=None, q_lat=None, t_zupt=None, sigma_zupt=0.02,
-               gnss_bias=None, gnss_mask=None, map_bias=None, map_mask=None, return_nis=False):
+               gnss_bias=None, gnss_mask=None, map_bias=None, map_mask=None, return_nis=False, huber_g=None):
     """meas_cov: optional (N, 2, 2) per-measurement covariance (overrides sigma), e.g. lateral-only fixes.
 
     gnss_bias: (tau_s, sigma_b, sigma_w) models the GNSS error as coloured noise: a first-order Gauss-Markov bias
@@ -121,8 +121,9 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
             r = z - Hm @ x
             m = np.sqrt(r @ np.linalg.solve(S, r))
             nis[ref[k]] = m * m
-            if m > huber:  # robust: inflate noise of outlying fixes
-                R = R * (m / huber) ** 2
+            hb = huber_g if (is_g and huber_g is not None) else huber
+            if m > hb:  # robust: inflate noise of outlying fixes (GNSS may use its own threshold)
+                R = R * (m / hb) ** 2
                 S = Hm @ P @ Hm.T + R
             K = P @ Hm.T @ np.linalg.inv(S)
             x = x + K @ r

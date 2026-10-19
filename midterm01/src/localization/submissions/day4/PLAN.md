@@ -280,3 +280,15 @@ tau 30 / 0.30 and 45 / 0.35 equal; white 0.015-0.03 flat. submissions/day6/track
 GNSS model, start and yaw of the best; vs best fwd 0.057 lat 0.060 m rms). Not submitted.
 T2: gating poles worse (0.2327-0.2331 vs 0.23178); the bias component's GNSS model barely moves the blend
 (weight 0.231): T2 positions stay at the in-span optimum.
+Joint side-camera calibration (calib_img2 --poses front-only fixes --also other track; front f [-0.35, 1.1, -0.65]
++0.18 m): fl [-0.2, 0.6, 0.45] / [0.03, 0.01, 0.09], fr [0.2, 0.3, -1.6] / [0.21, -0.09, 0.08] (work/cam_fix_joint.json).
+Mean lateral camera disagreement (3 pairs, both tracks): default 0.481, xtrack 0.379, t2fit 0.362, joint 0.363.
+Full T1 BEV with the T2-only calibration (cam_fix_img2.json) running -> non-circular test on Track1
+(work/mb/build_t1_v2fix.sh TAG npz builds the v2-recipe candidate + prediction); T2 full run queued after it.
+T1 v2 fusion parameter grid: bev_lat_sigma no effect (aniso clip), aniso_k 0.01 and map bias L1000/0.03 optimal.
+T1 yaw: course - yaw on v2 positions +0.15 deg (every segment positive) -> t1_v2_yawmean.csv (+0.152 on moving
+frames); start candidates rebuilt on v2: t1_v2_start_{full,lat}.csv (lateral -0.65..-0.73 m; the lateral-only one
+is nearly orthogonal (cos +0.16) to the known-bad camera start, which moved forward +0.40 m).
+T1 end (2900-3011): lane fixes 0.5-0.9 m right of v2, GNSS swings 2.3 m in 6 s; a lower GNSS Huber threshold
+follows the lane fixes but is predicted worse (0.5062+ vs 0.5020): the board trusts GNSS there; dropping the end
+fixes cannot be judged offline (17-29 % out of span).

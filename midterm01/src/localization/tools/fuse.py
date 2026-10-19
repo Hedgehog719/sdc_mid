@@ -93,6 +93,7 @@ def main():
     p.add_argument('--map_bias_len', type=float, default=0.0,
                    help='>0: common error of the map fixes as Gauss-Markov in distance, correlation length (m)')
     p.add_argument('--map_bias_sigma', type=float, default=0.15, help='map-error steady-state sigma (m) per axis')
+    p.add_argument('--gnss_huber', type=float, default=0.0, help='>0: Huber threshold for the GNSS rows (bias model)')
     p.add_argument('--nis', action='store_true', help='print the filter consistency (NIS) per measurement group')
     p.add_argument('--psi_csv', default='', help='CSV whose yaw is the heading input of the position RTS')
     p.add_argument('--bev_keep_edge', action='store_true',
@@ -266,7 +267,7 @@ def main():
             mmask[len(s.gt):] = True
         st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov,
                         q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask, map_bias=mb, map_mask=mmask,
-                        return_nis=a.nis)
+                        return_nis=a.nis, huber_g=a.gnss_huber if a.gnss_huber > 0 else None)
         if a.nis:  # filter consistency per group: mean NIS ~ 2 (2D) if the noise model matches the data
             st, nis = st
             lo_ = 0
