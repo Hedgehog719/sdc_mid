@@ -26,6 +26,7 @@ ap.add_argument('traj_csv')
 ap.add_argument('--frames', default='330:-1:30')
 ap.add_argument('--show', type=int, nargs='*', default=[], help='also print these frames individually')
 ap.add_argument('--bands', default='-5:2,2:6,6:10,10:16,16:24')
+ap.add_argument('--dump', default='', help='npz with every per-frame measurement')
 a = ap.parse_args()
 ref = pd.read_csv(a.traj_csv)
 ts, _ = ply_frames(os.path.join(a.track_dir, 'raw_ply'))
@@ -39,6 +40,7 @@ M = load_map(a.track_dir)
 B = ImageBEV(a.track_dir, 1.5, 0, 0, -1.5)
 xs, ys = bev_grid()
 P = 15
+rows_out = []
 res = {c: {b: [] for b in bands} for c in B.cams}
 for i in frames:
     x, y, yaw = ref.x[i], ref.y[i], ref.yaw[i]
@@ -79,6 +81,7 @@ for i in frames:
                 continue
             dx, dy = -(dr - P) * RES, -(dc - P) * RES
             res[c][bd].append((dx, dy, float(cc[dr, dc])))
+            rows_out.append((i, B.cams.index(c), bands.index(bd), dx, dy, float(cc[dr, dc])))
             if i in a.show:
                 line.append(f'{c}[{bd[0]:g},{bd[1]:g}] dx {dx:+.1f} dy {dy:+.1f} ncc {cc[dr, dc]:.2f}')
     if i in a.show:
@@ -86,3 +89,6 @@ for i in frames:
 print(f'{len(frames)} frames; median shift camera BEV -> map (dx forward, dy left, m), n, mean NCC')
 for c in B.cams:
     print(' ', c, ' | '.join(f'x {bd[0]:g}..{bd[1]:g}: ' + (f'dy {np.median([r[1] for r in res[c][bd]]):+.2f} dx {np.median([r[0] for r in res[c][bd]]):+.2f} (n {len(res[c][bd])})' if len(res[c][bd]) >= 5 else '-') for bd in bands))
+if a.dump:
+    r = np.array(rows_out)
+    np.savez(a.dump, frame=r[:, 0], cam=r[:, 1], band=r[:, 2], dx=r[:, 3], dy=r[:, 4], ncc=r[:, 5], cams=np.array(B.cams), bands=np.array(bands))

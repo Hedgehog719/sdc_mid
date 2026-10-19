@@ -90,6 +90,8 @@ def accumulated_response(i, road_d):
             continue
         if A.feature == 'road':
             r, v = ROADBEV.render(j)
+        elif A.percam and A.feature == 'lane' and A.ground3d:
+            r, v = BEV.render_resp_pose(j, *PRIOR_REL[j], lane_response)
         elif A.percam and A.feature == 'lane':
             r, v = (BEV.render_resp_color if A.color else BEV.render_resp)(j, lane_response)
         else:
@@ -168,6 +170,8 @@ def match_frame(i, prior):
             base, v = ROADBEV.render(i)
             base = base.copy()
             base[~v] = base[v].mean() if v.any() else 0.5
+        elif A.percam and A.feature == 'lane' and A.ground3d:
+            base, v = BEV.render_resp_pose(i, *PRIOR_REL[i], lane_response)
         elif A.percam and A.feature == 'lane':
             base, v = (BEV.render_resp_color if A.color else BEV.render_resp)(i, lane_response)
             base = base * road_d
@@ -313,7 +317,7 @@ def main():
     chunks = [frames[k:k + 40] for k in range(0, len(frames), 40)]
     global MAP, BEV
     MAP = load_map(A.track_dir)  # loaded once (~1.5 GB), shared by forked workers
-    if A.ground3d:
+    if A.ground3d:  # same dynamic attitude model as the plane IPM below; the static road tilt comes from the map
         ground = GroundRaster(MAP.pts)
         dyn = None
         if A.dyn_attitude:
@@ -323,6 +327,15 @@ def main():
             e = S.imu_rot(TS_ALL).as_euler('ZYX', degrees=True)
             hp = lambda v: v - gaussian_filter1d(v, 2.0 * 28, mode='nearest')  # noqa: E731
             dyn = np.stack([A.dyn_sign * hp(e[:, 1]), A.dyn_sign * hp(e[:, 2])], 1)
+            if A.dyn_roll_only:
+                dyn[:, 0] = 0.0
+        if A.pitch_per_accel != 0.0:
+            from scipy.ndimage import gaussian_filter1d
+            tt = (TS_ALL - TS_ALL[0]) * 1e-9
+            v = gaussian_filter1d(np.hypot(np.gradient(PRIOR_REL[:, 0], tt), np.gradient(PRIOR_REL[:, 1], tt)), 14)
+            acc = gaussian_filter1d(np.gradient(v, tt), 14)
+            dyn = np.zeros((len(acc), 2)) if dyn is None else dyn
+            dyn[:, 0] += A.pitch_per_accel * acc
         BEV = ImageBEV3D(A.track_dir, ground, A.cam_height, (A.pitch, A.roll, A.yaw_mount), dyn)
     else:
         BEV = ImageBEV(A.track_dir, A.cam_height, A.pitch, A.roll, A.yaw_mount)

@@ -464,6 +464,55 @@ class ImageBEV3D(ImageBEV):
         return F(u, v) @ coef
 
     def render_pose(self, i, x, y, yaw):
+        acc = np.zeros((H, W), np.float32)
+        cnt = np.zeros((H, W), np.float32)
+        for cname, (mx, my, v) in self.maps_pose(i, x, y, yaw).items():
+            img = cv2.imread(os.path.join(self.track_dir, f'{self.track}_images', f'{self.track}_{cname}_images',
+                                          self.names[cname][i]), cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            g, ok = self._sample(cname, i, img, mx, my, v)
+            acc[ok] += g[ok]
+            cnt[ok] += 1
+        valid = cnt > 0
+        acc[valid] /= cnt[valid]
+        return acc, valid
+
+    def _sample(self, cname, i, img, mx, my, v):
+        bad = np.zeros(img.shape, np.uint8)
+        if cname in self.masks:
+            m = np.unpackbits(self.masks[cname][i], axis=1)[:, :img.shape[1] // 2]
+            bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+        bad |= self.ego_bad(cname, img.shape)
+        g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
+        bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
+        return g, v & (bm == 0)
+
+    def render_resp_pose(self, i, x, y, yaw, fn):
+        """render_resp (per-camera feature response, blended afterwards, capture-time sync) on the 3D road."""
+        acc = np.zeros((H, W), np.float32)
+        cnt = np.zeros((H, W), np.float32)
+        for cname, (mx, my, v) in self.maps_pose(i, x, y, yaw).items():
+            img = cv2.imread(os.path.join(self.track_dir, f'{self.track}_images', f'{self.track}_{cname}_images',
+                                          self.names[cname][i]), cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            g, ok = self._sample(cname, i, img, mx, my, v)
+            if ok.sum() < 100:
+                continue
+            r_ = fn(g, ok)
+            okr = cv2.erode(ok.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+            if self.tshift is not None:
+                r_ = self._sync(cname, i, r_.astype(np.float32))
+                okr = self._sync(cname, i, okr.astype(np.uint8), cv2.INTER_NEAREST) > 0
+            acc[okr] += r_[okr]
+            cnt[okr] += 1
+        valid = cnt > 0
+        acc[valid] /= cnt[valid]
+        return acc, valid
+
+    def maps_pose(self, i, x, y, yaw):
+        """Per-camera remap tables sampling the image at the 3D map road points of the BEV grid at pose (x, y, yaw)."""
         from scipy.spatial.transform import Rotation
         c, s = np.cos(yaw), np.sin(yaw)
         wx = x + c * self.gx - s * self.gy
@@ -485,8 +534,7 @@ class ImageBEV3D(ImageBEV):
         cam = np.array([x, y, z0]) + R @ np.array([0, 0, self.h])
         q = (np.stack([wx, wy, wz], 1) - cam) @ R  # vehicle frame
         q = q @ self.Rm
-        acc = np.zeros((H, W), np.float32)
-        cnt = np.zeros((H, W), np.float32)
+        maps = {}
         for cname in self.cams:
             uv, valid = self.C.project(cname, q)
             mx = uv[:, 0].reshape(H, W).astype(np.float32)
@@ -494,23 +542,8 @@ class ImageBEV3D(ImageBEV):
             v = valid.reshape(H, W)
             mx[~v] = -1
             my[~v] = -1
-            img = cv2.imread(os.path.join(self.track_dir, f'{self.track}_images', f'{self.track}_{cname}_images',
-                                          self.names[cname][i]), cv2.IMREAD_GRAYSCALE)
-            if img is None:
-                continue
-            bad = np.zeros(img.shape, np.uint8)
-            if cname in self.masks:
-                m = np.unpackbits(self.masks[cname][i], axis=1)[:, :img.shape[1] // 2]
-                bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
-            bad |= self.ego_bad(cname, img.shape)
-            g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
-            bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
-            ok = v & (bm == 0)
-            acc[ok] += g[ok]
-            cnt[ok] += 1
-        valid = cnt > 0
-        acc[valid] /= cnt[valid]
-        return acc, valid
+            maps[cname] = (mx, my, v)
+        return maps
 
 
 def map_curb(xyz, pose_xy, yaw, step_min=0.08, step_max=0.40, win=0.4):

@@ -183,3 +183,13 @@ The T1 in-span optimum (a13 -0.75 gm +2.58 pc -1.22 -> 0.539) is a 2.6x extrapol
 board scores a subset of frames - not proposed. Candidate submissions/day5/mvue/t1_mb.csv NOT submitted (awaiting OK).
 
 t1_mb SUBMITTED: 0.54851 (predicted 0.5687 conservatively -> the out-of-span part, ~19%, was strongly helpful). New T1 best.
+
+## Map-ground (3D) IPM re-test on Track2 (user: project with known map heights instead of a flat BEV)
+bev.py ImageBEV3D.render_resp_pose: per-camera lane response sampled at the 3D map road points (road tilt + same
+dynamic attitude model as the plane recipe; bev_match --percam --ground3d now really uses it - before, --percam
+silently fell back to the plane maps). 24 Track2 frames, peak NCC with the map markings: plane (current
+calibration, h 1.5) 0.2314; 3D best 0.2240 (h 1.7-1.8, pitch +0.5..+1.0: the min-z ground raster sits ~0.2 m low -
+double ground layer / low noise points). Not adopted. T2 lane fixes already use the map's road profile.
+Frame 915 (user: red dots rotated left in f / fl): submitted T2 yaw is 0.3-0.6 deg right of the direction of travel
+over 780-930 (blend positions; GNSS course agrees in sign), lane fixes say +0.5..+1.0 deg; -0.2..-0.3 deg after 1000.
+=> T2 yaw (25 % of the score) still has segment-wise errors; next: yaw from the course of travel.
