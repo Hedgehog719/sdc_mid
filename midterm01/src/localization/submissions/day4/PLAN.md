@@ -101,3 +101,7 @@ Base F = t1_fin (0.69910); old B = 0.93699. Each probe replaces one segment of F
  h1_oldstart (0-300), h2_oldmid (300-840), h3_oldend (840-end) -> submissions/day5/track1/.
 New-old: S1 fwd 0.58 (mean +0.35) lat 0.26 yaw 0.47; S2 fwd 0.74 (mean +0.65) lat 0.15 yaw 0.22;
 S3 fwd 0.60 (mean +0.09) lat 0.31 yaw 0.37. Compare page: /compare/Track1 (a_old_0.937 vs b_new_0.699).
+Results: h1_oldstart 0.61440 (new T1 best; the camera-corrected start was badly wrong, -0.085 for 10 % of the
+frames), h2_oldmid 0.77510 (new pipeline much better on 300-840). h3 not submitted (user: new better after 540).
+Conclusion: the map is fine where the mapping vehicle was moving; only the stop/departure region at the track
+start is distorted -> there the GNSS/IMU solution must be used (same as Track2).

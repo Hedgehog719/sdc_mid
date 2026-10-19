@@ -1,4 +1,6 @@
 ref,fileName,date,description,status,publicScore,privateScore
+57379256,h2_oldmid.csv,2026-10-19 02:56:03.527000,h2_oldmid,SubmissionStatus.COMPLETE,0.77510,
+57379252,h1_oldstart.csv,2026-10-19 02:55:53.283000,h1_oldstart,SubmissionStatus.COMPLETE,0.61440,
 57378475,t1_fin.csv,2026-10-19 02:28:42.383000,t1_fin,SubmissionStatus.COMPLETE,0.69910,
 57373293,t1_fin_start.csv,2026-10-19 00:02:54.410000,t1_fin_start,SubmissionStatus.COMPLETE,0.70845,
 57330732,t1_final_q0.2.csv,2026-10-18 00:07:19.517000,t1_final_q0.2,SubmissionStatus.COMPLETE,0.94702,
