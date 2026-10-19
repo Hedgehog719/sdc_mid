@@ -25,7 +25,8 @@ class Cameras:
             self.cams[cam] = (K, D, T_cam_front, info['image_width'], info['image_height'])
         # per-camera rotation corrections from calib_side.py (work/cam_rot_fix.json), if present
         import json
-        f = rot_fix_file or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work', 'cam_rot_fix.json')
+        f = rot_fix_file or os.environ.get('SDC_ROT_FIX') or \
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work', 'cam_rot_fix.json')
         if os.path.exists(f):
             self.rot_fix = {k: tuple(v) for k, v in json.load(open(f)).items()}
 
