@@ -259,6 +259,44 @@ function draw(){const ord=document.getElementById('ord').value, pole=document.ge
 document.getElementById('ord').onchange=draw; document.getElementById('pole').onchange=draw; draw();
 </script></body></html>'''
 
+
+AUDIT_PAGE = r'''<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>__TRACK__ 地圖檢查</title><style>
+body{font:15px system-ui;margin:0;padding:12px 16px;background:#f4f6f5;color:#18201c}
+h2{margin:4px 0 6px} h3{margin:16px 0 6px} p{margin:4px 0 10px;max-width:90ch;color:#4c5a53}
+.row{display:grid;grid-template-columns:130px 60px 1fr;gap:10px;padding:8px 10px;background:#fff;border:1px solid #d6ddd9;border-radius:6px;margin-bottom:6px}
+.sev{font-family:ui-monospace,monospace;font-weight:600} .s3{color:#a83a32} .s2{color:#a5741a} .s1{color:#2a7d3f}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:9px;border:1px solid #9aa8a1;margin-right:6px;font-weight:600}
+.hint{font-size:13px;color:#4c5a53;margin-top:3px}
+.chart{background:#fff;border:1px solid #d6ddd9;border-radius:6px;padding:8px;margin-bottom:8px}
+svg text{font:11px ui-monospace,monospace;fill:#4c5a53}
+@media (max-width:600px){.row{grid-template-columns:1fr}}
+</style></head><body>
+<h2>__TRACK__ 地圖檢查（沿實際行駛路線，每 __STEP__ m 一站）</h2>
+<p id="roof"></p>
+<p>每列是一個異常區段：幀號（點開定位檢視）、嚴重度（峰值 / 門檻）、類型與意義。門檻 = max(固定下限, 全段中位數 + 4×MAD)。</p>
+<div id="list"></div>
+<h3>沿路線的剖面</h3><div id="charts"></div>
+<script>
+const D = __DATA__, VT = '__VIEWER__';
+document.getElementById('roof').innerHTML = '整段共通：行駛車道內 1.3–2.2 m 高處有一層薄點（建圖車自己的車頂被掃進地圖），中位數佔車道內點的 <b>' + Math.round(D.roof_frac * 100) + '%</b>。目前比對只用最低的地面點，不受影響；但任何把「路面以上的點」當障礙物的邏輯都會在我們車道上看到假障礙。';
+const names = {'double ground layer': '雙層地面', 'vertical distortion': '路面高度扭曲（地圖 vs GNSS 高度）', 'objects in the driven lane': '車道內有物體點',
+               'coverage holes': '路面點缺洞', 'intensity jump': '路面亮度跳變'};
+document.getElementById('list').innerHTML = D.segments.map(x => {const c = x.sev > 3 ? 's3' : x.sev > 1.5 ? 's2' : 's1';
+  return '<div class="row"><div><a href="/viewer/' + VT + '#' + x.frame + '" target="_blank">幀 ' + x.lo + '–' + x.hi + '</a><br><small>' + x.s_lo + '–' + x.s_hi + ' m</small></div>' +
+    '<div class="sev ' + c + '">' + x.sev.toFixed(1) + '</div><div><span class="tag">' + (names[x.type] || x.type) + '</span>峰值 ' + x.peak + '（門檻 ' + x.thr + '）<div class="hint">' + x.hint + '</div></div></div>';}).join('');
+const st = D.stations, n = st.s.length, W = 900, H = 120, L = 46, R = 10;
+const X = s => L + (s / st.s[n - 1]) * (W - L - R);
+[['layer', '雙層地面：地面點高度離散 (m)'], ['vert', '路面高度扭曲：地圖 - GNSS 高度，高通 (m)'], ['objects', '車道內 0.3–1.2 m 物體點數'], ['holes', '路面缺洞比例'], ['inten', '路面背景亮度']].forEach(([k, t]) => {
+  const v = st[k].map(q => q === null ? NaN : (k === 'vert' ? Math.abs(q) : q)); const vv = v.filter(isFinite).sort((a, b) => a - b);
+  const top = vv.length ? vv[Math.floor(vv.length * 0.995)] || vv[vv.length - 1] : 1, Y = q => H - 18 - Math.min(q / (top || 1), 1) * (H - 30);
+  let d = ''; v.forEach((q, i) => { if (isFinite(q)) d += (d ? 'L' : 'M') + X(st.s[i]).toFixed(1) + ',' + Y(q).toFixed(1); });
+  const segs = D.segments.filter(x => x.metric === k || (k === 'vert' && x.metric === 'vert')).map(x => '<rect x="' + X(x.s_lo) + '" y="10" width="' + Math.max(2, X(x.s_hi) - X(x.s_lo)) + '" height="' + (H - 28) + '" fill="#f2c6c0" fill-opacity="0.6"/>').join('');
+  document.getElementById('charts').insertAdjacentHTML('beforeend', '<div class="chart"><b style="font-size:13px">' + t + '</b><svg viewBox="0 0 ' + W + ' ' + H + '" width="100%">' + segs +
+    '<path d="' + d + '" fill="none" stroke="#0f6b5a" stroke-width="1.3"/><text x="' + L + '" y="' + (H - 4) + '">0 m</text><text x="' + (W - R) + '" y="' + (H - 4) + '" text-anchor="end">' + Math.round(st.s[n - 1]) + ' m</text>' +
+    '<text x="' + (L - 4) + '" y="16" text-anchor="end">' + (+top.toPrecision(2)) + '</text></svg></div>');});
+</script></body></html>'''
+
 def decisions_path(track):
     return os.path.join(ROOT, f'pole_review_{track}.json')
 
@@ -288,7 +326,7 @@ class H(BaseHTTPRequestHandler):
                     d = json.load(open(decisions_path(t))).get('dec', {})
                 total = len(n_poles(t))
                 rows.append(f'<li><a href="/{t}.html">{t} 桿子審核</a> — {total} poles, decided {len(d)} ｜ '
-                            f'<a href="/viewer/{t}">{t} 定位檢視</a> ｜ <a href="/compare/{t}">{t} 版本對比</a> ｜ <b><a href="/issues/{t}">{t} 待修正位置（最佳軌跡）</a></b></li>')
+                            f'<a href="/viewer/{t}">{t} 定位檢視</a> ｜ <a href="/compare/{t}">{t} 版本對比</a> ｜ <b><a href="/issues/{t}">{t} 待修正位置（最佳軌跡）</a></b> ｜ <b><a href="/audit/{t}">{t} 地圖檢查</a></b></li>')
             rows.append('<li><a href="/hood">自車遮罩編輯（引擎蓋／車體）</a></li>')
             rows.append('<li><a href="/calib">相機校正：標地圖車道線 ↔ 影像對應點</a></li>')
             return self._send(200, '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
@@ -322,6 +360,16 @@ class H(BaseHTTPRequestHandler):
         if m:
             f = hood_path(m.group(1))
             return self._send(200, open(f).read() if os.path.exists(f) else '{}', 'application/json')
+        m = re.fullmatch(r'/audit/(Track[12])/?', p)
+        if m:
+            t = m.group(1)
+            f = os.path.join(ROOT, f'audit_{t}.json')
+            if not os.path.exists(f):
+                return self._send(404, 'run tools/map_audit.py first')
+            d = json.load(open(f))
+            vt = max([q for q in os.listdir(VIEWER_DIR) if q.startswith(t + '_best')] or [t])
+            return self._send(200, AUDIT_PAGE.replace('__TRACK__', t).replace('__VIEWER__', vt)
+                              .replace('__STEP__', str(d.get('step', 2))).replace('__DATA__', json.dumps(d)))
         m = re.fullmatch(r'/issues/(Track[12])/?', p)
         if m:
             t = m.group(1)
