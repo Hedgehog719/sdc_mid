@@ -292,3 +292,9 @@ is nearly orthogonal (cos +0.16) to the known-bad camera start, which moved forw
 T1 end (2900-3011): lane fixes 0.5-0.9 m right of v2, GNSS swings 2.3 m in 6 s; a lower GNSS Huber threshold
 follows the lane fixes but is predicted worse (0.5062+ vs 0.5020): the board trusts GNSS there; dropping the end
 fixes cannot be judged offline (17-29 % out of span).
+T1 lane fixes with the T2-only calibration (cam_fix_img2.json): match quality on T1 unchanged (peak median 0.431 vs
+0.432) but all fixes shift -0.23 m forward (sharp-forward fixes +0.044 -> -0.228 vs v2), v2-recipe candidate moves
+0.20 m forward rms: submissions/day6/track1/t1_t2fit_v2.csv (prediction 0.5633 only 63 % in span -> not judgeable).
+The horizontal camera offsets are the least determined parameters (fl tx +0.26 in t2fit vs +0.03 joint; fr -0.05 vs
++0.21) -> T1 run with joint rotations + heights only (work/cam_fix_jointrot.json) queued after the T2 run.
+raw_ply clouds are not LiDAR scans (each frame spans ~0.4-2.2 m x, +-1.5 m y; image-derived): no scan odometry.
