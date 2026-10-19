@@ -147,3 +147,4 @@ T1 (blocks 40): lateral 0.174 -> 0.136, sharp-forward 0.224 -> 0.159 (tau 10 s, 
 shrink compensated the wrong GNSS model (lateral wanted 1.0, forward 0 under the white model).
 Candidates (positions only; start/stationary segments and yaw unchanged): submissions/day5/mvue/t1_gm.csv
 (vs best fwd 0.10 lat 0.04 m), submissions/day5/mvue/t2_gm.csv (fwd 0.09 lat 0.07 m). NOT submitted (awaiting OK).
+Bias-model candidates: T1 t1_gm 0.57658 (new best, was 0.61440); T2 t2_gm 0.25031 (worse than 0.23453). Remaining today: T1 5, T2 8.
