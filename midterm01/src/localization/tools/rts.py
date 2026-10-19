@@ -11,7 +11,7 @@ import numpy as np
 
 def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos=0.05, huber=3.0,
                meas_sigma=None, meas_cov=None, q_lat=None, t_zupt=None, sigma_zupt=0.02,
-               gnss_bias=None, gnss_mask=None, map_bias=None, map_mask=None):
+               gnss_bias=None, gnss_mask=None, map_bias=None, map_mask=None, return_nis=False):
     """meas_cov: optional (N, 2, 2) per-measurement covariance (overrides sigma), e.g. lateral-only fixes.
 
     gnss_bias: (tau_s, sigma_b, sigma_w) models the GNSS error as coloured noise: a first-order Gauss-Markov bias
@@ -70,6 +70,7 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     Hv = np.zeros((1, d))
     Hv[0, 2] = 1.0
     I = np.eye(d)
+    nis = np.full(len(tm), np.nan)  # normalised innovation squared per measurement (before Huber)
     t_prev = times[0]
     for k in range(n):
         dt = max((times[k] - t_prev) * 1e-9, 0.0)
@@ -119,6 +120,7 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
             S = Hm @ P @ Hm.T + R
             r = z - Hm @ x
             m = np.sqrt(r @ np.linalg.solve(S, r))
+            nis[ref[k]] = m * m
             if m > huber:  # robust: inflate noise of outlying fixes
                 R = R * (m / huber) ** 2
                 S = Hm @ P @ Hm.T + R
@@ -135,4 +137,6 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     out = np.zeros((len(tq), 3))
     q = kind == 0
     out[ref[q]] = xsm[q][:, :3]
+    if return_nis:
+        return out, nis
     return out

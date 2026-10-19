@@ -93,6 +93,7 @@ def main():
     p.add_argument('--map_bias_len', type=float, default=0.0,
                    help='>0: common error of the map fixes as Gauss-Markov in distance, correlation length (m)')
     p.add_argument('--map_bias_sigma', type=float, default=0.15, help='map-error steady-state sigma (m) per axis')
+    p.add_argument('--nis', action='store_true', help='print the filter consistency (NIS) per measurement group')
     p.add_argument('--psi_csv', default='', help='CSV whose yaw is the heading input of the position RTS')
     p.add_argument('--bev_keep_edge', action='store_true',
                    help='keep BEV fixes whose yaw hit the search limit (default: dropped, they are unreliable)')
@@ -182,6 +183,7 @@ def main():
             sm = np.concatenate([sm, a.rts_scan_sigma / np.sqrt(np.clip(w[good], 0.1, 1))])
             print('scan measurements used: %d / %d' % (good.sum(), len(good)))
         cov = np.eye(2)[None] * (sm ** 2)[:, None, None]
+        GROUPS = [('gnss', len(tm))]
         huber = 3.0
         if a.bev:
             st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, meas_sigma=sm)
@@ -214,6 +216,7 @@ def main():
             cov = np.concatenate([cov, bc])
             huber = a.bev_huber
             print('BEV fixes used: %d / %d' % (m.sum(), len(m)))
+            GROUPS.append(('bev', len(tm)))
         if a.pole:
             pz = np.load(a.pole)
             pm = pz['peak'] >= np.percentile(pz['peak'], a.pole_pct)
@@ -229,6 +232,7 @@ def main():
             cov = np.concatenate([cov, pc])
             huber = a.bev_huber
             print('pole fixes used: %d / %d' % (pm.sum(), len(pm)))
+            GROUPS.append(('pole', len(tm)))
         if a.road:
             rz = np.load(a.road)
             rm = rz['peak'] >= np.percentile(rz['peak'], a.road_pct)
@@ -241,6 +245,7 @@ def main():
             cov = np.concatenate([cov, rcv])
             huber = a.bev_huber
             print('road fixes used: %d / %d' % (rm.sum(), len(rm)))
+            GROUPS.append(('road', len(tm)))
         tz = None
         if a.zupt_speed > 0:
             st0 = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov)
@@ -260,7 +265,18 @@ def main():
             mmask = np.zeros(len(tm), bool)
             mmask[len(s.gt):] = True
         st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov,
-                        q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask, map_bias=mb, map_mask=mmask)
+                        q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask, map_bias=mb, map_mask=mmask,
+                        return_nis=a.nis)
+        if a.nis:  # filter consistency per group: mean NIS ~ 2 (2D) if the noise model matches the data
+            st, nis = st
+            lo_ = 0
+            for gname, hi_ in GROUPS:
+                v = nis[lo_:hi_]
+                v = v[np.isfinite(v)]
+                if len(v):
+                    print(f'NIS {gname:5s} n {len(v):5d}  mean {v.mean():7.2f}  median {np.median(v):6.2f}  '
+                          f'(chi2(2): mean 2, median 1.39)  share > 9.2: {np.mean(v > 9.21) * 100:4.1f} % (1 % expected)')
+                lo_ = hi_
         xyz = xyz.copy()
         xyz[:, :2] = st[:, :2]
     n = len(ts)

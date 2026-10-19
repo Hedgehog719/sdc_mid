@@ -42,6 +42,7 @@ ap.add_argument('--yaw_mount', type=float, default=-1.5)
 ap.add_argument('--cams', default='f,fl,fr')
 ap.add_argument('--blur_coarse', type=float, default=4.0)
 ap.add_argument('--blur_fine', type=float, default=1.5)
+ap.add_argument('--weighted', action='store_true', help='weight marks by their marking-map strength')
 a = ap.parse_args()
 
 tr = pd.read_csv(a.prior_csv)
@@ -83,12 +84,12 @@ def response(j, c):
 
 def match(i):
     x, y, yaw = tr.x[i], tr.y[i], tr.yaw[i]
-    Pw = MK.points(x, y, a.range + 8)
+    Pw, Wm = MK.points(x, y, a.range + 8, with_w=True)
     if len(Pw) < 100:
         return None
     q0 = vehicle_frame(Pw, (x, y, yaw), MK.height)
     keep = road_level(q0) & (q0[:, 0] > -8) & (np.hypot(q0[:, 0], q0[:, 1]) < a.range)
-    Pw = Pw[keep]
+    Pw, Wm = Pw[keep], Wm[keep]
     if len(Pw) < 100:
         return None
     # keep markings that project onto the road (image segmentation at the prior pose): verges / sidewalks out
@@ -101,11 +102,12 @@ def match(i):
             u4 = np.clip((uv[ok, 0] / 4).astype(int), 0, w4 - 1)
             v4 = np.clip((uv[ok, 1] / 4).astype(int), 0, h4 - 1)
             onroad[np.flatnonzero(ok)[RD[c][i][v4, u4] > 128]] = True
-    Pw = Pw[onroad]
+    Pw, Wm = Pw[onroad], Wm[onroad]
     if len(Pw) < 50:
         return None
     if len(Pw) > a.npts:
-        Pw = Pw[rng.choice(len(Pw), a.npts, replace=False)]
+        sel = rng.choice(len(Pw), a.npts, replace=False)
+        Pw, Wm = Pw[sel], Wm[sel]
     Bw = MK.background(x, y, a.range + 8, a.npts, rng)
     qb = vehicle_frame(Bw, (x, y, yaw), MK.height)
     Bw = Bw[road_level(qb, tol=0.15, slope=0.02) & (qb[:, 0] > -8) & (np.hypot(qb[:, 0], qb[:, 1]) < a.range)]
@@ -119,6 +121,7 @@ def match(i):
     Bw = Bw[onb][:a.npts]
     nM = len(Pw)
     Pw = np.concatenate([Pw, Bw])
+    WT = np.concatenate([Wm if a.weighted else np.ones(nM, np.float32), np.ones(len(Bw), np.float32)])
     frames = []
     for o in NEIGH:
         j = i + o
@@ -154,7 +157,8 @@ def match(i):
                     continue
                 v = cv2.remap(resp[c][lev], uv[ok, 0].astype(np.float32).reshape(-1, 1), uv[ok, 1].astype(np.float32).reshape(-1, 1), cv2.INTER_LINEAR).ravel()
                 mk = isM[ok]
-                sm += float(v[mk].sum()); nm += int(mk.sum())
+                wk = WT[ok][mk]
+                sm += float((v[mk] * wk).sum()); nm += float(wk.sum())
                 sb += float(v[~mk].sum()); nb += int((~mk).sum())
         # markings minus road background: alignment, not the brightness of the region the points fall into
         return sm / max(nm, 1) - sb / max(nb, 1)

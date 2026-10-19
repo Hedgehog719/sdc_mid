@@ -26,6 +26,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument('track_dir')
 ap.add_argument('traj_csv')
 ap.add_argument('marks_npz')
+ap.add_argument('--poses', default='', help='fix npz (idx, mx, my, myaw): calibrate at these per-frame poses (e.g. front-only img_match)')
+ap.add_argument('--also', action='append', default=[], metavar='TRACK_DIR,TRAJ,MARKS[,POSES]', help='more tracks fitted jointly')
 ap.add_argument('--cam', required=True)
 ap.add_argument('--out', required=True)
 ap.add_argument('--frames', default='450:-1:20')
@@ -33,17 +35,13 @@ ap.add_argument('--params', default='yaw,pitch,roll,tx,ty,tz')
 ap.add_argument('--yaw_mount', type=float, default=-1.5)
 ap.add_argument('--eval', default='', help='only score: comma list of calibration json files (cross-track check)')
 a = ap.parse_args()
-tr = pd.read_csv(a.traj_csv)
-MK = MarkingMap(a.marks_npz)
-B = ImageBEV(a.track_dir, 1.5, 0, 0, a.yaw_mount)
-C = B.C
 Rm = Rotation.from_euler('ZYX', [a.yaw_mount, 0, 0], degrees=True).as_matrix()
-RD = np.load(os.path.join(a.track_dir, 'road', f'{a.cam}.npz'))['road']
 rng = np.random.default_rng(0)
 cam = a.cam
+C = None
 
 
-def response(j):
+def response(j, B, RD):
     img = cv2.imread(os.path.join(B.track_dir, f'{B.track}_images', f'{B.track}_{cam}_images', B.names[cam][j]), cv2.IMREAD_GRAYSCALE)
     small = cv2.resize(img, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
     med = cv2.resize(cv2.medianBlur(small, 15), (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR).astype(np.float32)
@@ -58,7 +56,7 @@ def response(j):
     return cv2.GaussianBlur(r, (0, 0), 2.0)
 
 
-def onroad(Q, j):
+def onroad(Q, j, RD):
     uv, ok = C.project(cam, Q)
     keep = np.zeros(len(Q), bool)
     if ok.any():
@@ -69,8 +67,24 @@ def onroad(Q, j):
 
 lo, hi, st = (int(v) for v in a.frames.split(':'))
 data = []
-for i in range(lo, len(tr) if hi < 0 else hi, st):
-    x, y, yaw = tr.x[i], tr.y[i], tr.yaw[i]
+tracks = [(a.track_dir, a.traj_csv, a.marks_npz, a.poses)] + [tuple((q.split(',') + [''])[:4]) for q in a.also]
+for track_dir, traj_csv, marks_npz, poses in tracks:
+  tr = pd.read_csv(traj_csv)
+  MK = MarkingMap(marks_npz)
+  B = ImageBEV(track_dir, 1.5, 0, 0, a.yaw_mount)
+  if C is None:
+      C = B.C
+  RD = np.load(os.path.join(track_dir, 'road', f'{cam}.npz'))['road']
+  PZ = dict(np.load(poses)) if poses else None
+  pidx = {int(k): n for n, k in enumerate(PZ['idx'])} if PZ is not None else None
+  for i in range(lo, len(tr) if hi < 0 else hi, st):
+    if pidx is not None:
+        if i not in pidx:
+            continue
+        n_ = pidx[i]
+        x, y, yaw = PZ['mx'][n_], PZ['my'][n_], PZ['myaw'][n_]
+    else:
+        x, y, yaw = tr.x[i], tr.y[i], tr.yaw[i]
     P = MK.points(x, y, 40)
     if len(P) < 100:
         continue
@@ -80,12 +94,12 @@ for i in range(lo, len(tr) if hi < 0 else hi, st):
     qb = vehicle_frame(Bw, (x, y, yaw), MK.height)
     qb = qb[road_level(qb, tol=0.15, slope=0.02) & (qb[:, 0] > -8) & (np.hypot(qb[:, 0], qb[:, 1]) < 30)]
     Qm, Qb = q @ Rm, qb @ Rm
-    Qm, Qb = Qm[onroad(Qm, i)], Qb[onroad(Qb, i)]
+    Qm, Qb = Qm[onroad(Qm, i, RD)], Qb[onroad(Qb, i, RD)]
     if len(Qm) < 50 or len(Qb) < 50:
         continue
     if len(Qm) > 2000:
         Qm = Qm[rng.choice(len(Qm), 2000, replace=False)]
-    data.append((Qm, Qb, response(i)))
+    data.append((Qm, Qb, response(i, B, RD)))
 print(f'{cam}: {len(data)} frames', flush=True)
 
 

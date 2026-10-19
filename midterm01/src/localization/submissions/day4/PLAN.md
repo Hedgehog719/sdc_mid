@@ -260,3 +260,17 @@ Fusion without any map fix before frame 330 (warped map there): the start moves 
 stable for GNSS correlation times 2 / 4 / 10 s (IMU heading propagated back from the anchor at 330), forward
 unstable (-0.8..+0.9). Candidates (not submitted): submissions/day6/track1/t1_startNS.csv (full),
 t1_startNS_lat.csv (lateral only). If the start error is ~0.8 m it holds ~half of T1's squared position error.
+
+## New local standards + calibration + pole gating (2026-10-19 night)
+Standards: (1) cross-track transfer of a calibration (same car; trajectories independent), (2) eval_cams.py:
+per-camera fix agreement (GNSS-free, trajectory bias cancels), (3) fuse --nis: filter consistency per measurement
+group (mean ~2 / median 1.39 / 1 % > 9.2 for chi2(2)); NIS cannot see errors shared by neighbouring fixes (map).
+Camera agreement (lateral f-fl / f-fr / fl-fr, m): T2 default 0.169/0.343/0.700, xtrack 0.128/0.231/0.315, t2fit
+0.202/0.373/0.560; T1 default 0.424/0.485/0.763, xtrack 0.323/0.531/0.744, t2fit 0.199/0.284/0.554.
+BEV with the new calibrations (190 T2 frames vs GNSS, paired vs marksS_fine): xtrack lat 0.186, fwd 0.166 (2 s.e.
+better); t2fit lat 0.160 (bias +0.01), fwd 0.168, yaw spread 0.42 deg (4 s.e. better) - partly circular on T2.
+NIS (T1 best recipe): GNSS median 2.14 / 15 % > 9.2 (over-trusted), BEV 1.14, pole 2.84 / 35 % > 9.2, road 0.26.
+T1 pole fixes: 38 % > 1 m forward; segments 1200-1500, 2100-2400, 2700-3000 mostly wrong while lane fixes agree
+with the trajectory -> two-stage gating (pole-free fusion, keep poles within 0.8 m fwd / 0.6 m lat, 311/901):
+pole NIS median 1.15, 0 % > 9.2. Predicted 0.52050 with the old yaw (96 % in span) -> ~0.5116 with the current
+yaw: submissions/day6/track1/t1_polegate_yc.csv (not submitted). Tighter road sigma / smaller GNSS sigma: worse.

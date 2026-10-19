@@ -170,9 +170,9 @@ class MarkingMap:
         P = np.concatenate(out) if out else np.zeros((0, 3))
         return P[rng.choice(len(P), min(len(P), 3 * n), replace=False)] if len(P) else P
 
-    def points(self, x, y, radius, thr=0.5):
-        """World (x, y, z) of marking cells (response > thr) within radius of (x, y)."""
-        out = []
+    def points(self, x, y, radius, thr=0.5, with_w=False):
+        """World (x, y, z) of marking cells (response > thr) within radius of (x, y); with_w: also the response."""
+        out, wts = [], []
         for (tx, ty), t in self.index.items():
             cx, cy = (tx + 0.5) * TILE, (ty + 0.5) * TILE
             if np.hypot(cx - x, cy - y) > radius + TILE * 0.71:
@@ -183,7 +183,11 @@ class MarkingMap:
             px, py = tx * TILE + (ii + 0.5) * RES_M, ty * TILE + (jj + 0.5) * RES_M
             m = np.hypot(px - x, py - y) < radius
             out.append(np.stack([px[m], py[m], self.ground[t][ii[m], jj[m]].astype(np.float64)], 1))
-        return np.concatenate(out) if out else np.zeros((0, 3))
+            wts.append(self.resp[t][ii[m], jj[m]].astype(np.float32) / SCALE)
+        P = np.concatenate(out) if out else np.zeros((0, 3))
+        if with_w:
+            return P, (np.concatenate(wts) if wts else np.zeros(0, np.float32))
+        return P
 
 
 def vehicle_frame(P, pose, height_fn, cam_height=1.5):
