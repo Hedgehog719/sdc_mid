@@ -298,3 +298,16 @@ T1 lane fixes with the T2-only calibration (cam_fix_img2.json): match quality on
 The horizontal camera offsets are the least determined parameters (fl tx +0.26 in t2fit vs +0.03 joint; fr -0.05 vs
 +0.21) -> T1 run with joint rotations + heights only (work/cam_fix_jointrot.json) queued after the T2 run.
 raw_ply clouds are not LiDAR scans (each frame spans ~0.4-2.2 m x, +-1.5 m y; image-derived): no scan odometry.
+
+## Submissions 2026-10-19 night (user: use the day's leftovers before 08:00, never the next day's)
+T1: t1_v2_ym 0.51139, t1_v2 0.50997 (NEW BEST). With Y_cur 0.6706 deg (K 0.143 framework): v2 position RMSE 0.3759
+(predicted 0.3679: the 5 % out-of-span part hurt slightly; on T1 |e| ~0.37 m so 5 % out of span can move the
+score by +-0.01-0.04 - "95 % in span" is NOT exact on T1). Yaw-mean shift +0.14 deg: Y 0.6706 -> 0.6777,
+<err, shift> -0.0059, optimal scale 0.28 (+0.04 deg, gain 0.0002): the yaw mean is right; course vs GT yaw differ
+by ~+0.1 deg on average (the course aligns the shape, not the mean).
+T2: t2_t2fit_blend_c_yopt 0.22364 (NEW BEST; new-calibration lane fixes, mean offset fwd -0.086 / lat -0.046
+removed; position RMSE 0.1742 -> 0.1700 - first leaderboard confirmation of the cross-track calibration),
+t2_opt5_yopt 0.21506 (NEW BEST; quadratic optimum over pc / gm / blend / mkS / t2fit_c: weights 0.165 / 0.37 /
+0.22 / -0.778 / 1.066, predicted 0.21508 -> exact; position RMSE 0.1614).
+Next (queued): T1 lane fixes with joint rotations + heights only (jrot), T2 lane fixes with the joint calibration
+-> T2 #3 = joint direction (re-centred, opt yaw), #4 = 6-direction optimum.
