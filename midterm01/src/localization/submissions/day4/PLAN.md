@@ -318,3 +318,11 @@ downhill at ~1.9x. Leave-one-out: later files did better than predicted from ear
 Files for tomorrow: submissions/day6/track1/t1_opt{2,4,6}.csv (start unchanged).
 T1 lane fixes with joint rotations + heights (jrot): peak 0.434, sharp-forward shift -0.135 (t2fit -0.228, old
 +0.044); re-centred calibration candidates t1_{jrot,t2fit}_v2_c.csv (mean fwd/lat removed, as T2's 0.22364).
+T2 #3 t2_t2fit_blend_yopt (new-calibration fixes WITH their mean offset fwd -0.086 / lat -0.046): 0.25803 vs 0.22364
+centred -> the calibration's absolute offset is WRONG (P^2 +0.0129 for a 0.093 m shift), its shape is right. The flat
+BEV with the 3D-image-space calibration gets a forward bias (pitch / height / camera tx interplay with the flat
+ground); img_match (consistent 3D model) had fwd bias +0.03 vs GNSS, BEV t2fit -0.08. Always re-centre BEV fixes
+from a new calibration; prefer the image-space matcher for unbiased fixes.
+T2 #4 t2_opt7_yopt 0.21440 (NEW BEST; 7-direction optimum, predicted 0.21439; opt5 check predicted 0.16144 vs 0.16142).
+Day quota used (T1 0 / T2 0). Tomorrow: T1 opt6 / opt4 / opt2 (exact, 0.471 / 0.477 / 0.486), re-centred
+calibration t1_{jrot,t2fit}_v2_c, lateral-only start; T2 2 s yaw direction, joint_c.
