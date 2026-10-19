@@ -167,3 +167,17 @@ H for map fixes = [I 0 I]. Expect: T2 (sigma_gnss ~ map) -> balanced weights wit
 Calibrate sigma_m / L with the Kaggle-exact predictor (tools/kaggle_predict.py, K_T2 = 0.0576 verified to 3e-5;
 K_T1 = 0.143) on existing submissions; cross-validation cannot see map error (common to all fixes).
 Bests: T1 0.57658 (t1_gm), T2 0.23178 (t2_blend). Remaining today: T1 5, T2 7. Ask before submitting.
+
+## Map-error model (rts.py map_bias, fuse --map_bias_len/--map_bias_sigma)
+Map fixes = position + m + noise, m Gauss-Markov in travelled distance (constant while stationary), shared by lane /
+kerb / pole fixes. Grids (work/mb/grid_t{1,2}.py, pass 2 only, heading from _m{1,2}_p1) scored with the exact
+quadratic predictor (conservative: the part of a change outside the tested span counts as pure penalty).
+T2: map bias helps the bias model (best 0.2386 vs 0.2452 without) but every bias-model variant lies along gm with a
+negative pc weight; the leaderboard wants +0.82 pc +0.23 gm. Raising the GNSS white term to 0.15 (sigma_b 0.03) puts
+the model on the blend direction (+0.86 pc +0.28 gm, predicted 0.2350) -> T2 GNSS is close to white with real
+high-frequency noise (the 0.015 m white estimate was measured against GNSS-following trajectories). The principled
+model reproduces the blend but does not beat it (0.23178 stays; no T2 candidate).
+T1: smaller GNSS bias sigma helps (0.6 -> 0.25), map bias adds ~0.0005: t1_mb (L 1000 m, sigma_m 0.03, sigma_b 0.25)
+predicted 0.5687 (0.5681-0.5694 for K 0.12-0.165), 81 % in span, change vs best 0.07 m rms, start / yaw identical.
+The T1 in-span optimum (a13 -0.75 gm +2.58 pc -1.22 -> 0.539) is a 2.6x extrapolation: overfit risk if the public
+board scores a subset of frames - not proposed. Candidate submissions/day5/mvue/t1_mb.csv NOT submitted (awaiting OK).

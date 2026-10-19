@@ -90,6 +90,9 @@ def main():
                    help='>0: model GNSS errors as a Gauss-Markov bias state with this correlation time (s)')
     p.add_argument('--gnss_bias_sigma', type=float, default=0.5, help='GNSS bias steady-state sigma (m)')
     p.add_argument('--gnss_white', type=float, default=0.05, help='GNSS white-noise sigma (m) with the bias state')
+    p.add_argument('--map_bias_len', type=float, default=0.0,
+                   help='>0: common error of the map fixes as Gauss-Markov in distance, correlation length (m)')
+    p.add_argument('--map_bias_sigma', type=float, default=0.15, help='map-error steady-state sigma (m) per axis')
     p.add_argument('--psi_csv', default='', help='CSV whose yaw is the heading input of the position RTS')
     p.add_argument('--bev_keep_edge', action='store_true',
                    help='keep BEV fixes whose yaw hit the search limit (default: dropped, they are unreliable)')
@@ -251,8 +254,13 @@ def main():
             gb = (a.gnss_bias_tau, a.gnss_bias_sigma, a.gnss_white)
             gmask = np.zeros(len(tm), bool)
             gmask[:len(s.gt)] = True
+        mb, mmask = None, None
+        if a.map_bias_len > 0:  # the map fixes (all rows after the GNSS ones) share the map's own error
+            mb = (a.map_bias_len, a.map_bias_sigma)
+            mmask = np.zeros(len(tm), bool)
+            mmask[len(s.gt):] = True
         st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov,
-                        q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask)
+                        q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask, map_bias=mb, map_mask=mmask)
         xyz = xyz.copy()
         xyz[:, :2] = st[:, :2]
     n = len(ts)

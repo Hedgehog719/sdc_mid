@@ -11,7 +11,7 @@ import numpy as np
 
 def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos=0.05, huber=3.0,
                meas_sigma=None, meas_cov=None, q_lat=None, t_zupt=None, sigma_zupt=0.02,
-               gnss_bias=None, gnss_mask=None):
+               gnss_bias=None, gnss_mask=None, map_bias=None, map_mask=None):
     """meas_cov: optional (N, 2, 2) per-measurement covariance (overrides sigma), e.g. lateral-only fixes.
 
     gnss_bias: (tau_s, sigma_b, sigma_w) models the GNSS error as coloured noise: a first-order Gauss-Markov bias
@@ -19,7 +19,13 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     gnss_mask observe position + bias; the other rows (map fixes) observe the position itself. A white-noise GNSS
     model treats 4 Hz samples as independent and over-trusts their average (the error of real GNSS drifts with a
     correlation time of seconds); with the bias states, map fixes calibrate the drift and GNSS keeps contributing
-    its accurate relative motion."""
+    its accurate relative motion.
+
+    map_bias: (L_m, sigma_m) models the common error of the map-derived fixes (lane / kerb / pole matches are all
+    registered to the same point-cloud map) as a first-order Gauss-Markov process in travelled distance (correlation
+    length L_m, steady-state sigma_m per axis; constant while stationary). Rows flagged in map_mask observe position +
+    map bias. Without it the smoother treats map fixes as unbiased and copies the map's local distortions; block
+    cross-validation cannot see that error (it is common to all map fixes), the leaderboard can."""
     # q_lat: cross-track position noise (non-holonomic constraint: no side slip); q_pos is then along-track.
     # t_zupt: times of zero-velocity pseudo-measurements (vehicle stationary, e.g. red lights).
     tq = np.asarray(t_query, np.float64)
@@ -33,10 +39,15 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     psi = psi_fn(times)
     n = len(times)
     nb = 2 if gnss_bias is not None else 0
-    d = 3 + nb
+    nm = 2 if map_bias is not None else 0
+    d = 3 + nb + nm
+    jm = 3 + nb  # first map-bias state
     if nb:
         tau_b, sig_b, sig_w = gnss_bias
         gmask = np.zeros(len(tm), bool) if gnss_mask is None else np.asarray(gnss_mask, bool)
+    if nm:
+        len_m, sig_m = map_bias
+        mmask = np.zeros(len(tm), bool) if map_mask is None else np.asarray(map_mask, bool)
     xs = np.zeros((n, d))
     Ps = np.zeros((n, d, d))
     xp = np.zeros((n, d))
@@ -47,12 +58,15 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     v0 = np.linalg.norm(z_meas[first[-1]] - z_meas[first[0]]) / max((tm[first[-1]] - tm[first[0]]) * 1e-9, 1e-3)
     x = np.zeros(d)
     x[:3] = [z_meas[first[0], 0], z_meas[first[0], 1], v0]
-    P = np.diag([1.0, 1.0, 4.0] + ([sig_b ** 2] * nb if nb else []))
+    P = np.diag([1.0, 1.0, 4.0] + ([sig_b ** 2] * nb if nb else []) + ([sig_m ** 2] * nm if nm else []))
     H = np.zeros((2, d))
     H[0, 0] = H[1, 1] = 1.0
     Hg = H.copy()
     if nb:
         Hg[0, 3] = Hg[1, 4] = 1.0
+    Hmap = H.copy()
+    if nm:
+        Hmap[0, jm] = Hmap[1, jm + 1] = 1.0
     Hv = np.zeros((1, d))
     Hv[0, 2] = 1.0
     I = np.eye(d)
@@ -77,6 +91,11 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
             F[3, 3] = F[4, 4] = phi
             Q[3, 3] += sig_b ** 2 * (1 - phi * phi) + 1e-12
             Q[4, 4] += sig_b ** 2 * (1 - phi * phi) + 1e-12
+        if nm:  # map bias: Gauss-Markov in travelled distance (speed from the current estimate)
+            phm = np.exp(-abs(x[2]) * dt / len_m)
+            F[jm, jm] = F[jm + 1, jm + 1] = phm
+            Q[jm, jm] += sig_m ** 2 * (1 - phm * phm) + 1e-12
+            Q[jm + 1, jm + 1] += sig_m ** 2 * (1 - phm * phm) + 1e-12
         x = F @ x
         P = F @ P @ F.T + Q
         Fs[k], xp[k], Pp[k] = F, x, P
@@ -88,7 +107,8 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
         if kind[k] == 1:
             z = z_meas[ref[k]]
             is_g = nb and gmask[ref[k]]
-            Hm = Hg if is_g else H
+            is_m = nm and mmask[ref[k]]
+            Hm = Hg if is_g else (Hmap if is_m else H)
             if is_g:
                 R = np.eye(2) * sig_w ** 2
             elif meas_cov is not None:
