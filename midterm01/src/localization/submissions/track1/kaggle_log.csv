@@ -1,4 +1,8 @@
 ref,fileName,date,description,status,publicScore,privateScore
+57381602,t1_a13.csv,2026-10-19 04:13:32.807000,t1_a13,SubmissionStatus.COMPLETE,0.66298,
+57381599,t1_a07.csv,2026-10-19 04:13:29.027000,t1_a07,SubmissionStatus.COMPLETE,0.64485,
+57381582,t1_b540.csv,2026-10-19 04:12:48.640000,t1_b540,SubmissionStatus.COMPLETE,0.64297,
+57381581,t1_b420.csv,2026-10-19 04:12:44.640000,t1_b420,SubmissionStatus.COMPLETE,0.61902,
 57381534,t1_h1_pc.csv,2026-10-19 04:11:24.647000,t1_h1_pc,SubmissionStatus.COMPLETE,0.62128,
 57379256,h2_oldmid.csv,2026-10-19 02:56:03.527000,h2_oldmid,SubmissionStatus.COMPLETE,0.77510,
 57379252,h1_oldstart.csv,2026-10-19 02:55:53.283000,h1_oldstart,SubmissionStatus.COMPLETE,0.61440,
@@ -45,6 +49,3 @@ ref,fileName,date,description,status,publicScore,privateScore
 57280246,t1_all.csv,2026-10-16 19:03:01.200000,imu yaw + smoothed fwd/lat/yaw scan corr,SubmissionStatus.COMPLETE,1.78337,
 57280243,t1_lat.csv,2026-10-16 19:02:56.713000,imu yaw + smoothed lateral scan corr (sigma60),SubmissionStatus.COMPLETE,1.74338,
 57278209,p_lag-0.1.csv,2026-10-16 17:49:17.783000,probe p_lag-0.1,SubmissionStatus.COMPLETE,1.73270,
-57278208,p_lag0.1.csv,2026-10-16 17:49:13.437000,probe p_lag+0.1,SubmissionStatus.COMPLETE,1.78392,
-57278203,p_imuyaw.csv,2026-10-16 17:49:08.340000,probe p_imuyaw,SubmissionStatus.COMPLETE,1.18354,
-57277935,gnss_track1.csv,2026-10-16 17:39:23.593000,GNSS-only interpolation (probe),SubmissionStatus.COMPLETE,1.31094,
