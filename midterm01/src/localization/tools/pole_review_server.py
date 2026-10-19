@@ -68,7 +68,8 @@ main{padding:10px 16px}img{max-width:100%;border-radius:6px;display:block}
 <script>
 const T='__TRACK__'; let F=[];
 fetch('/viewer/'+T+'/frames.json').then(r=>r.json()).then(j=>{F=j.frames;document.getElementById('lab').textContent=j.label;
-  const s=document.getElementById('sl'); s.max=F.length-1; s.oninput=()=>show(+s.value); show(0);});
+  const s=document.getElementById('sl'); s.max=F.length-1; s.oninput=()=>show(+s.value);
+  const h=parseInt(location.hash.slice(1)); let k0=0; if(h>=0){let b=1e9; F.forEach((f,k)=>{if(Math.abs(f-h)<b){b=Math.abs(f-h);k0=k;}});} show(k0);});
 function show(k){k=Math.max(0,Math.min(F.length-1,k)); const i=String(F[k]).padStart(5,'0');
   document.getElementById('sl').value=k; document.getElementById('fr').textContent='frame '+F[k]+' ('+(k+1)+'/'+F.length+')';
   document.getElementById('kf').src='/viewer/'+T+'/kf_'+i+'.jpg'; document.getElementById('bev').src='/viewer/'+T+'/bev_'+i+'.jpg';}
@@ -227,6 +228,37 @@ def hood_path(cam):
     return os.path.join(ROOT, f'ego_mask_{cam}.json')
 
 
+
+ISSUES_PAGE = r'''<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>__TRACK__ 待修正位置</title><style>
+body{font:15px system-ui;margin:0;padding:12px 16px;background:#f4f6f5;color:#18201c}
+h2{margin:4px 0 6px} p{margin:4px 0 10px;max-width:80ch;color:#4c5a53}
+.row{display:grid;grid-template-columns:110px 70px 1fr;gap:10px;padding:8px 10px;background:#fff;border:1px solid #d6ddd9;border-radius:6px;margin-bottom:6px}
+.sev{font-family:ui-monospace,monospace;font-weight:600} .s3{color:#a83a32} .s2{color:#a5741a} .s1{color:#2a7d3f}
+.fl{font-family:ui-monospace,monospace;font-size:13px} .hint{font-size:13px;color:#4c5a53;margin-top:3px}
+.tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:9px;border:1px solid #9aa8a1;margin-right:4px}
+table{border-collapse:collapse;font:12px ui-monospace,monospace;margin-top:4px} td{padding:1px 8px 1px 0}
+@media (max-width:600px){.row{grid-template-columns:1fr}}
+</style></head><body>
+<h2>__TRACK__ 地圖／相機還可以修正的位置</h2>
+<p>軌跡：目前最佳提交。每 60 幀統計車道線、路緣、桿子定位相對軌跡的殘差（前進 fwd／側向 lat，m；車道線另有 yaw，度）。
+點幀號打開定位檢視（紅＝地圖標線、黃＝路緣、綠＝桿子投影到影像），看是地圖錯、相機偏，還是軌跡偏。</p>
+<p><label>排序 <select id="ord"><option value="sev">嚴重度</option><option value="lo">幀號</option></select></label>
+ <label><input type="checkbox" id="pole" checked> 包含只有桿子的項目</label> <span id="cnt"></span></p>
+<div id="list"></div>
+<script>
+const T='__TRACK__', VT='__VIEWER__', D=__DATA__;
+function draw(){const ord=document.getElementById('ord').value, pole=document.getElementById('pole').checked;
+ let it=D.issues.filter(x=>pole||x.flags.some(f=>!f.startsWith('pole')));
+ it=it.slice().sort((a,b)=>ord==='sev'?b.sev-a.sev:a.lo-b.lo);
+ document.getElementById('cnt').textContent=it.length+' 個區段';
+ document.getElementById('list').innerHTML=it.map(x=>{const c=x.sev>1?'s3':x.sev>0.4?'s2':'s1';
+  const st=Object.entries(x.stats).map(([k,v])=>'<tr><td>'+k+'</td><td>n '+v.n+'</td>'+Object.entries(v).filter(([a])=>a!=='n').map(([a,b])=>'<td>'+a+' '+(b>=0?'+':'')+b.toFixed(2)+'</td>').join('')+'</tr>').join('');
+  return '<div class="row"><div><a href="/viewer/'+VT+'#'+x.frame+'" target="_blank">幀 '+x.lo+'–'+x.hi+'</a></div><div class="sev '+c+'">'+x.sev.toFixed(2)+'</div><div>'+
+   x.flags.map(f=>'<span class="tag">'+f+'</span>').join('')+'<div class="hint">'+x.hint+'</div><table>'+st+'</table></div></div>';}).join('');}
+document.getElementById('ord').onchange=draw; document.getElementById('pole').onchange=draw; draw();
+</script></body></html>'''
+
 def decisions_path(track):
     return os.path.join(ROOT, f'pole_review_{track}.json')
 
@@ -256,7 +288,7 @@ class H(BaseHTTPRequestHandler):
                     d = json.load(open(decisions_path(t))).get('dec', {})
                 total = len(n_poles(t))
                 rows.append(f'<li><a href="/{t}.html">{t} 桿子審核</a> — {total} poles, decided {len(d)} ｜ '
-                            f'<a href="/viewer/{t}">{t} 定位檢視</a> ｜ <a href="/compare/{t}">{t} 版本對比</a></li>')
+                            f'<a href="/viewer/{t}">{t} 定位檢視</a> ｜ <a href="/compare/{t}">{t} 版本對比</a> ｜ <b><a href="/issues/{t}">{t} 待修正位置（最佳軌跡）</a></b></li>')
             rows.append('<li><a href="/hood">自車遮罩編輯（引擎蓋／車體）</a></li>')
             rows.append('<li><a href="/calib">相機校正：標地圖車道線 ↔ 影像對應點</a></li>')
             return self._send(200, '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
@@ -290,6 +322,14 @@ class H(BaseHTTPRequestHandler):
         if m:
             f = hood_path(m.group(1))
             return self._send(200, open(f).read() if os.path.exists(f) else '{}', 'application/json')
+        m = re.fullmatch(r'/issues/(Track[12])/?', p)
+        if m:
+            t = m.group(1)
+            f = os.path.join(ROOT, f'issues_{t}.json')
+            if not os.path.exists(f):
+                return self._send(404, 'run tools/fix_issues.py first')
+            vt = max([d for d in os.listdir(VIEWER_DIR) if d.startswith(t + '_best')] or [t])
+            return self._send(200, ISSUES_PAGE.replace('__TRACK__', t).replace('__VIEWER__', vt).replace('__DATA__', open(f).read()))
         m = re.fullmatch(r'/compare/(Track[12])/?', p)
         if m:
             return self._send(200, compare_page(m.group(1)))
