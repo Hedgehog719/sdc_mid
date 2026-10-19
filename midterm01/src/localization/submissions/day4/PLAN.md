@@ -326,3 +326,13 @@ from a new calibration; prefer the image-space matcher for unbiased fixes.
 T2 #4 t2_opt7_yopt 0.21440 (NEW BEST; 7-direction optimum, predicted 0.21439; opt5 check predicted 0.16144 vs 0.16142).
 Day quota used (T1 0 / T2 0). Tomorrow: T1 opt6 / opt4 / opt2 (exact, 0.471 / 0.477 / 0.486), re-centred
 calibration t1_{jrot,t2fit}_v2_c, lateral-only start; T2 2 s yaw direction, joint_c.
+
+## USER INSTRUCTION 2026-10-19 23:32 (authoritative for tomorrow)
+"10/20 08:00-10:30: submit 3 per track, make sure they are the best solutions, push toward score 0.0001." Timers:
+08:00 (window opens) and 10:30 (window closes -> stop and wait for the user). Never use more than 3 per track, never
+submit after 10:30. Design: each submission one unknown, final one = exact quadratic optimum over all scored
+directions (T2 tonight: predictions exact to 1e-5).
+Plan T1: (1) t1_opt6 (exact under K; verifies K_T1) or a new direction, (2) one new direction (re-centred
+calibration fixes / lateral start / image-space fixes), (3) exact optimum over all scored directions.
+Plan T2: (1) 2 s course-yaw direction on opt7 positions (yaw-only unknown), (2) one new position direction
+(joint_c / image-space fixes, re-centred), (3) exact optimum (positions + yaw in span{4 s, 2 s}).
