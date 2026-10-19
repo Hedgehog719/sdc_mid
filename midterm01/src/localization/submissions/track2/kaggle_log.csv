@@ -1,4 +1,5 @@
 ref,fileName,date,description,status,publicScore,privateScore
+57378278,t2_rest06.csv,2026-10-19 02:21:51.430000,t2_rest06,SubmissionStatus.COMPLETE,0.24752,
 57373542,t2_pos2_bestyaw.csv,2026-10-19 00:04:45.123000,t2_pos2_bestyaw,SubmissionStatus.COMPLETE,0.29868,
 57373479,t2_yawbev0.7.csv,2026-10-19 00:04:08.963000,t2_yawbev0.7,SubmissionStatus.COMPLETE,0.32591,
 57373380,t2_pos2.csv,2026-10-19 00:03:28.147000,t2_pos2,SubmissionStatus.COMPLETE,0.32087,

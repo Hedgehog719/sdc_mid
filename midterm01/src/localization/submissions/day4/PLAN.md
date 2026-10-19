@@ -78,3 +78,14 @@ Track1: t1_fin_start 0.70845 (best was 0.93699) -> improved, stopped (1 submissi
 Track2: t2_pos2 0.32087, t2_yawbev0.7 0.32591, t2_pos2_bestyaw 0.29868 (best 0.28263) -> no improvement, stopped
   (3 used). On T2 (accurate GNSS) both the BEV position fixes (+0.016) and the stronger BEV yaw / map-consistent
   start yaw (+0.03..0.04) hurt; t2_yawonly not submitted (also changes yaw). Waiting for the user.
+
+## Track2 diagnosis (user asked why T2 failed) -> t2_rest06 0.24752 (best was 0.28263)
+Score ladder (best / t2_yawbev0.7 / t2_pos2_bestyaw) => with P~0.225 m, Y~0.29 deg: the start (frames 0-300,
+stationary) position (0.41 m) and yaw (0.7-1.1 deg) changes did not help; the position change on the rest of the
+track pointed against the existing error but overshot (optimal scale ~0.6).
+Cause: the T2 frames 0-250 are recorded while stopped; matching them against map subsets built from the
+stationary scans (early/mid/late) gives lateral +0.03..+0.15 m vs the GNSS solution while the departure scans
+(the only ones left in map_clean) give -0.40 m; the mapping SLAM yaw drifted +1.0 -> -0.5 -> -1.5 deg during the
+stop and jumped back after departure. T1 frames start after the stop (departure scans), so T1 is unaffected.
+Fix: keep the GNSS solution while stationary (0-250, ramp to 330), apply 0.6 x the camera position correction
+elsewhere, best yaw -> 0.24752 (predicted ~0.247).
