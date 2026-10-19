@@ -237,3 +237,5 @@ Candidates:
   submissions/day6/track2/t2_yawcourse{2,4}s.csv (change rms 0.19 / 0.14 deg, mean kept);
   T1 submitted yaw is 0.16 deg right of the course on average: submissions/day6/track1/t1_yawcourse4s_{shape,full}.csv
   One probe per direction gives <error, change> exactly (positions fixed, K known) -> exact optimal scaling.
+
+T1 map_clean7 (lane cleared, 1.43 M points): roof layer gone, marking map unchanged (camera-map NCC 0.2834 -> 0.2835) -> no matching rerun. Double layer 612-638 m remains (which layer is right is undetermined).
