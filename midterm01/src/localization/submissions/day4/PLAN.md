@@ -274,3 +274,9 @@ T1 pole fixes: 38 % > 1 m forward; segments 1200-1500, 2100-2400, 2700-3000 most
 with the trajectory -> two-stage gating (pole-free fusion, keep poles within 0.8 m fwd / 0.6 m lat, 311/901):
 pole NIS median 1.15, 0 % > 9.2. Predicted 0.52050 with the old yaw (96 % in span) -> ~0.5116 with the current
 yaw: submissions/day6/track1/t1_polegate_yc.csv (not submitted). Tighter road sigma / smaller GNSS sigma: worse.
+T1 GNSS model re-tune on top of the gated poles (kaggle_predict, 92-97 % in span): ridge tau 20 s / sigma_b 0.25 /
+white 0.02 -> predicted 0.51091 with the old yaw = ~0.5020 with the current course yaw (best 0.51607);
+tau 30 / 0.30 and 45 / 0.35 equal; white 0.015-0.03 flat. submissions/day6/track1/t1_v2.csv (gated poles + this
+GNSS model, start and yaw of the best; vs best fwd 0.057 lat 0.060 m rms). Not submitted.
+T2: gating poles worse (0.2327-0.2331 vs 0.23178); the bias component's GNSS model barely moves the blend
+(weight 0.231): T2 positions stay at the in-span optimum.
