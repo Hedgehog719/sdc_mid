@@ -80,6 +80,9 @@ def neighbour_frames(i):
     return sorted(sel)
 
 
+MARKS = None
+
+
 def accumulated_response(i, road_d):
     """Image lane response of frame i, averaged with neighbours warped by the prior's relative motion."""
     xi, yi, yawi = PRIOR_REL[i]
@@ -150,6 +153,8 @@ def match_frame(i, prior):
         b = int(A.curb_band / RES)
         road = cv2.dilate(road.astype(np.uint8), np.ones((2 * b + 1, 2 * b + 1), np.uint8)) > 0
         ref[~road] = 0
+    elif MARKS is not None:  # global marking map (tools/marking_map.py) instead of the per-frame top-hat
+        ref = np.where(road, MARKS.bev(np.array([x, y]), yaw)[0], 0).astype(np.float32)
     else:
         ref = lane_response(mg, road)
         if A.map_min_blob > 0:  # isolated bright map specks (studs, sparse rings) are not markings
@@ -183,8 +188,7 @@ def match_frame(i, prior):
         r0 = int(max(0, (_XM - A.near_only) / RES))
         base = base.copy()
         base[:r0] = base[r0:].mean() if A.feature == 'road' else 0
-    best = None
-    for dyaw in np.radians(np.arange(-A.max_yaw, A.max_yaw + 1e-6, A.yaw_step)):
+    def try_yaw(dyaw):
         resp = rotate_raster(base, dyaw)
         if A.range_weight > 0:  # near rows are reliable (IPM resolution / attitude sensitivity grow with range)
             xs = X_MAX - (np.arange(H) + 0.5) * RES
@@ -192,13 +196,32 @@ def match_frame(i, prior):
         if A.feature == 'road':
             resp = np.where(resp == 0, base.mean(), resp).astype(np.float32)
         if resp.max() <= 0:
-            continue
+            return None
         res = cv2.matchTemplate(padded, resp.astype(np.float32), cv2.TM_CCOEFF_NORMED)
         _, mx, _, loc = cv2.minMaxLoc(res)
-        if best is None or mx > best[0]:
-            best = (mx, dyaw, res, loc)
+        return (mx, dyaw, res, loc)
+
+    best = None
+    for dyaw in np.radians(np.arange(-A.max_yaw, A.max_yaw + 1e-6, A.yaw_step)):
+        r = try_yaw(dyaw)
+        if r is not None and (best is None or r[0] > best[0]):
+            best = r
     if best is None:
         return None
+    if A.yaw_fine > 0:  # fine search around the coarse optimum, then parabolic interpolation of the peak in yaw
+        lim = np.radians(A.max_yaw) + 1e-9
+        half = 0.6 * A.yaw_step
+        grid = [d for d in best[1] + np.radians(np.arange(-half, half + 1e-9, A.yaw_fine)) if abs(d) <= lim]
+        fine = [r for r in (try_yaw(d) for d in grid) if r is not None]
+        if fine:
+            j = int(np.argmax([r[0] for r in fine]))
+            best = fine[j]
+            if 0 < j < len(fine) - 1:
+                a0, a1, a2 = fine[j - 1][0], fine[j][0], fine[j + 1][0]
+                den = a0 - 2 * a1 + a2
+                if den < 0:
+                    off = float(np.clip(0.5 * (a0 - a2) / den, -0.5, 0.5)) * np.radians(A.yaw_fine)
+                    best = (best[0], best[1] + off, best[2], best[3])
     mx, dyaw, res, loc = best
     sx, sy = subpix(res, loc)
     # second peak outside a 1 m radius
@@ -259,6 +282,7 @@ def main():
     ap.add_argument('--max_shift', type=float, default=2.5)
     ap.add_argument('--max_yaw', type=float, default=3.0)
     ap.add_argument('--yaw_step', type=float, default=0.5)
+    ap.add_argument('--yaw_fine', type=float, default=0.0, help='>0: refine the yaw around the coarse optimum in these steps (deg)')
     ap.add_argument('--sign', type=float, default=-1.0)
     ap.add_argument('--yaw_sign', type=float, default=-1.0)
     ap.add_argument('--feature', choices=['lane', 'curb', 'road'], default='lane', help='road markings or kerb edges')
@@ -268,6 +292,7 @@ def main():
     ap.add_argument('--road_colour', action='store_true', help='average segmentation with a per-frame asphalt colour model')
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
+    ap.add_argument('--map_marks', default='', help='marking_map.py npz: map-side lane response from the global marking map')
     ap.add_argument('--near_only', type=float, default=0.0,
                     help='>0: use only the BEV within this many metres ahead (map distortion grows with range)')
     ap.add_argument('--map_min_blob', type=int, default=0, help='>0: drop map marking blobs smaller than this (cells)')
@@ -315,8 +340,11 @@ def main():
     if A.frame_list:
         frames = [int(v) for v in np.load(A.frame_list)]
     chunks = [frames[k:k + 40] for k in range(0, len(frames), 40)]
-    global MAP, BEV
+    global MAP, BEV, MARKS
     MAP = load_map(A.track_dir)  # loaded once (~1.5 GB), shared by forked workers
+    if A.map_marks:
+        from marking_map import MarkingMap
+        MARKS = MarkingMap(A.map_marks)
     if A.ground3d:  # same dynamic attitude model as the plane IPM below; the static road tilt comes from the map
         ground = GroundRaster(MAP.pts)
         dyn = None

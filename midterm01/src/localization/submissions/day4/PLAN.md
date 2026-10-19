@@ -203,3 +203,18 @@ frames (work/far, scored vs GNSS = independent): far cut at 18 m lateral 0.225 -
 s.e. 0.0035: not significant), forward 0.259 -> 0.399 with a +0.35 m bias, yaw 0.59 -> 0.62 deg; range weighting
 worse everywhere. The full band stays (its forward agrees with GNSS: +0.09 vs +0.35 m). No pipeline change.
 Side finding: bev_match searches yaw in 0.5 deg steps without sub-step refinement (yaw fixes are quantised).
+
+## Global marking map + fine yaw (user: fix the red-dot selection and the camera BEV first)
+tools/marking_map.py: once per track, 50 m tiles: median intensity per 0.1 m cell (ground layer), 1.5 m median
+background, 5 m robust noise scale, oriented 0.7 m line filter, hysteresis; 'mask' = detected markings (viewer red
+dots, true width), 'soft' = continuous line response (matcher). Viewer (--marks): red dots and poles at their 3D map
+height with road tilt, road level only (corridor holds bright cells on walls / roofs: fixed after the user saw red
+dots in the sky at T2 345). bev_match --map_marks, --yaw_fine 0.05 (coarse 0.5 deg, fine 0.05 deg, parabolic peak).
+Camera-map agreement (41 T2 frames, peak NCC): old 0.186, soft 0.229. Matcher on 190 T2 frames vs GNSS (paired):
+fine yaw alone lat +0.0034 m^2 (2.8 s.e.), yaw +0.052 deg^2 (2.9 s.e.); soft map + fine yaw lat 0.225 -> 0.200 m
+(3.3 s.e.), forward(sharp) 0.259 -> 0.188 m, yaw spread 0.59 -> 0.50 deg (2.7 s.e.); yaw median +0.26 deg vs the day2
+yaw (fine on the old map: +0.15 - quantisation hid it). Full T2 run: work/mkS_bm_t2.npz.
+Image-space camera calibration (tools/calib_img_marks.py, projected 3D markings vs raw-image top-hat): not
+trustworthy - unconstrained: front roll -3.1 / yaw -1.7 deg; pitch+height: -1.4 deg and 0.78 m lower; only +3-6 %,
+better on 56-67 % of frames. Per-frame best front pitch: 615/630 want -1.1/-1.2 deg, 600 wants +0.6 (0.5 s apart):
+not a stable calibration error (spread 0.75 deg, r -0.19 with acceleration). Not adopted.

@@ -40,6 +40,8 @@ def main():
                     help='yellow outline: smooth = map road used by the kerb matcher; scan = old row-scan heuristic')
     ap.add_argument('--ground_mode', default='plane', help='map road mask: plane | local | smooth | hybrid')
     ap.add_argument('--range', default='', help='lo:hi frames to (re)render; frames.json keeps all rendered frames')
+    ap.add_argument('--marks', default='', help='marking_map.py npz (mask mode): red dots from the global marking map, '
+                    'drawn at their 3D map height (poles too) instead of on a flat road')
     a = ap.parse_args()
     import bev as _bev
     _bev.GROUND_MODE = a.ground_mode
@@ -52,6 +54,10 @@ def main():
     R = RoadProbBEV(B)
     C = Cameras(os.path.join(a.track_dir, f'{track}_images', 'camera_info'))
     poles = np.load(os.path.join(a.track_dir, 'poles_curated.npy'))
+    MK = None
+    if a.marks:
+        from marking_map import MarkingMap, road_level, vehicle_frame
+        MK = MarkingMap(a.marks)
     Rm = Rotation.from_euler('ZYX', [-1.5, 0, 0], degrees=True).as_matrix()
     cams = ['fl', 'f', 'fr']
     imgdir = {c: os.path.join(a.track_dir, f'{track}_images', f'{track}_{c}_images') for c in cams}
@@ -63,7 +69,14 @@ def main():
         idx = M.query_idx(x, y, 42.0)
         pts, inten = M.pts[idx], M.inten[idx]
         mg, road = map_bev(pts, inten, np.array([x, y]), yaw)
-        lanes = lane_response(mg, road) > 1.5
+        if MK is not None:
+            lanes = MK.bev(np.array([x, y]), yaw)[0] > 0.5
+            Pw = MK.points(x, y, 42.0)
+            lane_pts = vehicle_frame(Pw, (x, y, yaw), MK.height) if len(Pw) else np.zeros((0, 3))
+            lane_pts = lane_pts[(lane_pts[:, 0] > -6) & road_level(lane_pts)]
+        else:
+            lanes = lane_response(mg, road) > 1.5
+            lane_pts = to_vehicle(lanes, 1.5)
         if a.road_edge == 'smooth':  # the kerb matcher's map road (slope-based, connected to the vehicle)
             rs, kn = map_road_smooth(pts.astype(np.float64), np.array([x, y]), yaw)
             edge = ((rs > 0.5) & kn).astype(np.uint8)
@@ -74,7 +87,7 @@ def main():
         curb = map_curb(pts.astype(np.float64), np.array([x, y]), yaw) > 0.03
         if not a.show_curb:  # map_curb (height steps) is not used by the matchers; double ground layers flood it
             curb = np.zeros_like(curb)
-        layers = [(to_vehicle(lanes, 1.5), (0, 0, 255), 1), (to_vehicle(curb, 1.5), (255, 255, 0), 1),
+        layers = [(lane_pts, (0, 0, 255), 1), (to_vehicle(curb, 1.5), (255, 255, 0), 1),
                   (to_vehicle(edge, 1.5), (0, 230, 255), 2)]
         c_, s_ = np.cos(yaw), np.sin(yaw)
         d = poles[:, :2] - [x, y]
@@ -92,7 +105,12 @@ def main():
                     cv2.circle(img, (u_, v_), rad, col, -1)
             for k in np.flatnonzero(near):
                 hs = np.linspace(0, min(poles[k, 4], 6), 12)
-                Q = np.stack([np.full(12, pu[k]), np.full(12, pv[k]), hs - 1.5], 1) @ Rm
+                if MK is not None:  # pole standing on the map ground, seen from the tilted vehicle
+                    zg, okg = MK.height(np.array([poles[k, 0]]), np.array([poles[k, 1]]))
+                    Pw = np.stack([np.full(12, poles[k, 0]), np.full(12, poles[k, 1]), (zg[0] if okg[0] else 0.0) + hs], 1)
+                    Q = vehicle_frame(Pw, (x, y, yaw), MK.height) @ Rm if okg[0] else np.stack([np.full(12, pu[k]), np.full(12, pv[k]), hs - 1.5], 1) @ Rm
+                else:
+                    Q = np.stack([np.full(12, pu[k]), np.full(12, pv[k]), hs - 1.5], 1) @ Rm
                 uv, ok = C.project(cam, Q)
                 for p0, p1, o0, o1 in zip(uv[:-1], uv[1:], ok[:-1], ok[1:]):
                     if o0 and o1:
