@@ -311,3 +311,10 @@ t2_opt5_yopt 0.21506 (NEW BEST; quadratic optimum over pc / gm / blend / mkS / t
 0.22 / -0.778 / 1.066, predicted 0.21508 -> exact; position RMSE 0.1614).
 Next (queued): T1 lane fixes with joint rotations + heights only (jrot), T2 lane fixes with the joint calibration
 -> T2 #3 = joint direction (re-centred, opt yaw), #4 = 6-direction optimum.
+T1 exact optimum over all scored position directions (H base, K 0.143; current yaw part 0.13411):
+opt6 (a13 -0.11, gm -0.88, pc -1.58, mb 2.07, mk1S 2.42, v2 -1.23) predicted 0.47089 (K 0.12-0.165: 0.465-0.476);
+opt4 (gm, mb, mk1S, v2) 0.47664; opt2 (mk1S 1.87, v2 0.03) 0.48569 -> the marking-map + fine-yaw direction is still
+downhill at ~1.9x. Leave-one-out: later files did better than predicted from earlier ones (conservative model).
+Files for tomorrow: submissions/day6/track1/t1_opt{2,4,6}.csv (start unchanged).
+T1 lane fixes with joint rotations + heights (jrot): peak 0.434, sharp-forward shift -0.135 (t2fit -0.228, old
++0.044); re-centred calibration candidates t1_{jrot,t2fit}_v2_c.csv (mean fwd/lat removed, as T2's 0.22364).
