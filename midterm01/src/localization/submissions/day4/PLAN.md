@@ -218,3 +218,22 @@ Image-space camera calibration (tools/calib_img_marks.py, projected 3D markings 
 trustworthy - unconstrained: front roll -3.1 / yaw -1.7 deg; pitch+height: -1.4 deg and 0.78 m lower; only +3-6 %,
 better on 56-67 % of frames. Per-frame best front pitch: 615/630 want -1.1/-1.2 deg, 600 wants +0.6 (0.5 s apart):
 not a stable calibration error (spread 0.75 deg, r -0.19 with acceleration). Not adopted.
+
+## Day 6 candidates (new marking map + fine yaw; heading from the course of travel) - NOT submitted, awaiting OK
+GNSS altitude is a constant in both tracks (2D GNSS): the audit's "vertical distortion" is the map height profile
+high-passed (real bumps also flag); level_start --ref_gnss therefore levels to a flat road. T2 map_clean7 = clean,
+start levelled (frames 0-760 + 30 m) and the driven lane cleared (0.25-3 m above the road within 1.1 m of the path:
+roof layer + lane objects, 1.36 M points = 4 %). Image check: at 620-660 the best front pitch offset goes -1.16 ->
++0.17 deg (the "body pitch" there was the map warp). 700-950 inconclusive (periodic dashes). Not yet used for fixes.
+Pitch model test (190 T2 frames vs GNSS): IMU pitch instead of the acceleration model is worse - recipe unchanged.
+T1 marking map: camera-map NCC 0.194 -> 0.283 (soft), 95 % of frames better.
+Candidates:
+- submissions/day6/track1/t1_mk1S.csv: t1_mb recipe with new lane fixes; vs best fwd 0.077 lat 0.058 m; predicted
+  0.5568 (only 67 % in span: conservative; t1_mb was predicted 0.5687 and scored 0.54851)
+- submissions/day6/track2/t2_mkS_blend.csv: t2_blend recipe with new lane fixes; vs best 0.048 / 0.027 m; predicted
+  0.2402 (86 % in span, conservative)
+- heading probes (positions identical to the bests): T2 day2 yaw follows the course of travel worse than the
+  fusion yaw (robust rms 0.205 vs 0.168 deg; 780-930 off by 0.5-0.6 deg, the user's 915 observation);
+  submissions/day6/track2/t2_yawcourse{2,4}s.csv (change rms 0.19 / 0.14 deg, mean kept);
+  T1 submitted yaw is 0.16 deg right of the course on average: submissions/day6/track1/t1_yawcourse4s_{shape,full}.csv
+  One probe per direction gives <error, change> exactly (positions fixed, K known) -> exact optimal scaling.

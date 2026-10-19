@@ -38,7 +38,8 @@ def level_pitch(a, P, I, xyz, fix_path, z_ref):
         m = strip[sl]
         if m.sum() < 300:
             continue
-        ss, zz = sa[sl][m], xyz[sl][m, 2] - z_ref
+        ss = sa[sl][m]
+        zz = xyz[sl][m, 2] - (z_ref(ss) if callable(z_ref) else z_ref)
         keep = np.abs(zz) < 1.0
         ss, zz = ss[keep], zz[keep]
         if len(ss) < 300:
@@ -72,8 +73,38 @@ def level_pitch(a, P, I, xyz, fix_path, z_ref):
     print(f'pitch-corrected {nfix} blocks')
     out = np.asarray(P).copy()
     out[:, 2] = zc.astype(out.dtype)
+    I = np.asarray(I)
+    if a.clear_lane > 0:
+        out, I = clear_lane(a, out, I)
     np.save(os.path.join(a.track_dir, f'map_{a.tag_out}.npy'), out)
-    np.save(os.path.join(a.track_dir, f'map_intensity_{a.tag_out}.npy'), np.asarray(I))
+    np.save(os.path.join(a.track_dir, f'map_intensity_{a.tag_out}.npy'), I)
+
+
+def clear_lane(a, P, I):
+    """Remove map points 0.25-3 m above the road within clear_lane m of the driven path: our car drove there, so
+    nothing static can stand there - the mapping car's own roof (thin layer ~1.7 m up along its whole path) and
+    vehicles captured while mapping."""
+    tr = pd.read_csv(a.traj_csv)
+    ss = np.r_[0, np.cumsum(np.hypot(np.diff(tr.x.values), np.diff(tr.y.values)))]
+    q = np.arange(0, ss[-1], 0.25)
+    path = np.stack([np.interp(q, ss, tr.x.values), np.interp(q, ss, tr.y.values)], 1)
+    d, j = cKDTree(path).query(P[:, :2], distance_upper_bound=a.clear_lane)
+    near = np.flatnonzero(np.isfinite(d))
+    # local road height: low percentile of the points near each path sample
+    zp = np.full(len(path), np.nan)
+    order = np.argsort(j[near])
+    jn, zn = j[near][order], P[near, 2][order]
+    u, first, cnt = np.unique(jn, return_index=True, return_counts=True)
+    for k, f0, c0 in zip(u, first, cnt):
+        zp[k] = np.percentile(zn[f0:f0 + c0], 10)
+    ok = np.isfinite(zp)
+    zp = np.interp(np.arange(len(path)), np.flatnonzero(ok), zp[ok])
+    h = P[near, 2] - zp[j[near]]
+    drop = near[(h > 0.25) & (h < 3.0)]
+    keep = np.ones(len(P), bool)
+    keep[drop] = False
+    print(f'cleared {len(drop)} points ({len(drop) / len(P) * 100:.2f} %) 0.25-3 m above the road within {a.clear_lane} m of the path')
+    return P[keep], I[keep]
 
 
 def main():
@@ -90,6 +121,8 @@ def main():
     ap.add_argument('--block', type=int, default=20000)
     ap.add_argument('--tilt', action='store_true', help='correct: also remove the block ground tilt (ill-posed for sweep sectors)')
     ap.add_argument('--strip', type=float, default=1.5, help='pitch mode: half width (m) of the own-lane strip')
+    ap.add_argument('--ref_gnss', action='store_true', help='pitch mode: level to the GNSS altitude profile (+ offset) instead of a flat road')
+    ap.add_argument('--clear_lane', type=float, default=0.0, help='>0: drop points 0.25-3 m above the road within this distance (m) of the path')
     ap.add_argument('--mode', choices=['remove', 'correct', 'pitch'], default='pitch',
                     help='correct: subtract the block\'s ground plane offset (keeps coverage); remove: drop the block')
     a = ap.parse_args()
@@ -114,6 +147,19 @@ def main():
     lo = np.percentile(zr, 5)
     z_ref = float(np.median(zr[zr < lo + 0.3]))
     print(f'reference road height (frames {r0}-{r1}): {z_ref:.3f} m from {len(zr)} points')
+    if a.ref_gnss:  # reference = GNSS altitude profile along the path + the map's offset on the trusted stretch
+        import sys
+        sys.path.insert(0, os.path.dirname(__file__))
+        from common import Sensors, ply_frames
+        ts, _ = ply_frames(os.path.join(a.track_dir, 'raw_ply'))
+        from scipy.ndimage import gaussian_filter1d
+        zg = gaussian_filter1d(Sensors(a.track_dir).gnss_xyz(ts[:len(tr)])[:, 2], 28)
+        sp_fix = np.r_[0, np.cumsum(np.hypot(*np.diff(fix_path, axis=0).T))]
+        s_fix0 = max(s[f0] - 5, 0)
+        offset = z_ref - float(np.median(zg[r0:r1]))
+        print(f'GNSS-altitude reference: map minus GNSS on the trusted stretch {offset:+.3f} m; GNSS altitude change over '
+              f'the fixed stretch {np.ptp(zg[f0:f1]):.2f} m')
+        z_ref = lambda sq, zg=zg, s=s, s0=s_fix0, off=offset: np.interp(sq + s0, s, zg) + off  # noqa: E731
     if a.mode == 'pitch':
         return level_pitch(a, P, I, xyz, fix_path, z_ref)
     d, _ = tree_fix.query(xyz[:, :2], distance_upper_bound=a.corridor)
