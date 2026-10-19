@@ -105,3 +105,11 @@ Results: h1_oldstart 0.61440 (new T1 best; the camera-corrected start was badly 
 frames), h2_oldmid 0.77510 (new pipeline much better on 300-840). h3 not submitted (user: new better after 540).
 Conclusion: the map is fine where the mapping vehicle was moving; only the stop/departure region at the track
 start is distorted -> there the GNSS/IMU solution must be used (same as Track2).
+
+## Side-camera pole offsets (user spotted at T2 2700)
+tools/pole_offsets.py on Track2 (660 confident poles): fl +10.9 px (~+1.0 deg), f +1.6 px, fr -8.7 px (~-0.8 deg).
+A yaw-only fix (work/cam_rot_fix_pole.json: fl +0.47, f -0.36, fr -0.25) zeroes the pole offsets and makes the pole
+fixes less biased vs the reference (fwd -0.27 -> -0.06 m) but lowers lane NCC ~8 % on the side cameras (both tracks)
+and makes the T2-drift sim worse (0.262 -> 0.291; lanes alone 0.260). Shifting lane fixes back makes it worse too.
+=> poles (upper image, at the side) and lanes (lower image) disagree: not a plain yaw error; likely side-camera
+timing or fisheye distortion / roll about the optical axis. Calibration NOT changed (default cam_rot_fix.json).

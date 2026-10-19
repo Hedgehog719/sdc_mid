@@ -51,6 +51,7 @@ def main():
     ap.add_argument('--pole_pct', type=float, default=50, help='keep pole fixes with peak above this percentile')
     ap.add_argument('--pole_fwd', type=float, default=0.5)
     ap.add_argument('--pole_lat', type=float, default=0.6)
+    ap.add_argument('--bev_fwd_shift', type=float, default=0.0, help='m added to BEV fixes along the heading (bias)')
     ap.add_argument('--pole_dt', type=float, default=0.0, help='s; pole fixes moved forward by speed*dt (lag bias)')
     ap.add_argument('--pole_min_speed', type=float, default=0.0)
     ap.add_argument('--no_bev', action='store_true')
@@ -97,7 +98,10 @@ def main():
             dd = np.abs(np.degrees(z['dyaw']))
             m &= np.abs(dd - dd.max()) >= 0.01
         tm = np.concatenate([tg, z['ts'][m]])
-        zm = np.concatenate([gx, np.stack([z['mx'][m], z['my'][m]], 1)])
+        bxy = np.stack([z['mx'][m], z['my'][m]], 1)
+        if a.bev_fwd_shift:
+            bxy = bxy + a.bev_fwd_shift * np.stack([np.cos(z['pyaw'][m]), np.sin(z['pyaw'][m])], 1)
+        zm = np.concatenate([gx, bxy])
         cov = np.zeros((len(tm), 2, 2))
         cov[:len(tg)] = np.eye(2) * a.gnss_sigma ** 2
         yw = z['pyaw'][m]
