@@ -148,3 +148,12 @@ shrink compensated the wrong GNSS model (lateral wanted 1.0, forward 0 under the
 Candidates (positions only; start/stationary segments and yaw unchanged): submissions/day5/mvue/t1_gm.csv
 (vs best fwd 0.10 lat 0.04 m), submissions/day5/mvue/t2_gm.csv (fwd 0.09 lat 0.07 m). NOT submitted (awaiting OK).
 Bias-model candidates: T1 t1_gm 0.57658 (new best, was 0.61440); T2 t2_gm 0.25031 (worse than 0.23453). Remaining today: T1 5, T2 8.
+Why: T1 GNSS drift (0.6 m) >> map error -> modelling it helps (inner product of the change with the error corr -0.45).
+T2 GNSS (0.14 m) ~ map error: cross-validation scores agreement with map-derived fixes, so it cannot see the map's own
+error (common to all fixes) and over-trusted the camera; Kaggle optimum keeps GNSS weight (~0.6). Missing MVUE piece:
+camera fix = position + spatially correlated MAP error + noise.
+tools/kaggle_predict.py: exact quadratic prediction of a candidate's position score from past same-yaw submissions
+(projection onto measured directions). T2: best combo of tested directions predicts 0.2318 (vs 0.23453) - little left in
+that span. T1: stronger bias-model variants (tau 20-30, sigma 0.8-1.2, white 0.1) all predict 0.576-0.583 (= gm);
+the formal optimum (2.6 x gm - 1.2 x pole corr) is an extrapolation that would fit the public subset - not used.
+The bias-model fusion's own yaw differs from the current yaw by only 0.035 deg rms.
