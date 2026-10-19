@@ -158,3 +158,12 @@ that span. T1: stronger bias-model variants (tau 20-30, sigma 0.8-1.2, white 0.1
 the formal optimum (2.6 x gm - 1.2 x pole corr) is an extrapolation that would fit the public subset - not used.
 The bias-model fusion's own yaw differs from the current yaw by only 0.035 deg rms.
 T2 t2_blend (G + 0.816 d_pc + 0.231 d_gm, quadratic optimum of tested directions): predicted 0.23181, scored 0.23178 (new best). Remaining today: T1 5, T2 7.
+
+## NEXT (resume after the user's 2h04m pause): map-error model (MVUE completion)
+Model: camera fix = position + m + noise, m = map error, slowly varying along the path (Gauss-Markov in travelled
+distance, correlation length L ~ 20-100 m, sigma_m ~ 0.1-0.2 m), shared by lane / kerb / pole fixes; GNSS = position +
+b (Gauss-Markov in time, tau ~ 10 s) + white. rts.py: add 2 map-bias states driven by distance (phi = exp(-ds/L));
+H for map fixes = [I 0 I]. Expect: T2 (sigma_gnss ~ map) -> balanced weights without ad-hoc shrink; T1 ~ unchanged.
+Calibrate sigma_m / L with the Kaggle-exact predictor (tools/kaggle_predict.py, K_T2 = 0.0576 verified to 3e-5;
+K_T1 = 0.143) on existing submissions; cross-validation cannot see map error (common to all fixes).
+Bests: T1 0.57658 (t1_gm), T2 0.23178 (t2_blend). Remaining today: T1 5, T2 7. Ask before submitting.
