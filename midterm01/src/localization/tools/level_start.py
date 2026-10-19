@@ -76,8 +76,45 @@ def level_pitch(a, P, I, xyz, fix_path, z_ref):
     I = np.asarray(I)
     if a.clear_lane > 0:
         out, I = clear_lane(a, out, I)
+    if a.drop_below > 0:
+        out, I = drop_below(a, out, I)
     np.save(os.path.join(a.track_dir, f'map_{a.tag_out}.npy'), out)
     np.save(os.path.join(a.track_dir, f'map_intensity_{a.tag_out}.npy'), I)
+
+
+def drop_below(a, P, I, cell=0.5, corridor=40.0):
+    """Remove points more than drop_below m under the local ground (multipath / reflection noise): the ground is
+    the 20th percentile per 0.5 m cell, median-filtered over 2.5 m; within corridor m of the driven path."""
+    import cv2
+    tr = pd.read_csv(a.traj_csv)
+    ss = np.r_[0, np.cumsum(np.hypot(np.diff(tr.x.values), np.diff(tr.y.values)))]
+    q = np.arange(0, ss[-1], 1.0)
+    path = np.stack([np.interp(q, ss, tr.x.values), np.interp(q, ss, tr.y.values)], 1)
+    d, _ = cKDTree(path).query(P[:, :2], distance_upper_bound=corridor)
+    near = np.flatnonzero(np.isfinite(d))
+    x0, y0 = P[near, 0].min(), P[near, 1].min()
+    ci = ((P[near, 0] - x0) / cell).astype(np.int64)
+    cj = ((P[near, 1] - y0) / cell).astype(np.int64)
+    nx, ny = ci.max() + 1, cj.max() + 1
+    key = ci * ny + cj
+    z = P[near, 2].astype(np.float64)
+    o = np.lexsort((z, key))
+    ks, zs = key[o], z[o]
+    u, first, cnt = np.unique(ks, return_index=True, return_counts=True)
+    g = np.full(nx * ny, np.nan, np.float32)
+    g[u] = zs[first + (0.2 * (cnt - 1)).astype(int)]
+    g = g.reshape(nx, ny)
+    valid = np.isfinite(g)
+    gf = np.where(valid, g, np.nanmedian(g)).astype(np.float32)
+    k = int(2.5 / cell) | 1
+    # median of the valid neighbourhood: blur-normalised fill, then a median filter (float via scipy)
+    from scipy.ndimage import median_filter
+    gm = median_filter(gf, size=k)
+    drop = near[z < gm[ci, cj] - a.drop_below]
+    keep = np.ones(len(P), bool)
+    keep[drop] = False
+    print(f'dropped {len(drop)} points ({len(drop) / len(P) * 100:.2f} %) more than {a.drop_below} m below the local ground')
+    return P[keep], I[keep]
 
 
 def clear_lane(a, P, I):
@@ -122,6 +159,7 @@ def main():
     ap.add_argument('--tilt', action='store_true', help='correct: also remove the block ground tilt (ill-posed for sweep sectors)')
     ap.add_argument('--strip', type=float, default=1.5, help='pitch mode: half width (m) of the own-lane strip')
     ap.add_argument('--ref_gnss', action='store_true', help='pitch mode: level to the GNSS altitude profile (+ offset) instead of a flat road')
+    ap.add_argument('--drop_below', type=float, default=0.0, help='>0: drop points this far (m) below the local ground (20th pct per 0.5 m cell)')
     ap.add_argument('--clear_lane', type=float, default=0.0, help='>0: drop points 0.25-3 m above the road within this distance (m) of the path')
     ap.add_argument('--mode', choices=['remove', 'correct', 'pitch'], default='pitch',
                     help='correct: subtract the block\'s ground plane offset (keeps coverage); remove: drop the block')

@@ -154,6 +154,22 @@ class MarkingMap:
         g, ok = self._lookup(self.ground, wx, wy, np.nan)
         return g.astype(np.float64), ok
 
+    def background(self, x, y, radius, n, rng):
+        """World (x, y, z) of n random non-marking cells within radius (road-level filtering by the caller)."""
+        out = []
+        for (tx, ty), t in self.index.items():
+            cx, cy = (tx + 0.5) * TILE, (ty + 0.5) * TILE
+            if np.hypot(cx - x, cy - y) > radius + TILE * 0.71:
+                continue
+            ii, jj = np.nonzero(self.resp[t] == 0)
+            k = rng.choice(len(ii), min(len(ii), 4 * n), replace=False)
+            ii, jj = ii[k], jj[k]
+            px, py = tx * TILE + (ii + 0.5) * RES_M, ty * TILE + (jj + 0.5) * RES_M
+            m = np.hypot(px - x, py - y) < radius
+            out.append(np.stack([px[m], py[m], self.ground[t][ii[m], jj[m]].astype(np.float64)], 1))
+        P = np.concatenate(out) if out else np.zeros((0, 3))
+        return P[rng.choice(len(P), min(len(P), 3 * n), replace=False)] if len(P) else P
+
     def points(self, x, y, radius, thr=0.5):
         """World (x, y, z) of marking cells (response > thr) within radius of (x, y)."""
         out = []

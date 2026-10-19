@@ -239,3 +239,24 @@ Candidates:
   One probe per direction gives <error, change> exactly (positions fixed, K known) -> exact optimal scaling.
 
 T1 map_clean7 (lane cleared, 1.43 M points): roof layer gone, marking map unchanged (camera-map NCC 0.2834 -> 0.2835) -> no matching rerun. Double layer 612-638 m remains (which layer is right is undetermined).
+
+## Image-space matching (no BEV) + cross-track calibration + Track1 start (2026-10-19 evening)
+tools/img_match.py: marking-map points (true 3D, road tilt) projected into the raw images; pose search (dx, dy, dyaw)
+coarse/fine + parabolic; score = paint response (brighter than the local road median by > 15) x road probability at
+the marks minus at road background points (cancels regional brightness); marks kept only where they project onto
+the road (verges / sidewalks out); 9 accumulated frames (+-24); optional capture-time sync (SDC_CAM_SYNC=1).
+64 T2 frames vs GNSS: v1 lat 0.285 -> v2 0.255; per camera f 0.238, fl 0.288, fr 0.673 (fr calibration wrong).
+tools/calib_img2.py (same score, one camera, poses = best trajectory): plausible small corrections. Cross-track
+check (T2 calibration scored on T1 frames, and an independent T1 fit): front pitch +1.1 / height +0.18-0.19 m /
+roll -0.6..-0.7 and right roll -1.6 agree on both tracks (front +13 % on T1, 70 % of frames) -> real geometry
+(explains the far-field stretch); yaws / translations differ by about each trajectory's yaw / position bias; the
+left camera does not transfer. work/cam_fix_xtrack.json = consistent subset. With the full T2 fit, img_match all
+cameras: lat 0.185 (median +0.05) vs BEV 0.200 (+0.09) - spread equal once biases are removed (calibration poses
+lean on GNSS: partly circular). tools/eval_cams.py: GNSS-free standard = agreement of per-camera fixes.
+Maps: below-ground points dropped (level_start --drop_below 0.15: T2 3.3 %, T1 5.1 %) -> map_clean8; marking maps
+unchanged (agreement equal); audit layer p95 T1 0.102 -> 0.092.
+Track1 start: the best uses GNSS (B) for frames 0-300; T1 GNSS is 0.8-0.9 m off near 300-700 (best vs GNSS).
+Fusion without any map fix before frame 330 (warped map there): the start moves 0.5-0.9 m - lateral -0.6..-1.0 m
+stable for GNSS correlation times 2 / 4 / 10 s (IMU heading propagated back from the anchor at 330), forward
+unstable (-0.8..+0.9). Candidates (not submitted): submissions/day6/track1/t1_startNS.csv (full),
+t1_startNS_lat.csv (lateral only). If the start error is ~0.8 m it holds ~half of T1's squared position error.
