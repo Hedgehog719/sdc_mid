@@ -86,6 +86,10 @@ def main():
     p.add_argument('--bev_aniso_min', type=float, default=0.3)
     p.add_argument('--yaw_from_bev', default='', help='npz whose (smoothed) BEV yaw replaces the yaw over --yaw_from_bev_frames')
     p.add_argument('--yaw_from_bev_frames', default='0:180:300', help='lo:hi:end - full replacement lo..hi, blend to end')
+    p.add_argument('--gnss_bias_tau', type=float, default=0.0,
+                   help='>0: model GNSS errors as a Gauss-Markov bias state with this correlation time (s)')
+    p.add_argument('--gnss_bias_sigma', type=float, default=0.5, help='GNSS bias steady-state sigma (m)')
+    p.add_argument('--gnss_white', type=float, default=0.05, help='GNSS white-noise sigma (m) with the bias state')
     p.add_argument('--psi_csv', default='', help='CSV whose yaw is the heading input of the position RTS')
     p.add_argument('--bev_keep_edge', action='store_true',
                    help='keep BEV fixes whose yaw hit the search limit (default: dropped, they are unreliable)')
@@ -242,8 +246,13 @@ def main():
             tz = ts[still]
             ZUPT_MASK[:] = still
             print('ZUPT frames: %d' % still.sum())
+        gb, gmask = None, None
+        if a.gnss_bias_tau > 0:  # coloured GNSS noise: bias states (the first len(s.gt) rows are GNSS)
+            gb = (a.gnss_bias_tau, a.gnss_bias_sigma, a.gnss_white)
+            gmask = np.zeros(len(tm), bool)
+            gmask[:len(s.gt)] = True
         st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov,
-                        q_lat=a.rts_qlat, t_zupt=tz)
+                        q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask)
         xyz = xyz.copy()
         xyz[:, :2] = st[:, :2]
     n = len(ts)

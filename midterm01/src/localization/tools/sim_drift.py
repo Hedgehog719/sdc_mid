@@ -63,6 +63,9 @@ def main():
     ap.add_argument('--aniso_min', type=float, default=0.3)
     ap.add_argument('--aniso_lat', action='store_true', help='also lat sigma = clip(k / sharp_l, aniso_min, 3 bev_sigma)')
     ap.add_argument('--psi_noise', type=float, default=0.0, help='deg rms of a slow heading error (IMU-like), tau 20 s')
+    ap.add_argument('--gnss_tau', type=float, default=0.0, help='>0: GNSS bias state, correlation time (s)')
+    ap.add_argument('--gnss_bsig', type=float, default=0.5, help='GNSS bias steady-state sigma (m)')
+    ap.add_argument('--gnss_white', type=float, default=0.05, help='GNSS white noise sigma (m) with the bias state')
     ap.add_argument('--qlat', type=float, default=None, help='cross-track process noise (fuse --rts_qlat)')
     ap.add_argument('--qacc', type=float, default=1.0)
     ap.add_argument('--keep_edge', action='store_true', help='keep BEV fixes at the yaw search limit')
@@ -142,7 +145,13 @@ def main():
             tm = np.concatenate([tm, rz['ts'][rm]])
             zm = np.concatenate([zm, np.stack([rz['mx'][rm], rz['my'][rm]], 1)])
             cov = np.concatenate([cov, rc])
-        st2 = rts_smooth(ts, tm, zm, psi, a.gnss_sigma, a.qacc, a.qpos, huber=a.huber, meas_cov=cov, q_lat=a.qlat)
+        gb, gmask = None, None
+        if a.gnss_tau > 0:
+            gb = (a.gnss_tau, a.gnss_bsig, a.gnss_white)
+            gmask = np.zeros(len(tm), bool)
+            gmask[:len(tg)] = True
+        st2 = rts_smooth(ts, tm, zm, psi, a.gnss_sigma, a.qacc, a.qpos, huber=a.huber, meas_cov=cov, q_lat=a.qlat,
+                         gnss_bias=gb, gnss_mask=gmask)
         e = st2[:, :2] - ref[['x', 'y']].values
         yw = ref.yaw.values
         ef = np.cos(yw) * e[:, 0] + np.sin(yw) * e[:, 1]

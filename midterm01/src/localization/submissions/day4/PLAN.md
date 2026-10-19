@@ -135,3 +135,15 @@ Track1 option-2 probes: start boundary 420 -> 0.61902, 540 -> 0.64297 (300 stays
 Ladder decomposition of the T1 best: position RMSE 0.471 m (old solution 0.790 m), yaw part 0.143 (Y ~0.72 deg).
 User (after these): stop submitting; only submit after careful offline confirmation and the user's OK.
 Remaining today: T1 6, T2 9.
+
+## Toward MVUE (user: approach the CRLB) - coloured GNSS noise
+GNSS error vs our trajectories is almost entirely coloured: T1 0.58 m/axis, autocorr 0.86 @1 s, 0.36 @5 s, white part
+~0.04 m; T2 0.14 m, autocorr 0.81 @1 s, 0.15 @5 s, white ~0.015 m. The white-noise model (sigma 0.5 at 4 Hz) over-trusts
+GNSS averages ~3.5x. rts.py: optional first-order Gauss-Markov GNSS bias states (fuse --gnss_bias_tau/sigma/white).
+The drift sim cannot show it (its reference is GNSS-based, ~0.2 m floor) -> tools/cv_fuse.py: block cross-validation
+on real data (hold out every other block of map fixes, score held-out lane fixes).
+T1 (blocks 40): lateral 0.174 -> 0.136, sharp-forward 0.224 -> 0.159 (tau 10 s, sigma 0.6); blocks 150: 0.355 -> 0.276,
+0.564 -> 0.231. T2 (blocks 40): white with 0.6 shrink 0.144/0.141 -> bias model, no shrink 0.098/0.109; the 0.6
+shrink compensated the wrong GNSS model (lateral wanted 1.0, forward 0 under the white model).
+Candidates (positions only; start/stationary segments and yaw unchanged): submissions/day5/mvue/t1_gm.csv
+(vs best fwd 0.10 lat 0.04 m), submissions/day5/mvue/t2_gm.csv (fwd 0.09 lat 0.07 m). NOT submitted (awaiting OK).

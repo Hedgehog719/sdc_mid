@@ -174,6 +174,11 @@ def match_frame(i, prior):
         else:
             g, v = BEV.render_pose(i, *PRIOR_REL[i]) if A.ground3d else BEV.render(i)
             base = edge_response(g, v & road_d) if A.feature == 'curb' else lane_response(g, v & road_d)
+    if A.near_only > 0:  # keep only rows with x <= near_only (rows grow towards the vehicle / behind it)
+        from bev import X_MAX as _XM
+        r0 = int(max(0, (_XM - A.near_only) / RES))
+        base = base.copy()
+        base[:r0] = base[r0:].mean() if A.feature == 'road' else 0
     best = None
     for dyaw in np.radians(np.arange(-A.max_yaw, A.max_yaw + 1e-6, A.yaw_step)):
         resp = rotate_raster(base, dyaw)
@@ -259,6 +264,8 @@ def main():
     ap.add_argument('--road_colour', action='store_true', help='average segmentation with a per-frame asphalt colour model')
     ap.add_argument('--curb_band', type=float, default=3.0, help='m beyond the road surface searched for kerbs')
     ap.add_argument('--range_weight', type=float, default=0.0, help='>0: weight rows by clip(x0 / range, 0.25, 1)')
+    ap.add_argument('--near_only', type=float, default=0.0,
+                    help='>0: use only the BEV within this many metres ahead (map distortion grows with range)')
     ap.add_argument('--map_min_blob', type=int, default=0, help='>0: drop map marking blobs smaller than this (cells)')
     ap.add_argument('--pin_z', type=float, default=None, help='road height assumed level (map frame) for --pin_frames')
     ap.add_argument('--pin_frames', default='', help='lo:hi frames that use the pinned road height')
