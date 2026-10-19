@@ -337,7 +337,7 @@ calibration fixes / lateral start / image-space fixes), (3) exact optimum over a
 Plan T2: (1) 2 s course-yaw direction on opt7 positions (yaw-only unknown), (2) one new position direction
 (joint_c / image-space fixes, re-centred), (3) exact optimum (positions + yaw in span{4 s, 2 s}).
 
-## 08:00 EXECUTION CHECKLIST (10/20; window 08:00-10:30; max 3 per track)
+## 08:00 EXECUTION CHECKLIST (10/20; window CORRECTED by the user to 08:00-09:30; max 3 per track)
 Tool: tools/board_opt.py (exact optimum; reproduces T2 0.21439 / T1 0.47089). Yaw classes: T2 day2=0.0576,
 opt=0.05364 (yawcourse4s_opt yaw); T1 H=0.143, cur=0.13411 (course yaw of t1_v2 / 0.51607 files).
 T1 refs: base h1 0.61440 H; a13 0.66298 H; gm 0.57658 H; pc 0.62128 H; mb 0.54851 H; mk1S 0.52496 H; v2 0.50997 cur.
@@ -349,3 +349,6 @@ T1 #1: submissions/day6/track1/t1_opt6_vertc.csv (= opt6 [pred 0.47089] + vertic
 T2 #1: opt7 + image-space shape change (t2_imgws_blend_c - t2_blend base), yaw opt -> add -> #2 = optimum +
   vertical-calibration shape (t2_vert_blend_c - t2_blend) -> add -> #3 = optimum.
 Each submission must be the best current guess; archive as submissions/track{1,2}/<score>__<name>.csv; commit.
+
+USER CORRECTION 2026-10-20 00:45: the window is 08:00-09:30 (not 10:30); keep improving the map matching until then.
+Timers: 08:00 (bcm0lk9f1) and 09:30. No submission after 09:30.
