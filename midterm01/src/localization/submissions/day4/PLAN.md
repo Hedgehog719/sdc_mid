@@ -113,3 +113,8 @@ fixes less biased vs the reference (fwd -0.27 -> -0.06 m) but lowers lane NCC ~8
 and makes the T2-drift sim worse (0.262 -> 0.291; lanes alone 0.260). Shifting lane fixes back makes it worse too.
 => poles (upper image, at the side) and lanes (lower image) disagree: not a plain yaw error; likely side-camera
 timing or fisheye distortion / roll about the optical axis. Calibration NOT changed (default cam_rot_fix.json).
+Capture-time sync (SDC_CAM_SYNC=1; image timestamps: T2 fl -9.8 / fr +13.3 ms, T1 fl -1.9 / fr +12.3 ms):
+T2-drift sim 0.262 -> 0.258-0.260 (small, consistent) -> adopt in the next full rerun.
+Static pole-derived corrections after sync (fl/fr cameras 0.1-0.2 m further out, fr yaw -1 deg): sim 0.276-0.282,
+lateral 0.150 -> 0.175 -> rejected; the extrinsic lateral positions are right for lanes, the residual pole
+offsets (~5 px) come from elsewhere (pole map positions / fisheye distortion).
