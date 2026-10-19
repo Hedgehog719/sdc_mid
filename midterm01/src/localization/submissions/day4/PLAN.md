@@ -129,3 +129,4 @@ peak 182 -> 190; T1 -0.46 -> -0.31. The apparent ~1.2 deg common rotation on Tra
 real but small (sim 0.262 -> 0.258).
 Candidates (only poles replaced, same recipes as the bests): submissions/day5/track1/t1_h1_pc.csv and
 submissions/day5/track2/t2_rest06_pc.csv - both differ from the bests by ~0.04 m rms (expected effect ~0.002).
+Pole-corrected: T1 t1_h1_pc 0.62128 (worse than 0.61440), T2 t2_rest06_pc 0.23453 (new best, was 0.24752).
