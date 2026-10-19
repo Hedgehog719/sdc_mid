@@ -24,6 +24,7 @@ from camera_model import Cameras  # noqa: E402
 from common import TiledMap, ply_frames  # noqa: E402
 
 A = None
+TSHIFT = None  # {cam: per-frame capture-time shift (m)} when SDC_CAM_SYNC=1
 
 
 def edge_tensor(img, mask):
@@ -119,7 +120,10 @@ def match_frame(i, prior):
     score = np.zeros((nh, len(P)))
     cnt = np.zeros((nh, len(P)))
     for cname in CAMS:
-        uv, ok = CAM.project(cname, q)
+        qc = q
+        if TSHIFT is not None and abs(TSHIFT[cname][i]) > 1e-4:  # camera captured TSHIFT m further along the path
+            qc = q - np.array([TSHIFT[cname][i], 0.0, 0.0]) @ RM
+        uv, ok = CAM.project(cname, qc)
         uv = uv.reshape(nh, len(P), A.n_samples, 2)
         ok = ok.reshape(nh, len(P), A.n_samples)
         if occ is not None:
@@ -224,6 +228,17 @@ def main():
     ref = pd.read_csv(A.prior_csv)
     n = len(ref)
     PRIOR = ref[['x', 'y', 'yaw']].values.copy()
+    import bev as _bevmod
+    if _bevmod.CAM_SYNC:
+        global TSHIFT
+        from common import ply_frames as _pf
+        from scipy.ndimage import gaussian_filter1d as _g1
+        ts_, _ = _pf(os.path.join(A.track_dir, 'raw_ply'))
+        tt_ = (ts_ - ts_[0]) * 1e-9
+        spd_ = _g1(np.hypot(np.gradient(PRIOR[:, 0], tt_), np.gradient(PRIOR[:, 1], tt_)), 5)
+        dts = _bevmod.camera_time_offsets(A.track_dir)
+        TSHIFT = {c: spd_ * dts[c] for c in dts}
+        print('camera capture-time sync on: mean |shift| ' + ', '.join(f'{c} {np.mean(np.abs(v)):.3f} m' for c, v in TSHIFT.items()), flush=True)
     if A.prior_noise[0] > 0 or A.prior_noise[1] > 0:
         rng = np.random.default_rng(0)
         PRIOR[:, :2] += rng.normal(0, A.prior_noise[0], (n, 2))

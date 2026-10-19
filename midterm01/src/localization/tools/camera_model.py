@@ -28,14 +28,20 @@ class Cameras:
         f = rot_fix_file or os.environ.get('SDC_ROT_FIX') or \
             os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work', 'cam_rot_fix.json')
         if os.path.exists(f):
-            self.rot_fix = {k: tuple(v) for k, v in json.load(open(f)).items()}
+            d = json.load(open(f))
+            self.rot_fix = {k: tuple(v) for k, v in d.items() if not k.endswith('_t')}
+            # optional camera position corrections '<cam>_t': [dx, dy, dz] m in the front FLU frame
+            self.trans_fix = {k[:-2]: np.array(v, float) for k, v in d.items() if k.endswith('_t')}
 
     yaw_fix = {'f': 0.0, 'fl': 0.5, 'fr': -0.5}  # deg, from calib_cam_yaw.py on Track2 poles
     rot_fix = {}  # optional per-camera (yaw, pitch, roll) deg corrections (calib_side.py); overrides yaw_fix
+    trans_fix = {}  # optional per-camera position corrections (m, front FLU): true camera = nominal + t
 
     def project(self, cam, pts_flu):
         """Return pixel coords (N,2) and a validity mask for points given in the front FLU frame."""
         K, D, T, w, h = self.cams[cam]
+        if cam in self.trans_fix:
+            pts_flu = pts_flu - self.trans_fix[cam]
         if cam in self.rot_fix:
             from scipy.spatial.transform import Rotation
             yw, pt, rl = self.rot_fix[cam]

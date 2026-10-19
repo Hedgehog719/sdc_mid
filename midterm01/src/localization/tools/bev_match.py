@@ -338,6 +338,14 @@ def main():
             dyn[:, 0] += A.pitch_per_accel * acc
             BEV.dyn = dyn
     BEV.photonorm = A.photonorm
+    import bev as _bevmod
+    if _bevmod.CAM_SYNC:  # side cameras capture up to ~13 ms off the frame time: shift their BEV by speed * dt
+        tt_ = (TS_ALL - TS_ALL[0]) * 1e-9
+        from scipy.ndimage import gaussian_filter1d as _g1
+        spd_ = _g1(np.hypot(np.gradient(PRIOR_REL[:, 0], tt_), np.gradient(PRIOR_REL[:, 1], tt_)), 5)
+        BEV.set_motion(spd_)
+        print('camera capture-time sync on: mean |shift| ' +
+              ', '.join(f'{c} {np.mean(np.abs(BEV.tshift[c])):.3f} m' for c in BEV.cams), flush=True)
     import bev as _bev
     _bev.GROUND_MODE = A.ground_mode
     _bev.HYBRID_RATIO = A.hybrid_ratio

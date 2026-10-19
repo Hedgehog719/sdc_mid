@@ -42,6 +42,35 @@ def bev_grid():
     return x, y
 
 
+CAM_SYNC = os.environ.get('SDC_CAM_SYNC', '0') == '1'   # compensate the side cameras' capture-time offsets
+
+
+def camera_time_offsets(track_dir, cams=('f', 'fl', 'fr')):
+    """Per camera, per frame capture-time offset (s) w.r.t. the front camera (frame) timestamp, from the image file
+    names (<idx>_ts_<ns>.jpg). Track2: fl -9.8 ms, fr +13.3 ms; Track1: fl -1.9 ms, fr +12.3 ms."""
+    track = os.path.basename(os.path.normpath(track_dir))
+    def ts(c):
+        d = os.path.join(track_dir, f'{track}_images', f'{track}_{c}_images')
+        return np.array([int(f.split('_ts_')[1].split('.')[0]) for f in sorted(os.listdir(d))], dtype=np.int64)
+    t0 = ts('f')
+    out = {}
+    for c in cams:
+        t = ts(c) if c != 'f' else t0
+        n = min(len(t), len(t0))
+        dt = np.zeros(len(t0))
+        dt[:n] = (t[:n] - t0[:n]) * 1e-9
+        out[c] = dt
+    return out
+
+
+def shift_rows(img, d_m, interp=cv2.INTER_LINEAR):
+    """BEV content of a camera that captured d_m metres further along the path: R_frame(x) = R_cam(x - d)."""
+    if abs(d_m) < 1e-4:
+        return img
+    M = np.float32([[1, 0, 0], [0, 1, -d_m / RES]])
+    return cv2.warpAffine(img, M, (img.shape[1], img.shape[0]), flags=interp, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+
 class ImageBEV:
     def __init__(self, track_dir, cam_height=2.1, pitch_deg=0.0, roll_deg=0.0, yaw_deg=0.0, cams=('f', 'fl', 'fr')):
         track = os.path.basename(os.path.normpath(track_dir))
@@ -138,6 +167,18 @@ class ImageBEV:
         acc[valid] /= cnt[valid]
         return acc, valid
 
+    tshift = None   # {cam: per-frame along-path shift (m) = speed * capture-time offset}, see set_motion
+
+    def set_motion(self, speed):
+        """speed: per-frame vehicle speed (m/s) -> per-camera BEV shift compensating the capture-time offsets."""
+        dts = camera_time_offsets(self.track_dir, self.cams)
+        self.tshift = {c: np.asarray(speed, float)[:len(dts[c])] * dts[c][:len(speed)] for c in self.cams}
+
+    def _sync(self, c, i, arr, interp=cv2.INTER_LINEAR):
+        if self.tshift is None or c not in self.tshift or i >= len(self.tshift[c]):
+            return arr
+        return shift_rows(arr, float(self.tshift[c][i]), interp)
+
     def render_resp(self, i, fn):
         """Per-camera feature response fn(gray_c, valid_c) blended afterwards (average where valid): exposure and
         white-balance differences between cameras cannot create seam edges, since each response is computed
@@ -165,6 +206,9 @@ class ImageBEV:
                 continue
             r_ = fn(g, ok)
             okr = cv2.erode(ok.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0  # this camera's interior only
+            if self.tshift is not None:
+                r_ = self._sync(c, i, r_.astype(np.float32))
+                okr = self._sync(c, i, okr.astype(np.uint8), cv2.INTER_NEAREST) > 0
             acc[okr] += r_[okr]
             cnt[okr] += 1
         valid = cnt > 0
@@ -889,6 +933,9 @@ class RoadProbBEV:
                 g = 0.5 * (g + cpb)
             bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
             ok = v & (bm == 0)
+            if b.tshift is not None:
+                g = b._sync(c, i, g.astype(np.float32))
+                ok = b._sync(c, i, ok.astype(np.uint8), cv2.INTER_NEAREST) > 0
             acc[ok] += g[ok]
             cnt[ok] += 1
         valid = cnt > 0
