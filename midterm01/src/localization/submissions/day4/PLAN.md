@@ -118,3 +118,14 @@ T2-drift sim 0.262 -> 0.258-0.260 (small, consistent) -> adopt in the next full 
 Static pole-derived corrections after sync (fl/fr cameras 0.1-0.2 m further out, fr yaw -1 deg): sim 0.276-0.282,
 lateral 0.150 -> 0.175 -> rejected; the extrinsic lateral positions are right for lanes, the residual pole
 offsets (~5 px) come from elsewhere (pole map positions / fisheye distortion).
+
+## Camera skew diagnosis (user request) - conclusion
+Side cameras see poles at a constant angle offset (fl +0.70, fr -0.76 deg), identical on both tracks, independent
+of speed (not timing / rolling shutter: pole tilt only 1-2 px), of range (not map pole positions) and of image
+position (not fisheye distortion). Lanes reject the same rotation -> applied to the pole projection only
+(pole_match --pole_cam_yaw fl=0.70,fr=-0.76): T2 pole fwd bias vs unbiased GNSS -0.22 -> -0.10 m, rms 0.67 -> 0.55,
+peak 182 -> 190; T1 -0.46 -> -0.31. The apparent ~1.2 deg common rotation on Track1 is a position offset
+(pole_match scoring rejects the rotation; probed yaw mean unbiased). Capture-time offsets (fl/fr up to 13 ms) are
+real but small (sim 0.262 -> 0.258).
+Candidates (only poles replaced, same recipes as the bests): submissions/day5/track1/t1_h1_pc.csv and
+submissions/day5/track2/t2_rest06_pc.csv - both differ from the bests by ~0.04 m rms (expected effect ~0.002).
