@@ -89,3 +89,9 @@ stationary scans (early/mid/late) gives lateral +0.03..+0.15 m vs the GNSS solut
 stop and jumped back after departure. T1 frames start after the stop (departure scans), so T1 is unaffected.
 Fix: keep the GNSS solution while stationary (0-250, ramp to 330), apply 0.6 x the camera position correction
 elsewhere, best yaw -> 0.24752 (predicted ~0.247).
+
+## Probes (user: max 2)
+T1 t1_fin 0.69910 (vs t1_fin_start 0.70845): the map-consistent start yaw cost ~0.009 -> new T1 best.
+T2 t2_rest06 with start yaw -1.5 deg (late stationary scans) 0.28703 (vs 0.24752): the GNSS/IMU start yaw is right.
+=> GT yaw is physical (IMU/GNSS-consistent); it does not follow the distorted map at the track starts.
+Bests now: T1 0.69910 (t1_fin), T2 0.24752 (t2_rest06).
