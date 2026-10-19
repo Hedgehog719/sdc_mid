@@ -352,3 +352,8 @@ Each submission must be the best current guess; archive as submissions/track{1,2
 
 USER CORRECTION 2026-10-20 00:45: the window is 08:00-09:30 (not 10:30); keep improving the map matching until then.
 Timers: 08:00 (bcm0lk9f1) and 09:30. No submission after 09:30.
+FINAL CHOICE (01:45): a probe direction's value for the final optimum = squared error component it explains (sign
+does not matter: the optimum may flip it). T1: #1 t1_opt6_vertc.csv; #2 = board_opt optimum (+#1) + lateral start
+change (t1_v2_start_lat - t1_v2); #3 = optimum. T2: #1 t2_opt7_imgc.csv (image shape: new part 0.071 m rms, 75 % in
+span); #2 = optimum (+#1) + vertical shape (t2_vert_blend_c - t2_blend); #3 = optimum.
+T1 image-space fixes (t1_imgws_v2_c: fwd 0.141 / lat 0.138 m rms after centring, 382 fixes) kept as a spare.
