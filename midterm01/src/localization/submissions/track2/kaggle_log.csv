@@ -1,4 +1,5 @@
 ref,fileName,date,description,status,publicScore,privateScore
+57382802,t2_blend.csv,2026-10-19 04:53:57.287000,t2_blend,SubmissionStatus.COMPLETE,0.23178,
 57382613,t2_gm.csv,2026-10-19 04:47:16.433000,t2_gm,SubmissionStatus.COMPLETE,0.25031,
 57381547,t2_rest06_pc.csv,2026-10-19 04:11:42.670000,t2_rest06_pc,SubmissionStatus.COMPLETE,0.23453,
 57378491,t2_rest06_sy.csv,2026-10-19 02:29:09.863000,t2_rest06_sy,SubmissionStatus.COMPLETE,0.28703,
@@ -48,4 +49,3 @@ ref,fileName,date,description,status,publicScore,privateScore
 57280383,t2_cf10_rts0.2.csv,2026-10-16 19:07:58.710000,t2_cf10_rts0.2,SubmissionStatus.COMPLETE,0.48619,
 57280379,t2_cf10.csv,2026-10-16 19:07:54.413000,t2_cf10,SubmissionStatus.COMPLETE,0.48719,
 57280274,t2_lever.csv,2026-10-16 19:03:58.980000,"gnss+imu yaw + lever (-0.62,0.21)",SubmissionStatus.COMPLETE,1.00490,
-57279435,t2_gnss_imuyaw.csv,2026-10-16 18:32:37.550000,GNSS pos + IMU yaw (offset corrected),SubmissionStatus.COMPLETE,0.54984,

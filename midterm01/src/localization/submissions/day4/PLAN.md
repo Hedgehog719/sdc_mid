@@ -157,3 +157,4 @@ tools/kaggle_predict.py: exact quadratic prediction of a candidate's position sc
 that span. T1: stronger bias-model variants (tau 20-30, sigma 0.8-1.2, white 0.1) all predict 0.576-0.583 (= gm);
 the formal optimum (2.6 x gm - 1.2 x pole corr) is an extrapolation that would fit the public subset - not used.
 The bias-model fusion's own yaw differs from the current yaw by only 0.035 deg rms.
+T2 t2_blend (G + 0.816 d_pc + 0.231 d_gm, quadratic optimum of tested directions): predicted 0.23181, scored 0.23178 (new best). Remaining today: T1 5, T2 7.
