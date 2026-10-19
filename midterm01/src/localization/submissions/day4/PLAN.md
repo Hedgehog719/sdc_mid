@@ -95,3 +95,9 @@ T1 t1_fin 0.69910 (vs t1_fin_start 0.70845): the map-consistent start yaw cost ~
 T2 t2_rest06 with start yaw -1.5 deg (late stationary scans) 0.28703 (vs 0.24752): the GNSS/IMU start yaw is right.
 => GT yaw is physical (IMU/GNSS-consistent); it does not follow the distorted map at the track starts.
 Bests now: T1 0.69910 (t1_fin), T2 0.24752 (t2_rest06).
+
+## Track1 segment probes prepared (waiting for the user's visual check before submitting)
+Base F = t1_fin (0.69910); old B = 0.93699. Each probe replaces one segment of F by B (60-frame blends):
+ h1_oldstart (0-300), h2_oldmid (300-840), h3_oldend (840-end) -> submissions/day5/track1/.
+New-old: S1 fwd 0.58 (mean +0.35) lat 0.26 yaw 0.47; S2 fwd 0.74 (mean +0.65) lat 0.15 yaw 0.22;
+S3 fwd 0.60 (mean +0.09) lat 0.31 yaw 0.37. Compare page: /compare/Track1 (a_old_0.937 vs b_new_0.699).
