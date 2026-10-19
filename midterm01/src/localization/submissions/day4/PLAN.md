@@ -181,3 +181,5 @@ T1: smaller GNSS bias sigma helps (0.6 -> 0.25), map bias adds ~0.0005: t1_mb (L
 predicted 0.5687 (0.5681-0.5694 for K 0.12-0.165), 81 % in span, change vs best 0.07 m rms, start / yaw identical.
 The T1 in-span optimum (a13 -0.75 gm +2.58 pc -1.22 -> 0.539) is a 2.6x extrapolation: overfit risk if the public
 board scores a subset of frames - not proposed. Candidate submissions/day5/mvue/t1_mb.csv NOT submitted (awaiting OK).
+
+t1_mb SUBMITTED: 0.54851 (predicted 0.5687 conservatively -> the out-of-span part, ~19%, was strongly helpful). New T1 best.
