@@ -25,6 +25,7 @@ from common import TiledMap, ply_frames  # noqa: E402
 
 A = None
 TSHIFT = None  # {cam: per-frame capture-time shift (m)} when SDC_CAM_SYNC=1
+YAWCORR = None  # per-frame heading offset (rad) applied to the pole projection only
 
 
 def edge_tensor(img, mask):
@@ -90,6 +91,8 @@ def occlusion_masks(x, y, yaw, zv, Q0):
 
 def match_frame(i, prior):
     x, y, yaw = prior
+    if YAWCORR is not None and i < len(YAWCORR):
+        yaw = yaw + YAWCORR[i]
     c, s = np.cos(yaw), np.sin(yaw)
     d = POLES[:, :2] - [x, y]
     u = c * d[:, 0] + s * d[:, 1]
@@ -202,6 +205,10 @@ def main():
     ap.add_argument('prior_csv')
     ap.add_argument('output_npz')
     ap.add_argument('--poles', default='poles.npy', help='poles file in the track dir (e.g. poles_curated.npy)')
+    ap.add_argument('--pole_cam_yaw', default='', help='per-camera yaw offsets (deg) for the pole projection only, '
+                    'e.g. fl=0.70,fr=-0.76 (static side-camera offsets measured with pole_offsets2.py)')
+    ap.add_argument('--pole_yaw_corr', default='', help='npy of per-frame heading offsets (deg) for the pole '
+                    'projection (map poles rotated w.r.t. the lane markings, Track1)')
     ap.add_argument('--cam_height', type=float, default=1.5)
     ap.add_argument('--yaw_mount', type=float, default=-1.5)
     ap.add_argument('--min_range', type=float, default=4.0)
@@ -249,6 +256,14 @@ def main():
     global NG
     NG = TiledMap(os.path.join(A.track_dir, 'map_nonground.npy')) if A.occlusion else None
     CAM = Cameras(os.path.join(A.track_dir, f'{track}_images', 'camera_info'))
+    if A.pole_cam_yaw:  # poles appear rotated by a constant angle in the side cameras (lanes do not): pole-only fix
+        for kv in A.pole_cam_yaw.split(','):
+            c, v = kv.split('=')
+            y0, p0, r0 = CAM.rot_fix.get(c, (0.0, 0.0, 0.0))
+            CAM.rot_fix[c] = (y0 + float(v), p0, r0)
+        print('pole projection camera yaw offsets:', A.pole_cam_yaw, flush=True)
+    global YAWCORR
+    YAWCORR = np.radians(np.load(A.pole_yaw_corr)) if A.pole_yaw_corr else None
     CAMS = ['fl', 'f', 'fr']
     IMGDIR = {c: os.path.join(A.track_dir, f'{track}_images', f'{track}_{c}_images') for c in CAMS}
     NAMES = {c: sorted(os.listdir(IMGDIR[c])) for c in CAMS}

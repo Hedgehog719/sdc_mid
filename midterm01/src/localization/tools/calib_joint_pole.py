@@ -30,6 +30,7 @@ ap.add_argument('--out', required=True)
 ap.add_argument('--cams', nargs='+', default=['fl', 'fr'])
 ap.add_argument('--keep', type=float, default=0.99, help='lane NCC must stay >= keep x baseline')
 ap.add_argument('--step', type=int, default=60)
+ap.add_argument('--no_trans', action='store_true', help='rotation only (camera position fixed)')
 a = ap.parse_args()
 
 track = os.path.basename(os.path.normpath(a.track_dir))
@@ -119,7 +120,7 @@ for cam in a.cams:
         improved = True
         while improved:
             improved = False
-            for k in range(5):
+            for k in range(3 if a.no_trans else 5):
                 for sgn in (-1, 1):
                     cand = list(cur)
                     cand[k] += sgn * (sa if k < 3 else st)
