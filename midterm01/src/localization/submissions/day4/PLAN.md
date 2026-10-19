@@ -336,3 +336,16 @@ Plan T1: (1) t1_opt6 (exact under K; verifies K_T1) or a new direction, (2) one 
 calibration fixes / lateral start / image-space fixes), (3) exact optimum over all scored directions.
 Plan T2: (1) 2 s course-yaw direction on opt7 positions (yaw-only unknown), (2) one new position direction
 (joint_c / image-space fixes, re-centred), (3) exact optimum (positions + yaw in span{4 s, 2 s}).
+
+## 08:00 EXECUTION CHECKLIST (10/20; window 08:00-10:30; max 3 per track)
+Tool: tools/board_opt.py (exact optimum; reproduces T2 0.21439 / T1 0.47089). Yaw classes: T2 day2=0.0576,
+opt=0.05364 (yawcourse4s_opt yaw); T1 H=0.143, cur=0.13411 (course yaw of t1_v2 / 0.51607 files).
+T1 refs: base h1 0.61440 H; a13 0.66298 H; gm 0.57658 H; pc 0.62128 H; mb 0.54851 H; mk1S 0.52496 H; v2 0.50997 cur.
+T2 refs: base day2 GNSS 0.28263 day2; pc 0.23453 day2; gm 0.25031 day2; blend 0.23178 day2; mkS 0.23658 opt;
+t2fit_c 0.22364 opt; opt5 0.21506 opt; t2fit_u 0.25803 opt; opt7 0.21440 opt.
+T1 #1: submissions/day6/track1/t1_opt6_vertc.csv (= opt6 [pred 0.47089] + vertical-calibration shape change
+  (t1_vert_v2_c - t1_v2), yaw cur). Add its score as ref (class cur) -> board_opt -> #2 = new optimum + image-space
+  shape change (t1_imgws_v2_c - t1_v2) if built, else the lateral start (t1_v2_start_lat - t1_v2) -> add -> #3 = optimum.
+T2 #1: opt7 + image-space shape change (t2_imgws_blend_c - t2_blend base), yaw opt -> add -> #2 = optimum +
+  vertical-calibration shape (t2_vert_blend_c - t2_blend) -> add -> #3 = optimum.
+Each submission must be the best current guess; archive as submissions/track{1,2}/<score>__<name>.csv; commit.
