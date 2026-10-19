@@ -193,3 +193,13 @@ double ground layer / low noise points). Not adopted. T2 lane fixes already use 
 Frame 915 (user: red dots rotated left in f / fl): submitted T2 yaw is 0.3-0.6 deg right of the direction of travel
 over 780-930 (blend positions; GNSS course agrees in sign), lane fixes say +0.5..+1.0 deg; -0.2..-0.3 deg after 1000.
 => T2 yaw (25 % of the score) still has segment-wise errors; next: yaw from the course of travel.
+
+## Far-field stretch of the front-camera BEV (user: T2 615, map dots ~1 m below image markings at the top)
+Confirmed and systematic (294 T2 frames): front camera near band (4-10 m) lands 0.4 m too close, far band (16-24 m)
+0.5-0.6 m too far (~1 m at 25-30 m). Fits ~0.2 deg static pitch + ~0.5 m forward offset, but tools/calib_pitch_bands.py
+(near/far difference cancels the trajectory error) is noisy (11-13 frames usable at every pitch): far-band NCC peaks at
++0.2..+0.4 deg, near-band NCC falls with any positive pitch -> not a plain pitch error. Matcher variants on 190 T2
+frames (work/far, scored vs GNSS = independent): far cut at 18 m lateral 0.225 -> 0.209 m (paired test +0.0024 m^2,
+s.e. 0.0035: not significant), forward 0.259 -> 0.399 with a +0.35 m bias, yaw 0.59 -> 0.62 deg; range weighting
+worse everywhere. The full band stays (its forward agrees with GNSS: +0.09 vs +0.35 m). No pipeline change.
+Side finding: bev_match searches yaw in 0.5 deg steps without sub-step refinement (yaw fixes are quantised).
