@@ -407,6 +407,27 @@ class H(BaseHTTPRequestHandler):
             except BrokenPipeError:
                 pass
             return
+        m = re.fullmatch(r'/video/([A-Za-z0-9_.-]+\.mp4)', p)   # comparison videos (render_topdown.py)
+        if m:
+            f = os.path.join(VIEWER_DIR, '..', 'video', m.group(1))
+            if not os.path.exists(f):
+                return self._send(404, 'not found')
+            b = open(f, 'rb').read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'video/mp4')
+            self.send_header('Content-Disposition', f'attachment; filename="{m.group(1)}"')
+            self.send_header('Content-Length', str(len(b)))
+            self.end_headers()
+            try:
+                self.wfile.write(b)
+            except BrokenPipeError:
+                pass
+            return
+        if p in ('/video', '/video/'):
+            d = os.path.join(VIEWER_DIR, '..', 'video')
+            rows = ''.join(f'<li><a href="/video/{n}" download>{n}</a> ({os.path.getsize(os.path.join(d, n)) / 1e6:.0f} MB)</li>'
+                           for n in sorted(os.listdir(d)) if n.endswith('.mp4')) if os.path.isdir(d) else ''
+            return self._send(200, f'<h3>comparison videos</h3><ul>{rows}</ul>')
         if p in ('/pcd', '/pcd/'):
             d = os.path.join(VIEWER_DIR, 'pcd')
             rows = ''.join(f'<li><a href="/pcd/{n}" download>{n}</a> ({os.path.getsize(os.path.join(d, n)) / 1e6:.1f} MB)</li>'

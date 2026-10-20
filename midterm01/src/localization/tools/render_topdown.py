@@ -35,6 +35,8 @@ ap.add_argument('--fps', type=float, default=10.0)
 ap.add_argument('--alpha', type=float, default=0.55, help='camera cloud opacity')
 ap.add_argument('--follow', choices=['a', 'b'], default='a', help='trajectory the view and the camera cloud follow')
 ap.add_argument('--label_a', default='A')
+ap.add_argument('--layout', choices=['triple', 'dual'], default='triple',
+                help='triple: map | camera | overlay for one view; dual: overlay at A (left) | overlay at B (right)')
 ap.add_argument('--label_b', default='B')
 a = ap.parse_args()
 
@@ -80,17 +82,17 @@ out_dir = os.path.join(os.path.dirname(__file__), '..', 'work', 'viewer', f'{T}_
 os.makedirs(out_dir, exist_ok=True)
 mp4 = os.path.join(os.path.dirname(__file__), '..', 'work', 'video', f'{T}_{a.name}.mp4')
 os.makedirs(os.path.dirname(mp4), exist_ok=True)
-vw = cv2.VideoWriter(mp4, cv2.VideoWriter_fourcc(*'mp4v'), a.fps, (3 * S, S))
 rad = S * R * 0.75
-for fr in frames:
-    F = B if (a.follow == 'b' and B is not None) else A
+
+
+def view(fr, F):
+    """Panels (map, camera cloud, overlay) centred on trajectory F at frame fr, both trajectories drawn."""
     px, py, yaw = F.x[fr], F.y[fr], F.yaw[fr]
     img = np.zeros((S, S, 3), np.uint8)
     q = M.query_idx(px, py, rad)
     P, inten = M.pts[q].astype(np.float64), M.inten[q]
     fw, lt = local(P[:, 0], P[:, 1], px, py, yaw)
-    # local ground per 1 m cell (10th percentile) -> height above ground
-    k = (np.floor(fw).astype(np.int64) + 1000) * 4000 + (np.floor(lt).astype(np.int64) + 1000)
+    k = (np.floor(fw).astype(np.int64) + 1000) * 4000 + (np.floor(lt).astype(np.int64) + 1000)   # 1 m cells
     o = np.lexsort((P[:, 2], k))
     u, first, cnt = np.unique(k[o], return_index=True, return_counts=True)
     gz = np.empty(len(P))
@@ -104,7 +106,6 @@ for fr in frames:
     hi_ = ok & (hz >= 0.25) & (hz < 6)
     col = cv2.applyColorMap(np.clip(hz[hi_] / 6 * 255, 0, 255).astype(np.uint8).reshape(-1, 1), cv2.COLORMAP_TURBO).reshape(-1, 3)
     img[cv[hi_], cu[hi_]] = (col * 0.7).astype(np.uint8)
-    # camera cloud flattened onto the ground: own panel (true colours) + overlay panel (magenta on the grey map)
     cam = np.zeros((S, S, 3), np.uint8)
     ovl = (img.astype(np.float32) * 0.8).astype(np.uint8)
     sc = None
@@ -132,7 +133,6 @@ for fr in frames:
             ovl[qv[rs], qu[rs]] = (255, 255, 0)
             ovl[qv[mk], qu[mk]] = (255, 0, 255)
     panels = [img, cam, ovl]
-    # trajectories
     win = np.arange(max(fr - 150, 0), min(fr + 300, len(A)))
     for D, colr in ((A, (60, 220, 60)), (B, (60, 60, 255))):
         if D is None:
@@ -145,23 +145,44 @@ for fr in frames:
         for pn in panels:
             cv2.polylines(pn, [np.stack([uu, vv], 1).astype(np.int32)], False, colr, 1)
             cv2.arrowedLine(pn, (int(u0[0]), int(v0[0])), (int(u0[0] - 25 * np.sin(h)), int(v0[0] - 25 * np.cos(h))), colr, 2, tipLength=0.3)
-    txt = f'{T} frame {fr} | green {a.label_a}, red {a.label_b} | view + camera cloud follow ' + (a.label_b if F is B else a.label_a)
+    for pn in panels:
+        cv2.line(pn, (S - 80, S - 30), (S - 80 + int(5 / R), S - 30), (200, 200, 200), 2)
+        cv2.putText(pn, '5 m', (S - 70, S - 38), 0, 0.4, (200, 200, 200), 1)
+    return panels, sc
+
+
+dual = a.layout == 'dual' and B is not None
+W = 2 * S if dual else 3 * S
+vw = cv2.VideoWriter(mp4, cv2.VideoWriter_fourcc(*'mp4v'), a.fps, (W, S))
+for fr in frames:
+    txt = f'{T} frame {fr} | green {a.label_a}, red {a.label_b}'
     if B is not None:
         f0, l0 = local(B.x[fr], B.y[fr], A.x[fr], A.y[fr], A.yaw[fr])
         dyaw = np.degrees((B.yaw[fr] - A.yaw[fr] + np.pi) % (2 * np.pi) - np.pi)
         txt += f' | red - green: fwd {f0:+.2f} lat {l0:+.2f} m yaw {dyaw:+.2f} deg'
-    for pn, ttl in zip(panels, ('LiDAR map', 'camera cloud on the ground' + (f' (scale {sc:.2f})' if sc else ''), 'overlay: magenta = camera markings, cyan = camera raised')):
-        cv2.putText(pn, ttl, (8, S - 12), 0, 0.45, (220, 220, 220), 1)
-        cv2.line(pn, (S - 80, S - 30), (S - 80 + int(5 / R), S - 30), (200, 200, 200), 2)
-        cv2.putText(pn, '5 m', (S - 70, S - 38), 0, 0.4, (200, 200, 200), 1)
-    img = np.hstack(panels)
-    cv2.rectangle(img, (0, 0), (3 * S, 30), (0, 0, 0), -1)
-    cv2.putText(img, txt, (10, 21), 0, 0.6, (255, 255, 255), 1)
+    if dual:
+        pa_, sca = view(fr, A)
+        pb_, scb = view(fr, B)
+        left, right = pa_[2], pb_[2]
+        cv2.putText(left, f'camera cloud placed at {a.label_a} (green)', (8, S - 12), 0, 0.5, (60, 220, 60), 1)
+        cv2.putText(right, f'camera cloud placed at {a.label_b} (red)', (8, S - 12), 0, 0.5, (90, 90, 255), 1)
+        img = np.hstack([left, right])
+        cv2.line(img, (S, 0), (S, S), (255, 255, 255), 1)
+        txt += ' | magenta: cam markings, cyan: cam raised' + (f' | scale {sca:.2f}' if sca else '')
+    else:
+        F = B if (a.follow == 'b' and B is not None) else A
+        panels, sc = view(fr, F)
+        for pn, ttl in zip(panels, ('LiDAR map', 'camera cloud on the ground' + (f' (scale {sc:.2f})' if sc else ''), 'overlay: magenta = camera markings, cyan = camera raised')):
+            cv2.putText(pn, ttl, (8, S - 12), 0, 0.45, (220, 220, 220), 1)
+        img = np.hstack(panels)
+        txt += ' | view follows ' + (a.label_b if F is B else a.label_a)
+    cv2.rectangle(img, (0, 0), (W, 30), (0, 0, 0), -1)
+    cv2.putText(img, txt, (10, 21), 0, 0.5, (255, 255, 255), 1)
     vw.write(img)
     cv2.imwrite(os.path.join(out_dir, f'kf_{fr:05d}.jpg'), img, [cv2.IMWRITE_JPEG_QUALITY, 88])
     cv2.imwrite(os.path.join(out_dir, f'bev_{fr:05d}.jpg'), img[:10])
 vw.release()
 json.dump({'track': T, 'frames': frames, 'label': f'{T} top-down: map + camera cloud on the ground; green {a.label_a}'
-           + (f', red {a.label_b}' if a.b else '') + f'; view follows {a.label_b if a.follow == "b" else a.label_a}'},
+           + (f', red {a.label_b}' if a.b else '') + ('; left: camera at green, right: camera at red' if a.layout == 'dual' else f'; view follows {a.label_b if a.follow == "b" else a.label_a}')},
           open(os.path.join(out_dir, 'frames.json'), 'w'))
 print('wrote', mp4, 'and', out_dir, len(frames), 'frames')
