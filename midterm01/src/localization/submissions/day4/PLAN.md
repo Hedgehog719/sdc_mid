@@ -402,3 +402,7 @@ fixes say forward -0.32..-0.39 (both calibrations, stationary and moving parts -
 lateral -0.60 while stationary (84 correlated fixes: possible map artifact) but -0.17 moving. Fusion with start
 fixes (work/_t2start_gm.csv): forward -0.36 / -0.37, lateral -0.66 / -0.27. Candidates: t2_best_algostart.csv
 (full, start change rms 0.69 m), t2_best_algostart_fwd.csv (forward only, 0.37 m). Plan: A, B, then the exact optimum.
+T2 start probes (user OK, 3 submissions): t2_best_algostart 0.31496 (fusion start fwd -0.36 / lat -0.66..-0.27),
+t2_best_algostart_fwd 0.28674 (forward part only) -> unlike T1, T2's start fixes are WRONG (warped start map even
+with the new calibration); t2_opt10 0.17429 (exact optimum over 13 directions, pred 0.17427): start moved +0.24 m
+FORWARD and -0.17 m lateral (A +0.295, B -0.966). NEW BEST. Day count: T1 9, T2 8.
