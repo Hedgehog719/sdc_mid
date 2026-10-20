@@ -432,3 +432,19 @@ KAGGLE PRECISION CHANGE: all scores (old ones too: opt10 0.17429 -> "0.17", T1 o
 are now shown with 2 decimals -> exact quadratic probing (board_opt) is no longer possible (+-0.005 per score).
 Camera clouds (3cameras_ply, MapAnything): per-frame scale 0.63-0.97, ICP stays at its start, structure grid search
 peaks at the search edges -> not usable for forward fixes.
+
+## 10/20 evening: TA ruling + tasks 2 / 3 (user: "先做 2 3")
+TA (forum 13:51): leaderboard-probe corrections (controlled perturbations, segment probing, exact optima) must NOT be
+the basis of the final graded submission; ordinary model selection / reasonable parameter tuning with the board is OK.
+-> final graded files = pipeline outputs (submissions/day7/track*/t*_pipe_v3.csv); 0.17429 / 0.41123 / 0.20 are not.
+   The probe-based estimator (est_score) is used for reference only, not for choices.
+Task 2 (poles), local standard = forward-sharp lane fixes (sharp_f >= 0.05, |gap| <= 3 frames, motion removed):
+ T1 curated poles: old c6 fwd robust sd 0.55 (bias -0.24, 43 % > 0.5 m); new clean15 + vertical calibration 0.64;
+ with the pole side-camera yaw offsets 1.21 -> T1 poles stay unusable (dropped from T1). T2 poles: fwd sd 0.20-0.23
+ but -0.16 (pc) / -0.34 (c) m behind the lane fixes and 30 % tails.
+Task 3 (T1 start): the start is a slow roll-off (18 m by frame 250); lane fixes there carry little forward information
+ (sharp_f 0.01) and frames 186-237 are an aliased island (+1.0 m, periodic markings) that pulled the start forward;
+ GNSS bias model too sticky (tau 20 s: GNSS NIS 11.6). Fix: tools/fix_consistency.py (fix vs median of +-45 frames,
+ gate 0.6 / 0.35 m; BEV NIS 4.4 -> 2.6) + GNSS noise chosen by NIS (T1 tau 5 s / 0.4 m: NIS 1.84; T2 tau 20 / 0.14: 1.96).
+Pipeline v3 (score-free): T1 t1_pipe_v3 (ref. est 0.532, start now +0.09 vs the old best instead of +0.42),
+ T2 t2_pipe_v3 (ref. est 0.239: pos 0.165; yaw 0.373 deg - start yaw +0.72 deg vs best is the next local issue).
