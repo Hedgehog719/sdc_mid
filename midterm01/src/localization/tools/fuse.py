@@ -95,6 +95,8 @@ def main():
     p.add_argument('--map_bias_sigma', type=float, default=0.15, help='map-error steady-state sigma (m) per axis')
     p.add_argument('--gnss_huber', type=float, default=0.0, help='>0: Huber threshold for the GNSS rows (bias model)')
     p.add_argument('--nis', action='store_true', help='print the filter consistency (NIS) per measurement group')
+    p.add_argument('--gnss_keep_s', type=float, default=-1.0, help='>=0: GNSS-free run - keep only the first N seconds of '
+                   'GNSS (position + yaw) as the initial guess (Track03 rehearsal: no GNSS pose provided)')
     p.add_argument('--psi_csv', default='', help='CSV whose yaw is the heading input of the position RTS')
     p.add_argument('--bev_keep_edge', action='store_true',
                    help='keep BEV fixes whose yaw hit the search limit (default: dropped, they are unreliable)')
@@ -144,6 +146,11 @@ def main():
 
     ts, _ = ply_frames(os.path.join(a.track_dir, a.ply_dir))
     s = Sensors(a.track_dir)
+    if a.gnss_keep_s >= 0:   # GNSS-free: the first seconds only (initial pose / heading)
+        kg = s.gt <= s.gt[0] + max(a.gnss_keep_s, 0.5) * 1e9
+        kg[:2] = True
+        s.gt, s.gxyz, s.gyaw = s.gt[kg], s.gxyz[kg], s.gyaw[kg]
+        print(f'GNSS-free: kept {kg.sum()} GNSS samples (first {a.gnss_keep_s:.1f} s) as the initial guess')
     xyz = s.gnss_xyz(ts, a.interp)
     if a.yaw_src == 'imu':
         yaw = s.imu_yaw(ts)

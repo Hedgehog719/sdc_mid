@@ -488,3 +488,14 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
  - Lessons: the near metric is partly circular (near fixes maximise it) - v5n4y scored worse although the metric rose;
    near-fix forward is unreliable (flat peaks / pitch sensitivity), their lateral is the strong part. v6 lane fixes
    with --range_weight 10 shift forward back (~-0.05 m) -> not used; v6b (voted map, no range weight) running.
+ - T1 t1_pipe_v6bn2 0.43 (lane fixes on the road-voted map, no range weighting + near fixes). T2 v6b lane fixes do not
+   help (estimate 0.229 vs 0.221) -> T2 stays t2_pipe_v5n (0.21).
+ - T1 diagnosis (residuals of fixes vs fused): GNSS lateral is 1-2 m off over long stretches (left at 0-450 and the end,
+   right at 1650-2850); kerb fixes (old clean6 map) pull right ~0.25 m over 1350-2850; start_hold forces a straight
+   constant-lateral start although near fixes say +0.11 then -0.43 m -> without start_hold the start near alignment
+   rises 0.125 -> 0.186 (frames 0-400), rest unchanged.
+ - GNSS-free rehearsal (fuse --gnss_keep_s 1 --yaw_src imu): T1 = GNSS version within 0.07 m (end -0.49 m);
+   T2 diverges after 2640 (IMU heading drifts +3.9 deg, fixes then rejected) -> for Track03 the heading must be
+   corrected by the lane-fix headings (yaw source imu + lane-fix offset; to do).
+ - Yaw check: straight-segment course of the fused path vs its yaw: T1 +0.01, T2 -0.08 deg (no constant offset);
+   near-fix heading corrections per segment +0.02..+0.10 deg.
