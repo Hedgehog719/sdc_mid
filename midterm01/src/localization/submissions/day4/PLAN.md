@@ -374,3 +374,14 @@ difference direction ~5.5x -> ~-0.0035 more - candidate for tomorrow).
 Image-space matcher: plane / hybrid ground remove gross errors (plain rms 0.36 -> 0.21) but lose core precision
 (robust lat 0.171 -> 0.18-0.22); T2 2130-2430 fails in every ground mode (not a height problem) - to investigate.
 Capture-time sync sign verified (same convention as bev.shift_rows, physically right).
+
+## 10/20 ~09:45 "big jump" round (user: fix, run, submit; T1 <= 4, T2 <= 3 -> used T1 3, T2 1)
+Error budget: T1 position 0.329 m (71 %) + yaw 0.133; T2 0.158 m + 0.052. All BEV lane fixes carry forward info
+(robust forward spread T1 0.09-0.31 m by sharpness quartile, T2 0.08-0.16) -> after frame 330 the forward position
+is fix-constrained; T1 pole matching unreliable at the core (forward spread ~0.8 m, edge hits always wrong; new
+calibration / wider search / occlusion do not help). GNSS has no latency (best time shift 0 on both tracks).
+The big lever was the T1 START (frames 0-300, GNSS-based, map warped):
+  t1_best_startfwd05 0.56263 (+0.5 m forward in 0-300): <e, d> = +0.0249 -> optimum = shift the start ~0.47 m BACK
+  (the poles' +0.82 m suggestion was wrong); t1_opt9_endlat 0.42639 (optimum incl. the start, pred 0.42409, + end
+  >= 2880 lateral -0.5 m: optimum ~0.22 m right); t1_opt10 0.41668 (exact optimum over 11 directions, pred 0.41666).
+T2: t2_opt9_yopt2 0.20636 (opt9 + exact yaw optimum 5.54x along course(opt9)-course(blend), pred 0.20648).
