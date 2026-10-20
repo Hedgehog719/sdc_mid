@@ -128,7 +128,17 @@ def view(fr, F):
             for du, dv in ((0, 0), (1, 0), (0, 1), (1, 1)):
                 cam[qv[o2] + dv, qu[o2] + du] = cc[o2]
             lum = cc.astype(np.float32).mean(1)
-            mk = (hq < 0.3) & (lum > np.percentile(lum, 85))     # bright ground = markings
+            # markings = ground points clearly brighter than the ground around them (median of their 1.5 m cell)
+            gp = hq < 0.3
+            cell = (qu // int(1.5 / R)).astype(np.int64) * 10000 + (qv // int(1.5 / R)).astype(np.int64)
+            mk = np.zeros(len(lum), bool)
+            if gp.sum() > 50:
+                cg, lg = cell[gp], lum[gp]
+                o3 = np.lexsort((lg, cg))
+                uc, f3, n3 = np.unique(cg[o3], return_index=True, return_counts=True)
+                med = np.empty(gp.sum())
+                med[o3] = np.repeat(lg[o3][f3 + (n3 - 1) // 2], n3)
+                mk[np.flatnonzero(gp)] = lg > med + 25
             rs = hq >= 0.3                                       # raised structure
             ovl[qv[rs], qu[rs]] = (255, 255, 0)
             ovl[qv[mk], qu[mk]] = (255, 0, 255)
