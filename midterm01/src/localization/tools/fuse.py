@@ -124,6 +124,14 @@ def main():
     p.add_argument('--pole_lat_sigma', type=float, default=0.6)
     p.add_argument('--pole_min_speed', type=float, default=0.0, help='drop pole fixes below this speed (m/s)')
     p.add_argument('--road', default='', help='bev_match.py --feature road npz: lateral fixes from the road region')
+    p.add_argument('--near', default='', help='near_fix.py npz: near-range image-to-map fixes (road markings 1-12 m ahead)')
+    p.add_argument('--near_fwd_sigma', type=float, default=0.3)
+    p.add_argument('--near_lat_sigma', type=float, default=0.15)
+    p.add_argument('--near_min_sharp', type=float, default=0.0, help='keep near fixes whose lateral peak sharpness >= this')
+    p.add_argument('--near_yaw_sigma', type=float, default=0.0, help='>0: near-fix headings (near_fix.py --yaw_search) '
+                   'join the yaw smoother with this sigma (deg); only fixes with a clear heading peak (sharp_y > 0)')
+    p.add_argument('--near_aniso_k', type=float, default=0.0, help='>0: per-fix sigma = clip(k / peak sharpness, base sigma, '
+                   '2 m fwd / 1 m lat) - flat forward peaks (lines along the road) get little forward weight')
     p.add_argument('--road_pct', type=float, default=50)
     p.add_argument('--road_lat_sigma', type=float, default=0.5)
     p.add_argument('--road_fwd_sigma', type=float, default=5.0)
@@ -238,6 +246,26 @@ def main():
             huber = a.bev_huber
             print('pole fixes used: %d / %d' % (pm.sum(), len(pm)))
             GROUPS.append(('pole', len(tm)))
+        if a.near:
+            nz = np.load(a.near)
+            nm_ = nz['sharp_l'] >= a.near_min_sharp
+            yw = nz['pyaw'][nm_]
+            c, s_ = np.cos(yw), np.sin(yw)
+            Rr = np.stack([np.stack([c, -s_], 1), np.stack([s_, c], 1)], 1)
+            if a.near_aniso_k > 0:
+                sfn = np.clip(a.near_aniso_k / np.maximum(nz['sharp_f'][nm_], 1e-4), a.near_fwd_sigma, 2.0)
+                sln = np.clip(a.near_aniso_k / np.maximum(nz['sharp_l'][nm_], 1e-4), a.near_lat_sigma, 1.0)
+                D_ = np.zeros((nm_.sum(), 2, 2))
+                D_[:, 0, 0], D_[:, 1, 1] = sfn ** 2, sln ** 2
+                ncv = Rr @ D_ @ Rr.transpose(0, 2, 1)
+            else:
+                ncv = Rr @ np.diag([a.near_fwd_sigma ** 2, a.near_lat_sigma ** 2]) @ Rr.transpose(0, 2, 1)
+            tm = np.concatenate([tm, nz['ts_i'][nm_]])
+            zm = np.concatenate([zm, np.stack([nz['mx'][nm_], nz['my'][nm_]], 1)])
+            cov = np.concatenate([cov, ncv])
+            huber = a.bev_huber
+            print('near fixes used: %d / %d' % (nm_.sum(), len(nm_)))
+            GROUPS.append(('near', len(tm)))
         if a.road:
             rz = np.load(a.road)
             rm = rz['peak'] >= np.percentile(rz['peak'], a.road_pct)
@@ -353,6 +381,14 @@ def main():
             mt = np.concatenate([mt, bt])
             my_ = np.concatenate([my_, byaw])
             ms = np.concatenate([ms, np.full(len(bt), np.radians(a.yaw_rts_bev))])
+        if a.near and a.near_yaw_sigma > 0:
+            nz_ = np.load(a.near)
+            if 'sharp_y' in nz_:
+                ky = nz_['sharp_y'] > 0
+                mt = np.concatenate([mt, nz_['ts_i'][ky].astype(mt.dtype)])
+                my_ = np.concatenate([my_, nz_['myaw'][ky]])
+                ms = np.concatenate([ms, np.full(ky.sum(), np.radians(a.near_yaw_sigma))])
+                print('near yaw fixes used: %d / %d' % (ky.sum(), len(ky)))
         o = np.argsort(mt)
         b = yaw_offset_rts(ts, imu_fn, mt[o], my_[o], ms[o], a.yaw_rts_q)
         yw = imu_fn(ts) + b + np.radians(a.yaw_bias)

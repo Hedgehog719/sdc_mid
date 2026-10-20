@@ -473,3 +473,18 @@ Cause of the camera-cloud jumps (work/cam3d/jump_cause.py, scale_cause.py; T2 18
  - rotation: front / left / right sectors rotate independently (spread 1.0 / 1.4 / 1.6 deg, mutually uncorrelated,
    larger in turns) -> per-frame independent inference with a self-predicted (uncalibrated) camera rig; only gating helps.
  - with smoothed scale: 369 / 1098 clouds pass the IMU gate, position fixes still fwd bias -0.47 / robust sd 0.61 m.
+
+## 10/21 night (user asleep; authorised: fix within the rules, use the day's submissions before 07:50)
+User review of the paint pages (render_paint): LiDAR marking map on bushes / verges / cloud-like blobs, T1 start and
+end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 (img-space only). Done:
+ - tools/marking_road_vote.py: map marking cells voted by the camera road segmentation (SegFormer) at the pipeline
+   pose; off-road cells cleared (T2 soft map 46 %, T1 37 % of active cells). T2 1653 / 2073: verge points gone.
+ - tools/near_align.py (local metric: paint at projected map markings 1-12 m ahead) and tools/near_fix.py (per-frame
+   (fwd, lat[, yaw]) pose correction from near markings; in/out scoring = marks - background, user's idea; sign checked
+   at T1 2907: pose must move right 0.3-0.4 m) -> fuse --near (anisotropic sigma from peak sharpness).
+ - Submissions (pipeline outputs only): T2 t2_pipe_v5n 0.21, t2_pipe_v5n2y 0.21, t2_pipe_v5n4y 0.22 (iterated near fixes
+   + start fixes on the plate-shifted map: start better, 330-750 forward pushed +0.14 -> worse); T1 t1_pipe_v5n2 0.46
+   (from ~0.53 before: near fixes fixed the T1 start / end lateral drift).
+ - Lessons: the near metric is partly circular (near fixes maximise it) - v5n4y scored worse although the metric rose;
+   near-fix forward is unreliable (flat peaks / pitch sensitivity), their lateral is the strong part. v6 lane fixes
+   with --range_weight 10 shift forward back (~-0.05 m) -> not used; v6b (voted map, no range weight) running.
