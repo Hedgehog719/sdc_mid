@@ -43,6 +43,10 @@ ap.add_argument('--cams', default='f,fl,fr')
 ap.add_argument('--blur_coarse', type=float, default=4.0)
 ap.add_argument('--blur_fine', type=float, default=1.5)
 ap.add_argument('--weighted', action='store_true', help='weight marks by their marking-map strength')
+ap.add_argument('--ground', choices=['map', 'plane', 'hybrid'], default='map',
+                help='marking heights: map ground / road plane under the vehicle / map where within --ground_tol of the plane')
+ap.add_argument('--ground_tol', type=float, default=0.15)
+ap.add_argument('--ground_slope', type=float, default=0.0, help='hybrid: tolerance grows by this per metre of range')
 a = ap.parse_args()
 
 tr = pd.read_csv(a.prior_csv)
@@ -90,6 +94,25 @@ def match(i):
     q0 = vehicle_frame(Pw, (x, y, yaw), MK.height)
     keep = road_level(q0) & (q0[:, 0] > -8) & (np.hypot(q0[:, 0], q0[:, 1]) < a.range)
     Pw, Wm = Pw[keep], Wm[keep]
+    if a.ground != 'map':   # map heights are wrong where the map is vertically distorted: use the road plane there
+        c0, s0 = np.cos(yaw), np.sin(yaw)
+        ox, oy = np.meshgrid(np.linspace(-4, 4, 9), np.linspace(-2, 2, 5))
+        gx_, gy_ = x + c0 * ox.ravel() - s0 * oy.ravel(), y + s0 * ox.ravel() + c0 * oy.ravel()
+        gz_, okg = MK.height(gx_, gy_)
+        okg &= np.isfinite(gz_)
+        A_ = np.stack([gx_[okg] - x, gy_[okg] - y, np.ones(okg.sum())], 1)
+        pa, pb, pz0 = np.linalg.lstsq(A_, gz_[okg], rcond=None)[0]
+        def reground(P):
+            zpl = pz0 + pa * (P[:, 0] - x) + pb * (P[:, 1] - y)
+            P = P.copy()
+            if a.ground == 'plane':
+                P[:, 2] = zpl
+            else:
+                rng_ = np.hypot(P[:, 0] - x, P[:, 1] - y)
+                far = np.abs(P[:, 2] - zpl) > a.ground_tol + a.ground_slope * rng_
+                P[far, 2] = zpl[far]
+            return P
+        Pw = reground(Pw)
     if len(Pw) < 100:
         return None
     # keep markings that project onto the road (image segmentation at the prior pose): verges / sidewalks out
@@ -109,6 +132,8 @@ def match(i):
         sel = rng.choice(len(Pw), a.npts, replace=False)
         Pw, Wm = Pw[sel], Wm[sel]
     Bw = MK.background(x, y, a.range + 8, a.npts, rng)
+    if a.ground != 'map' and len(Bw):
+        Bw = reground(Bw)
     qb = vehicle_frame(Bw, (x, y, yaw), MK.height)
     Bw = Bw[road_level(qb, tol=0.15, slope=0.02) & (qb[:, 0] > -8) & (np.hypot(qb[:, 0], qb[:, 1]) < a.range)]
     onb = np.zeros(len(Bw), bool)

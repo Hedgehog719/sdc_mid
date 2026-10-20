@@ -366,3 +366,11 @@ T2: #1 t2_opt7_imgc 0.23151 (image-space shape: hurt), #2 t2_opt8_vertc 0.22698 
 hurt), #3 t2_opt9 0.21174 (exact optimum over 10 directions, pred 0.21190). NEW BEST.
 Lessons: the vertical-only calibration shape helps T1 (where the map fixes dominate) but hurts T2 alone; inside the
 optimum both contribute. Measured "bad" directions still improve the optimum (sign flips / partial weights).
+10/20 09:30 (user: decide the best version before 10:00, then one file per track):
+T1 t1_opt8_yc8x121 0.46206 (NEW BEST; opt8 positions, yaw = H + 1.21 x course shape from opt8 positions).
+T2 t2_opt9_yc9 0.21007 (NEW BEST; opt9 positions, yaw = day2 + 0.73 x course shape from opt9 positions; yaw RMSE
+0.2682 -> 0.2599 deg from a 0.021 deg rms change: <err, change> -0.0024, corr 0.43; exact optimum along that new
+difference direction ~5.5x -> ~-0.0035 more - candidate for tomorrow).
+Image-space matcher: plane / hybrid ground remove gross errors (plain rms 0.36 -> 0.21) but lose core precision
+(robust lat 0.171 -> 0.18-0.22); T2 2130-2430 fails in every ground mode (not a height problem) - to investigate.
+Capture-time sync sign verified (same convention as bev.shift_rows, physically right).
