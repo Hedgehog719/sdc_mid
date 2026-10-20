@@ -95,6 +95,8 @@ def main():
     p.add_argument('--map_bias_sigma', type=float, default=0.15, help='map-error steady-state sigma (m) per axis')
     p.add_argument('--gnss_huber', type=float, default=0.0, help='>0: Huber threshold for the GNSS rows (bias model)')
     p.add_argument('--nis', action='store_true', help='print the filter consistency (NIS) per measurement group')
+    p.add_argument('--gnss_lat_sigma', type=float, default=0.0, help='>0: extra lateral (cross-track) noise of the GNSS rows '
+                   '(m): GNSS keeps its forward information while the map fixes decide the lateral position')
     p.add_argument('--gnss_keep_s', type=float, default=-1.0, help='>=0: GNSS-free run - keep only the first N seconds of '
                    'GNSS (position + yaw) as the initial guess (Track03 rehearsal: no GNSS pose provided)')
     p.add_argument('--psi_csv', default='', help='CSV whose yaw is the heading input of the position RTS')
@@ -319,7 +321,8 @@ def main():
                 return np.stack([np.cos(off) * ax_ - np.sin(off) * ay_, np.sin(off) * ax_ + np.cos(off) * ay_], 1)
         st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov,
                         q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask, map_bias=mb, map_mask=mmask,
-                        return_nis=a.nis, huber_g=a.gnss_huber if a.gnss_huber > 0 else None, acc_fn=acc_fn)
+                        return_nis=a.nis, huber_g=a.gnss_huber if a.gnss_huber > 0 else None, acc_fn=acc_fn,
+                        gnss_lat_extra=a.gnss_lat_sigma)
         if a.nis:  # filter consistency per group: mean NIS ~ 2 (2D) if the noise model matches the data
             st, nis = st
             lo_ = 0
