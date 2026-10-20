@@ -448,3 +448,14 @@ Task 3 (T1 start): the start is a slow roll-off (18 m by frame 250); lane fixes 
  gate 0.6 / 0.35 m; BEV NIS 4.4 -> 2.6) + GNSS noise chosen by NIS (T1 tau 5 s / 0.4 m: NIS 1.84; T2 tau 20 / 0.14: 1.96).
 Pipeline v3 (score-free): T1 t1_pipe_v3 (ref. est 0.532, start now +0.09 vs the old best instead of +0.42),
  T2 t2_pipe_v3 (ref. est 0.239: pos 0.165; yaw 0.373 deg - start yaw +0.72 deg vs best is the next local issue).
+Evening 2 (user: "find a method"): diagnosis of (pipeline - 0.17) -> physical causes, values from LOCAL data only:
+ - start yaw: lane-fix yaw on the start plate is +1.53 deg (T2) / -2.87 deg (T1, frames 0-220) off the IMU-propagated
+   GNSS course (which agrees elsewhere to 0.02 deg) -> plate orientation unreliable -> fuse --bev_yaw_skip (position
+   only). T2 ref. est 0.239 -> 0.222 (yaw 0.373 -> 0.288 deg); T1 0.532 -> 0.524.
+ - timing: lane fixes vs GNSS show no speed-dependent offset (3 ms) -> no timing fix. Constant fix-vs-GNSS forward
+   offset (-0.074 m) correction did not help -> not applied.
+ - T1 lane-fix covariance by NIS (k 0.01, aniso_min 0.45); IMU acceleration as a known along-track input in the RTS
+   (fuse --imu_acc, qacc 0.15): along-track accel vs IMU rms T1 0.183 -> 0.106, T2 0.078 -> 0.074 (physically
+   consistent; ref. estimates unchanged -> the remaining gap is slow segment-level offsets).
+ Files: submissions/day7/track{1,2}/t*_pipe_v5.csv (score-free). Video tool tools/render_topdown.py (map | camera
+ cloud on the ground | overlay; both trajectories; --follow a|b) -> work/video, viewer /viewer/<Track>_td_pipe|td_017.

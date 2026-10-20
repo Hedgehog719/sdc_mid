@@ -11,7 +11,8 @@ import numpy as np
 
 def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos=0.05, huber=3.0,
                meas_sigma=None, meas_cov=None, q_lat=None, t_zupt=None, sigma_zupt=0.02,
-               gnss_bias=None, gnss_mask=None, map_bias=None, map_mask=None, return_nis=False, huber_g=None):
+               gnss_bias=None, gnss_mask=None, map_bias=None, map_mask=None, return_nis=False, huber_g=None,
+               acc_fn=None):
     """meas_cov: optional (N, 2, 2) per-measurement covariance (overrides sigma), e.g. lateral-only fixes.
 
     gnss_bias: (tau_s, sigma_b, sigma_w) models the GNSS error as coloured noise: a first-order Gauss-Markov bias
@@ -26,6 +27,8 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     length L_m, steady-state sigma_m per axis; constant while stationary). Rows flagged in map_mask observe position +
     map bias. Without it the smoother treats map fixes as unbiased and copies the map's local distortions; block
     cross-validation cannot see that error (it is common to all map fixes), the leaderboard can."""
+    # acc_fn(t) -> (N, 2) world-frame horizontal acceleration (IMU, gravity removed): used as a known input to the
+    # along-track speed (projected on the heading); q_acc then only covers the IMU's own error.
     # q_lat: cross-track position noise (non-holonomic constraint: no side slip); q_pos is then along-track.
     # t_zupt: times of zero-velocity pseudo-measurements (vehicle stationary, e.g. red lights).
     tq = np.asarray(t_query, np.float64)
@@ -98,6 +101,9 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
             Q[jm, jm] += sig_m ** 2 * (1 - phm * phm) + 1e-12
             Q[jm + 1, jm + 1] += sig_m ** 2 * (1 - phm * phm) + 1e-12
         x = F @ x
+        if acc_fn is not None and dt > 0:
+            aw = acc_fn(np.array([(times[k] + t_prev) / 2]))[0]
+            x = x + G * (c * aw[0] + s * aw[1])
         P = F @ P @ F.T + Q
         Fs[k], xp[k], Pp[k] = F, x, P
         if kind[k] == 2:  # zero-velocity update

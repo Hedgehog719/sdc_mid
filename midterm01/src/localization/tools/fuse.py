@@ -114,6 +114,10 @@ def main():
     p.add_argument('--yaw_rts_base', type=float, default=1.0, help='s, baseline for the motion heading')
     p.add_argument('--yaw_rts_sigpos', type=float, default=0.15, help='m, position noise of the heading reference')
     p.add_argument('--yaw_rts_bev', type=float, default=0.0, help='>0: also use BEV yaw fixes with this sigma (deg)')
+    p.add_argument('--imu_acc', action='store_true', help='IMU acceleration (gravity removed) as a known input of the '
+                   'along-track speed in the RTS; set --rts_qacc to the IMU error level (e.g. 0.2)')
+    p.add_argument('--bev_yaw_skip', default='', help='lo:hi frames whose BEV fixes are used for position only, not yaw '
+                   '(map section with an unreliable orientation, e.g. a rotated start plate)')
     p.add_argument('--pole', default='', help='pole_match.py npz: pole-landmark fixes (along-track constraint)')
     p.add_argument('--pole_pct', type=float, default=50, help='keep pole fixes whose peak is above this percentile')
     p.add_argument('--pole_fwd_sigma', type=float, default=0.3)
@@ -265,9 +269,22 @@ def main():
             mb = (a.map_bias_len, a.map_bias_sigma)
             mmask = np.zeros(len(tm), bool)
             mmask[len(s.gt):] = True
+        acc_fn = None
+        if a.imu_acc:  # IMU specific force -> world frame, gravity removed, lightly smoothed (bag receive time)
+            from scipy.spatial.transform import Rotation as _R
+            from scipy.ndimage import gaussian_filter1d as _g
+            _im = pd.read_csv(os.path.join(a.track_dir, 'sensors', 'imu.csv'))
+            _t = _im.t.values.astype(np.float64)
+            _aw = _R.from_quat(_im[['qx', 'qy', 'qz', 'qw']].values).apply(_im[['ax', 'ay', 'az']].values)
+            _dt = np.median(np.diff(_t)) * 1e-9
+            _ax, _ay = _g(_aw[:, 0], 0.05 / _dt), _g(_aw[:, 1], 0.05 / _dt)
+            def acc_fn(tt):   # rotate from the IMU's world yaw into the map heading frame used by the smoother
+                off = psi_fn(tt) - np.unwrap(s.imu_rot(tt).as_euler('ZYX')[:, 0])
+                ax_, ay_ = np.interp(tt, _t, _ax), np.interp(tt, _t, _ay)
+                return np.stack([np.cos(off) * ax_ - np.sin(off) * ay_, np.sin(off) * ax_ + np.cos(off) * ay_], 1)
         st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov,
                         q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask, map_bias=mb, map_mask=mmask,
-                        return_nis=a.nis, huber_g=a.gnss_huber if a.gnss_huber > 0 else None)
+                        return_nis=a.nis, huber_g=a.gnss_huber if a.gnss_huber > 0 else None, acc_fn=acc_fn)
         if a.nis:  # filter consistency per group: mean NIS ~ 2 (2D) if the noise model matches the data
             st, nis = st
             lo_ = 0
@@ -325,9 +342,14 @@ def main():
             parts = [np.load(f) for f in a.bev]
             bt = np.concatenate([q['ts'] for q in parts])
             byaw = np.concatenate([q['myaw'] for q in parts])
+            ok = np.ones(len(bt), bool)
             if not a.bev_keep_edge:
-                ok = ~bev_edge(np.concatenate([q['dyaw'] for q in parts]), npz_max_yaw(parts))
-                bt, byaw = bt[ok], byaw[ok]
+                ok &= ~bev_edge(np.concatenate([q['dyaw'] for q in parts]), npz_max_yaw(parts))
+            if a.bev_yaw_skip:
+                lo, hi = (int(v) for v in a.bev_yaw_skip.split(':'))
+                bi = np.concatenate([q['idx'] for q in parts])
+                ok &= ~((bi >= lo) & (bi < hi))
+            bt, byaw = bt[ok], byaw[ok]
             mt = np.concatenate([mt, bt])
             my_ = np.concatenate([my_, byaw])
             ms = np.concatenate([ms, np.full(len(bt), np.radians(a.yaw_rts_bev))])
