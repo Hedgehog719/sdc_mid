@@ -423,3 +423,12 @@ shift, no blend). Reference-only estimates (work/mb/est_score.py, quadratic iden
  T1 t1_algo_c15 0.544 / nopole 0.534: new start fixes are better at fix level (peak 0.296 -> 0.374, closer to the
     board start) but the fused start goes +0.36..0.42 forward (looser Huber makes it worse: forward outliers among the
     start fixes) - open issue; the old clean6 fixes give the board start.
+
+## 10/20 13:14 UTC submission (user OK): t2_p20tuned_bestyaw -> 0.20 (Kaggle now shows 2 decimals only)
+Algorithmic positions (map clean16 + start plate +0.55 m for s < 20 m, chosen by match peak; fusion bev_aniso_k 0.08,
+gnss bias sigma 0.14 / tau 3 s, pole fwd 0.8 - chosen with the reference estimate) + yaw of 0.17429. Estimate 0.1950
+(91 % in span) -> true score in [0.195, 0.205): the out-of-span part does not help (<e, d_perp> >= 0).
+KAGGLE PRECISION CHANGE: all scores (old ones too: opt10 0.17429 -> "0.17", T1 opt11 -> "0.41") and the leaderboard
+are now shown with 2 decimals -> exact quadratic probing (board_opt) is no longer possible (+-0.005 per score).
+Camera clouds (3cameras_ply, MapAnything): per-frame scale 0.63-0.97, ICP stays at its start, structure grid search
+peaks at the search edges -> not usable for forward fixes.
