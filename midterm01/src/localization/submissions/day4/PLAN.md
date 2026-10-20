@@ -511,3 +511,7 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
    T1 t1_pipe_v8 0.43; T2 t2_pipe_v8F 0.21 (near forward trusted more; estimate 0.2204 vs v8 0.2168, near metric +).
  - Open conflict: near-range image alignment wants T2 500-900 ~+0.2 m forward (stop lines / crosswalks), the
    probe-based estimate wants the opposite; near forward depends on camera height / pitch (v8 vs v9 differ ~9 cm).
+ - Final round: T2 plate 0.25 m rejected (BEV peak prefers 0.55, near fixes inconsistent); T1 re-match on the v8 prior
+   no better. Last submissions: t2_pipe_v8y 0.21, t1_pipe_v8y 0.43 (v8 + near-range heading fixes; estimates 0.2163 /
+   0.5078, the best pipeline estimates). Day quota used (6 + 6).
+ Recommended final designations (pipeline outputs, TA rule): T2 t2_pipe_v8y (or v8), T1 t1_pipe_v8y (or v8 / v6bn2).
