@@ -32,6 +32,7 @@ ap.add_argument('--res', type=float, default=0.08, help='m per pixel')
 ap.add_argument('--size', type=int, default=600, help='panel size (three panels side by side)')
 ap.add_argument('--cam_h', type=float, default=1.70)
 ap.add_argument('--yaw_mount', type=float, default=-1.5, help='front camera yaw relative to the vehicle (deg), as in the pipeline')
+ap.add_argument('--scale_win', type=int, default=30, help='+-frames median of the ground-based cloud scale (0 = per frame)')
 ap.add_argument('--fps', type=float, default=10.0)
 ap.add_argument('--alpha', type=float, default=0.55, help='camera cloud opacity')
 ap.add_argument('--follow', choices=['a', 'b'], default='a', help='trajectory the view and the camera cloud follow')
@@ -79,6 +80,27 @@ def local(x, y, px, py, yaw):
 
 lo, hi, st = (int(v) for v in a.frames.split(':'))
 frames = list(range(lo, len(A) if hi < 0 else hi, st))
+SMOOTH = {}
+if a.scale_win > 0:   # the model's scale drifts slowly (~2 % between frames), the per-frame ground estimate jitters
+    from multiprocessing import Pool
+
+    def _gscale(k):
+        Q, _ = read_ply(os.path.join(a.track_dir, '3cameras_ply', idx.ply[k]))
+        near = (Q[:, 0] > 3) & (Q[:, 0] < 15) & (np.abs(Q[:, 1]) < 3)
+        if near.sum() < 100:
+            return np.nan
+        G = Q[near]
+        z0 = np.percentile(G[:, 2], 20)
+        gg = G[np.abs(G[:, 2] - z0) < 0.25]
+        return a.cam_h / max(-np.linalg.lstsq(np.c_[gg[:, 0], gg[:, 1], np.ones(len(gg))], gg[:, 2], rcond=None)[0][2], 0.5)
+    allf = np.arange(0, min(len(A), len(idx)), 3)
+    with Pool(4) as _p:
+        _sc = np.array(_p.map(_gscale, list(allf), chunksize=8))
+    _ok = np.isfinite(_sc)
+    for f in range(min(len(A), len(idx))):
+        m_ = _ok & (np.abs(allf - f) <= a.scale_win)
+        if m_.any():
+            SMOOTH[f] = float(np.median(_sc[m_]))
 out_dir = os.path.join(os.path.dirname(__file__), '..', 'work', 'viewer', f'{T}_{a.name}')
 os.makedirs(out_dir, exist_ok=True)
 mp4 = os.path.join(os.path.dirname(__file__), '..', 'work', 'video', f'{T}_{a.name}.mp4')
@@ -119,7 +141,7 @@ def view(fr, F):
             z0 = np.percentile(G[:, 2], 20)
             gg = G[np.abs(G[:, 2] - z0) < 0.25]
             pa, pb, pc = np.linalg.lstsq(np.c_[gg[:, 0], gg[:, 1], np.ones(len(gg))], gg[:, 2], rcond=None)[0]
-            sc = a.cam_h / max(-pc, 0.5)
+            sc = SMOOTH.get(fr, a.cam_h / max(-pc, 0.5))
             m = (r > 1.5) & (r < 40 / sc)
             cm_, sm_ = np.cos(np.radians(a.yaw_mount)), np.sin(np.radians(a.yaw_mount))
             qx, qy = Q[m, 0] * sc, Q[m, 1] * sc

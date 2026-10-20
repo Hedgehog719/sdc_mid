@@ -466,3 +466,10 @@ structure) vs forward-sharp lane fixes: forward bias -0.44, robust sd 0.53 m (T2
 The yaw "jumps" the user saw (T2 1839, 2715, 2835, 2967) are the clouds' own predicted frames rotating (+-2.7 deg vs
 IMU); at 3292-3296 the 0.17 file's yaw bends -0.3 deg (pipeline follows the IMU). Camera yaw mount -1.5 deg confirmed
 (median best cloud yaw offset -1.75 deg over 19 frames) and now applied in render_topdown.
+Cause of the camera-cloud jumps (work/cam3d/jump_cause.py, scale_cause.py; T2 1800-2010):
+ - scale: the model's own frame-to-frame scale change is 2.3 % (similarity ICP of raw clouds), our ground-based scale
+   (camera 1.70 m above the predicted ground) jitters 6.2 % (10.6 % over the track) -> mostly OURS; now a +-30-frame
+   median (render_topdown, cam_cloud_fix --scale_win).
+ - rotation: front / left / right sectors rotate independently (spread 1.0 / 1.4 / 1.6 deg, mutually uncorrelated,
+   larger in turns) -> per-frame independent inference with a self-predicted (uncalibrated) camera rig; only gating helps.
+ - with smoothed scale: 369 / 1098 clouds pass the IMU gate, position fixes still fwd bias -0.47 / robust sd 0.61 m.

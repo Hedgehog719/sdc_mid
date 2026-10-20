@@ -41,6 +41,8 @@ ap.add_argument('--span', type=float, default=1.2)
 ap.add_argument('--res', type=float, default=0.1)
 ap.add_argument('--tol', type=float, default=0.15)
 ap.add_argument('--workers', type=int, default=4)
+ap.add_argument('--scale_win', type=int, default=30, help='+-frames of the median used as the cloud scale (the '
+                'model scale drifts slowly, ~2 %% between frames; the per-frame ground estimate jitters ~6 %%); 0 = per frame')
 a = ap.parse_args()
 
 T = os.path.basename(os.path.normpath(a.track_dir))
@@ -55,6 +57,21 @@ MAP = np.load(os.path.join(a.track_dir, f'map{sfx}.npy'), mmap_mode='r')
 cm, sm = np.cos(np.radians(a.yaw_mount)), np.sin(np.radians(a.yaw_mount))
 
 
+def ground(k):
+    """Ground plane of raw cloud k (camera frame, model units): (pa, pb, pc) or None."""
+    Q = read_ply(os.path.join(a.track_dir, '3cameras_ply', IDX.ply[k]))
+    near = (Q[:, 0] > 3) & (Q[:, 0] < 15) & (np.abs(Q[:, 1]) < 3)
+    if near.sum() < 100:
+        return None
+    G = Q[near]
+    z0 = np.percentile(G[:, 2], 20)
+    gg = G[np.abs(G[:, 2] - z0) < 0.25]
+    return np.linalg.lstsq(np.c_[gg[:, 0], gg[:, 1], np.ones(len(gg))], gg[:, 2], rcond=None)[0]
+
+
+SMOOTH = {}
+
+
 def cloud(k):
     """Raised structure of cloud k in the vehicle frame (2D + height), its scale; None if no ground."""
     Q = read_ply(os.path.join(a.track_dir, '3cameras_ply', IDX.ply[k]))
@@ -65,7 +82,7 @@ def cloud(k):
     z0 = np.percentile(G[:, 2], 20)
     gg = G[np.abs(G[:, 2] - z0) < 0.25]
     pa, pb, pc = np.linalg.lstsq(np.c_[gg[:, 0], gg[:, 1], np.ones(len(gg))], gg[:, 2], rcond=None)[0]
-    s = a.cam_h / max(-pc, 0.5)
+    s = SMOOTH.get(k, a.cam_h / max(-pc, 0.5))
     hz = (Q[:, 2] - (pa * Q[:, 0] + pb * Q[:, 1] + pc)) * s
     r = np.hypot(Q[:, 0], Q[:, 1]) * s
     m = (r > 3) & (r < a.rmax) & (hz > 0.3) & (hz < 6)
@@ -164,6 +181,17 @@ def work(k):
 if __name__ == '__main__':
     lo, hi, st = (int(v) for v in a.frames.split(':'))
     frames = list(range(lo, len(TR) if hi < 0 else hi, st))
+    if a.scale_win > 0:   # temporally smoothed scale from the per-frame ground heights
+        allf = list(range(0, min(len(TR), len(IDX)), st))
+        with Pool(a.workers) as pool:
+            gp = pool.map(ground, allf, chunksize=8)
+        fr_ok = np.array([f for f, g_ in zip(allf, gp) if g_ is not None])
+        sc = np.array([a.cam_h / max(-g_[2], 0.5) for g_ in gp if g_ is not None])
+        for f in range(min(len(TR), len(IDX))):
+            m_ = np.abs(fr_ok - f) <= a.scale_win
+            if m_.any():
+                SMOOTH[f] = float(np.median(sc[m_]))
+        print(f'scale: per-frame spread {np.std(np.log(sc)) * 100:.1f} %, smoothed over +-{a.scale_win} frames')
     with Pool(a.workers) as pool:
         rows = [r for r in pool.imap(work, frames, chunksize=4) if r is not None]
     R = pd.DataFrame(rows)
