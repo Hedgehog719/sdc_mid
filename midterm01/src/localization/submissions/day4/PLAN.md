@@ -499,3 +499,11 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
    corrected by the lane-fix headings (yaw source imu + lane-fix offset; to do).
  - Yaw check: straight-segment course of the fused path vs its yaw: T1 +0.01, T2 -0.08 deg (no constant offset);
    near-fix heading corrections per segment +0.02..+0.10 deg.
+ - Camera re-calibration on the near-fixed poses + road-voted maps (calib_img2, T1 + T2 jointly, per-track check):
+   round 1 (cam_fix_v8): fl yaw -0.5 -> -0.15, fr yaw +0.5 -> -0.4 deg (fr alignment +20 % / +24 % on T2 / T1).
+   T2 t2_pipe_v8 0.21 (estimate 0.2168, best pipeline so far: start lateral -0.078 -> -0.011, forward rms 0.087 -> 0.079).
+   round 2 (cam_fix_v9): front pitch 1.1 -> 1.35, roll -0.65 -> -0.45, height +0.18 -> +0.24 m; side pitch/roll/height
+   (+1.6..+10.7 % alignment). With v9 the near fixes' forward offset vanishes (T2 +0.082 -> -0.011, T1 +0.050 -> -0.032):
+   the earlier ~8 cm near-vs-lane forward disagreement was a camera height / pitch error.
+ - T1 GNSS-free pipeline 0.44 (GNSS helps forward); lateral-only GNSS inflation, 20 m near range, near-anchored
+   forward calibration: changes within +-0.005 (not submitted).
