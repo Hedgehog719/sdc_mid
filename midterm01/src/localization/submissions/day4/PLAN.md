@@ -406,3 +406,20 @@ T2 start probes (user OK, 3 submissions): t2_best_algostart 0.31496 (fusion star
 t2_best_algostart_fwd 0.28674 (forward part only) -> unlike T1, T2's start fixes are WRONG (warped start map even
 with the new calibration); t2_opt10 0.17429 (exact optimum over 13 directions, pred 0.17427): start moved +0.24 m
 FORWARD and -0.17 m lateral (A +0.295, B -0.966). NEW BEST. Day count: T1 9, T2 8.
+
+## 10/20 afternoon: repaired maps + score-free submission files (submissions/day7, NOT submitted; user decides)
+Maps: T2 map_clean16 = clean + roof layer removed (1-2.6 m above a lower-envelope road plane, path -1.5..+4 m),
+start band cleared (s < 70 m, -1.5..+3.8 m: big vehicle left, car ahead, scan streaks), start hole filled by Laplace
+interpolation from the real road around it (seam step 8 cm -> < 1.6 cm), intensity 86400 sentinels clipped to 255.
+T1 map_clean15 = clean8 + roof layer (T1 start pit = below-ground noise, already gone in clean8; mk1_D was built from
+clean6 which still has it). Score-free pipeline: work/mb/algo_run.sh (vertical calibration, no yaw/xy bias, no time
+shift, no blend). Reference-only estimates (work/mb/est_score.py, quadratic identity, out-of-span part assumed 0):
+ T2 t2_algo_c16 0.293 (pos 0.223 / 96 % in span, yaw 0.349 deg / 14 %): start 0.48 m behind the board start.
+ T2 t2_algo_c16sh55 0.254 (pos 0.183 / 86 %, yaw 0.355 / 13 %): start plate +0.55 m forward, chosen by the start match
+    peak (0.350 -> 0.359; 0.40: 0.355, 0.70: 0.356). Start now +0.11 vs board. BUT 450-700 peak drops 0.3948 -> 0.390:
+    the shift should end earlier (next: shorter plate, chosen per segment by peak).
+ T2 t2_algo_c16sh55_bestyaw 0.231 (same positions, yaw of the 0.17429 best -> yaw exact 0.241 deg): closest to 0.17.
+ Old probe constants (yaw_bias 0.22, xy_bias, time_shift) now HURT (boardconst variants 0.312 / 0.358).
+ T1 t1_algo_c15 0.544 / nopole 0.534: new start fixes are better at fix level (peak 0.296 -> 0.374, closer to the
+    board start) but the fused start goes +0.36..0.42 forward (looser Huber makes it worse: forward outliers among the
+    start fixes) - open issue; the old clean6 fixes give the board start.
