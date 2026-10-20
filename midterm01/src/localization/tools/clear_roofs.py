@@ -16,6 +16,9 @@ import os
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
+from scipy.ndimage import binary_dilation, map_coordinates
+from scipy.sparse.linalg import spsolve
 from scipy.spatial import cKDTree
 
 ap = argparse.ArgumentParser()
@@ -29,8 +32,8 @@ ap.add_argument('--road_half', type=float, default=5.0)
 ap.add_argument('--l_left', type=float, default=None, help='clear up to this far left of the path (default road_half)')
 ap.add_argument('--l_right', type=float, default=None, help='clear up to this far right of the path (default road_half)')
 ap.add_argument('--fill_to', type=float, default=0.0,
-                help='>0: for s < fill_to the road plane is the one fitted on --trust (the correct road after the start), '
-                     'extended back to the start, and 0.1 m cells there without a ground point get a synthetic ground point')
+                help='>0: for s < fill_to the reference road is the plane fitted on --trust (used to classify ground / '
+                     'objects); the hole without real ground is filled by Laplace interpolation from the real road around it')
 ap.add_argument('--trust', default='8:30')
 ap.add_argument('--fill_left', type=float, default=6.0)
 ap.add_argument('--start_clear', type=float, default=0.0,
@@ -154,21 +157,75 @@ nbad = int((outI > a.clip_intensity).sum())
 outI = np.minimum(outI, a.clip_intensity).astype(outI.dtype)
 print(f'clipped {nbad} intensities above {a.clip_intensity:.0f}')
 if a.fill_to > 0:
-    gnd = (np.abs(zp - zref) < 0.15) & (sp < a.fill_to + 1)
+    # Ground for the start hole, continuous with the real road around it: per 0.2 m cell the median of the kept points
+    # within +-0.15 m of the reference road ("known" with >= 3 points); the hole cells solve the Laplace equation
+    # (membrane: each = mean of its 4 neighbours, Neumann at the grid edge), so the surface meets every real boundary
+    # cell exactly and is smooth inside - no plane, no global offset. Synthetic points copy the real road next to the
+    # hole: points per 0.1 m cell, height residuals about the cell median and asphalt intensities (resampled).
+    R = 0.2
+    S0g, S1g = -a.back - 1.0, a.fill_to + 3.0
+    L0g, L1g = -a.fill_right - 1.5, a.fill_left + 1.5
+    gnd = ~drop[idx] & (np.abs(zp - zref) < 0.15) & (sp >= S0g) & (sp < S1g) & (lp >= L0g) & (lp < L1g)
+    nsg, nlg = int(np.ceil((S1g - S0g) / R)), int(np.ceil((L1g - L0g) / R))
+    gk = ((sp[gnd] - S0g) / R).astype(int) * nlg + ((lp[gnd] - L0g) / R).astype(int)
+    o = np.lexsort((zp[gnd], gk))
+    gk_s, zg_s = gk[o], zp[gnd][o]
+    ig_s = np.minimum(np.asarray(I)[idx[gnd]], a.clip_intensity)[o]
+    uk, first, cnt = np.unique(gk_s, return_index=True, return_counts=True)
+    Z = np.full(nsg * nlg, np.nan)
+    C = np.zeros(nsg * nlg, int)
+    Z[uk] = zg_s[first + (cnt - 1) // 2]
+    C[uk] = cnt
+    known = C >= 3
+    unk = np.flatnonzero(~known)
+    pos = -np.ones(nsg * nlg, int)
+    pos[unk] = np.arange(len(unk))
+    ui, uj = unk // nlg, unk % nlg
+    eps = 1e-4                                   # tiny pull to the start plane: pockets without any boundary stay defined
+    diag = np.full(len(unk), eps)
+    rhs = eps * (cst[0] + cst[1] * (S0g + (ui + 0.5) * R) + cst[2] * (L0g + (uj + 0.5) * R))
+    rows, cols = [np.arange(len(unk))], [np.arange(len(unk))]
+    vals = []
+    for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        ni, nj = ui + di, uj + dj
+        ok = (ni >= 0) & (ni < nsg) & (nj >= 0) & (nj < nlg)
+        diag[ok] += 1
+        r_ok = np.flatnonzero(ok)
+        nk = ni[ok] * nlg + nj[ok]
+        kn = known[nk]
+        np.add.at(rhs, r_ok[kn], Z[nk[kn]])
+        rows.append(r_ok[~kn])
+        cols.append(pos[nk[~kn]])
+        vals.append(-np.ones((~kn).sum()))
+    A = sparse.csr_matrix((np.concatenate([diag] + vals), (np.concatenate(rows), np.concatenate(cols))), shape=(len(unk), len(unk)))
+    Z[unk] = spsolve(A, rhs)
+    Zg = Z.reshape(nsg, nlg)
+    # the real road next to the hole (known cells within 1 m of an unknown one): density, residuals, intensities
+    Kg = known.reshape(nsg, nlg)
+    ring = (Kg & binary_dilation(~Kg, iterations=5)).ravel()
+    in_ring = ring[gk_s]
+    resid = np.clip(zg_s[in_ring] - Z[gk_s[in_ring]], -0.1, 0.1)
+    inten = ig_s[in_ring]
+    inten = inten[inten <= np.percentile(inten, 85)]          # asphalt, not paint
+    per01 = max(1, int(round(np.median(C[ring]) / 4)))         # points per 0.1 m cell
     occ = set(zip(np.floor(sp[gnd] / 0.1).astype(int).tolist(), np.floor(lp[gnd] / 0.1).astype(int).tolist()))
-    asphalt = float(np.median(np.minimum(np.asarray(I)[idx[gnd & (sp > 0)]], a.clip_intensity))) if (gnd & (sp > 0)).any() else 0.0
     S, L = np.meshgrid(np.arange(-a.back, a.fill_to, 0.1) + 0.05, np.arange(-a.fill_right, a.fill_left, 0.1) + 0.05, indexing='ij')
     S, L = S.ravel(), L.ravel()
-    new = np.array([(int(np.floor(u_ / 0.1)), int(np.floor(v_ / 0.1))) not in occ for u_, v_ in zip(S, L)])
-    S, L = S[new], L[new]
+    cell_known = Kg[np.clip(((S - S0g) / R).astype(int), 0, nsg - 1), np.clip(((L - L0g) / R).astype(int), 0, nlg - 1)]
+    new = ~cell_known & np.array([(int(np.floor(u_ / 0.1)), int(np.floor(v_ / 0.1))) not in occ for u_, v_ in zip(S, L)])
+    rng = np.random.default_rng(0)
+    S = np.repeat(S[new], per01) + rng.uniform(-0.05, 0.05, new.sum() * per01)
+    L = np.repeat(L[new], per01) + rng.uniform(-0.05, 0.05, new.sum() * per01)
     k = np.clip(np.searchsorted(qs, S), 0, len(qs) - 1)
     fx = px[k] + gx[k] * (S - qs[k]) - gy[k] * L
     fy = py[k] + gy[k] * (S - qs[k]) + gx[k] * L
-    fz = cst[0] + cst[1] * S + cst[2] * L
+    fz = map_coordinates(Zg, [(S - S0g) / R - 0.5, (L - L0g) / R - 0.5], order=1, mode='nearest') + rng.choice(resid, len(S))
     outP = np.concatenate([outP, np.stack([fx, fy, fz], 1).astype(outP.dtype)])
-    outI = np.concatenate([outI, np.full(len(S), asphalt, outI.dtype)])
+    outI = np.concatenate([outI, rng.choice(inten, len(S)).astype(outI.dtype)])
     np.save(os.path.join(a.track_dir, f'filled_{a.tag_out}.npy'), np.stack([fx, fy, fz], 1))
-    print(f'filled {len(S)} synthetic ground points (asphalt intensity {asphalt:.0f}) for s < {a.fill_to} m, l -{a.fill_right}..+{a.fill_left} m')
+    print(f'start hole: {(~known).sum()} of {known.size} 0.2 m cells solved (Laplace) from {known.sum()} real road cells; '
+          f'{len(S)} synthetic points ({per01} per 0.1 m cell, residual sd {resid.std():.3f} m, intensity median {np.median(inten):.0f}) '
+          f'for s < {a.fill_to} m, l -{a.fill_right}..+{a.fill_left} m')
 np.save(os.path.join(a.track_dir, f'map_{a.tag_out}.npy'), outP)
 np.save(os.path.join(a.track_dir, f'map_intensity_{a.tag_out}.npy'), outI)
 print('saved', f'map_{a.tag_out}.npy')
