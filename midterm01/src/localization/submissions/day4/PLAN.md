@@ -385,3 +385,12 @@ The big lever was the T1 START (frames 0-300, GNSS-based, map warped):
   (the poles' +0.82 m suggestion was wrong); t1_opt9_endlat 0.42639 (optimum incl. the start, pred 0.42409, + end
   >= 2880 lateral -0.5 m: optimum ~0.22 m right); t1_opt10 0.41668 (exact optimum over 11 directions, pred 0.41666).
 T2: t2_opt9_yopt2 0.20636 (opt9 + exact yaw optimum 5.54x along course(opt9)-course(blend), pred 0.20648).
+T1 start, algorithmic check (user: the start has known problems, fixed properly yet?): relative to the GNSS start,
+the board-derived correction is forward -0.47 / lateral 0; lane BEV fixes with the VERTICAL calibration say forward
+-0.41 (0-110 -0.45, 110-220 -0.21, 220-330 -0.35), lateral -0.08; old-calibration fixes only -0.10 (0-110 -0.42);
+image-space forward -0.49 but lateral noisy; poles inconsistent. The fusion with vertical-calibration fixes and no
+poles (work/_vert_np.csv) moves the start forward -0.51 / -0.43 / -0.18 (board -0.47), lateral -0.20 / -0.11 / -0.20
+(board ~0; the morning lateral probe wanted +0.16 along its profile). The new calibration's lane fixes recover the
+start's forward error by themselves (the old camera start failed: old calibration + map-following yaw).
+Candidate submissions/day6/track1/t1_opt10_algostart.csv (opt10 with the fusion start; vs opt10 start fwd rms 0.18,
+lat rms 0.18 / mean -0.16). Not submitted.
