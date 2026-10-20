@@ -394,3 +394,5 @@ poles (work/_vert_np.csv) moves the start forward -0.51 / -0.43 / -0.18 (board -
 start's forward error by themselves (the old camera start failed: old calibration + map-following yaw).
 Candidate submissions/day6/track1/t1_opt10_algostart.csv (opt10 with the fusion start; vs opt10 start fwd rms 0.18,
 lat rms 0.18 / mean -0.16). Not submitted.
+
+t1_opt10_algostart 0.41664 (opt10 0.41668): the algorithmic start (vertical-calibration lane fixes, GNSS yaw) equals the board-derived start -> the start is fixed by the algorithm. Optimal mix of the two starts (~0.5) predicted ~0.4136: submissions/day6/track1/t1_startmix.csv (not submitted).
