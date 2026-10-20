@@ -31,6 +31,7 @@ ap.add_argument('--tag', default='')
 ap.add_argument('--res', type=float, default=0.08, help='m per pixel')
 ap.add_argument('--size', type=int, default=600, help='panel size (three panels side by side)')
 ap.add_argument('--cam_h', type=float, default=1.70)
+ap.add_argument('--yaw_mount', type=float, default=-1.5, help='front camera yaw relative to the vehicle (deg), as in the pipeline')
 ap.add_argument('--fps', type=float, default=10.0)
 ap.add_argument('--alpha', type=float, default=0.55, help='camera cloud opacity')
 ap.add_argument('--follow', choices=['a', 'b'], default='a', help='trajectory the view and the camera cloud follow')
@@ -120,7 +121,9 @@ def view(fr, F):
             pa, pb, pc = np.linalg.lstsq(np.c_[gg[:, 0], gg[:, 1], np.ones(len(gg))], gg[:, 2], rcond=None)[0]
             sc = a.cam_h / max(-pc, 0.5)
             m = (r > 1.5) & (r < 40 / sc)
-            qu, qv = to_px(Q[m, 0] * sc, Q[m, 1] * sc)
+            cm_, sm_ = np.cos(np.radians(a.yaw_mount)), np.sin(np.radians(a.yaw_mount))
+            qx, qy = Q[m, 0] * sc, Q[m, 1] * sc
+            qu, qv = to_px(cm_ * qx - sm_ * qy, sm_ * qx + cm_ * qy)      # camera mount yaw -> vehicle frame
             okc = (qu >= 1) & (qu < S - 1) & (qv >= 1) & (qv < S - 1)
             qu, qv, cc = qu[okc], qv[okc], rgb[m][okc]
             hq = ((Q[m, 2] - (pa * Q[m, 0] + pb * Q[m, 1] + pc)) * sc)[okc]

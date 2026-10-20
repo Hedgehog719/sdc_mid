@@ -459,3 +459,10 @@ Evening 2 (user: "find a method"): diagnosis of (pipeline - 0.17) -> physical ca
    consistent; ref. estimates unchanged -> the remaining gap is slow segment-level offsets).
  Files: submissions/day7/track{1,2}/t*_pipe_v5.csv (score-free). Video tool tools/render_topdown.py (map | camera
  cloud on the ground | overlay; both trajectories; --follow a|b) -> work/video, viewer /viewer/<Track>_td_pipe|td_017.
+Camera clouds as an IMU-gated comparator (tools/cam_cloud_fix.py, user idea): cloud k accepted only if its rotation
+relative to clouds k+-3 (2D ICP of raised structure) matches the IMU yaw change (< 0.6 deg) and its scale is stable
+(< 6 %): 331 / 1098 T2 clouds pass. Their position fixes (trajectory yaw + camera mount, (fwd, lat) grid vs map
+structure) vs forward-sharp lane fixes: forward bias -0.44, robust sd 0.53 m (T2 poles 0.21) -> not used in the fusion.
+The yaw "jumps" the user saw (T2 1839, 2715, 2835, 2967) are the clouds' own predicted frames rotating (+-2.7 deg vs
+IMU); at 3292-3296 the 0.17 file's yaw bends -0.3 deg (pipeline follows the IMU). Camera yaw mount -1.5 deg confirmed
+(median best cloud yaw offset -1.75 deg over 19 frames) and now applied in render_topdown.
