@@ -391,12 +391,27 @@ class H(BaseHTTPRequestHandler):
                 return self._send(404, 'not found')
             ctype = 'application/json' if f.endswith('.json') else 'image/jpeg'
             return self._send(200, open(f, 'rb').read(), ctype)
-        m = re.fullmatch(r'/pcd/([A-Za-z0-9_.-]+\.(?:ply|json))', p)   # map slices for CloudCompare (pcd_slice.py)
+        m = re.fullmatch(r'/pcd/([A-Za-z0-9_.-]+\.(?:ply|json|zip))', p)   # map slices for CloudCompare (pcd_slice.py)
         if m:
             f = os.path.join(VIEWER_DIR, 'pcd', m.group(1))
             if not os.path.exists(f):
                 return self._send(404, 'not found')
-            return self._send(200, open(f, 'rb').read(), 'application/octet-stream')
+            b = open(f, 'rb').read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Disposition', f'attachment; filename="{m.group(1)}"')
+            self.send_header('Content-Length', str(len(b)))
+            self.end_headers()
+            try:
+                self.wfile.write(b)
+            except BrokenPipeError:
+                pass
+            return
+        if p in ('/pcd', '/pcd/'):
+            d = os.path.join(VIEWER_DIR, 'pcd')
+            rows = ''.join(f'<li><a href="/pcd/{n}" download>{n}</a> ({os.path.getsize(os.path.join(d, n)) / 1e6:.1f} MB)</li>'
+                           for n in sorted(os.listdir(d)) if n.endswith(('.ply', '.json', '.zip')))
+            return self._send(200, f'<h3>map slices (pcd_slice.py)</h3><ul>{rows}</ul>')
         m = re.fullmatch(r'/(Track[12])\.html', p)
         if m:
             t = m.group(1)
