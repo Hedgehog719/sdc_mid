@@ -357,3 +357,12 @@ does not matter: the optimum may flip it). T1: #1 t1_opt6_vertc.csv; #2 = board_
 change (t1_v2_start_lat - t1_v2); #3 = optimum. T2: #1 t2_opt7_imgc.csv (image shape: new part 0.071 m rms, 75 % in
 span); #2 = optimum (+#1) + vertical shape (t2_vert_blend_c - t2_blend); #3 = optimum.
 T1 image-space fixes (t1_imgws_v2_c: fwd 0.141 / lat 0.138 m rms after centring, 382 fixes) kept as a spare.
+
+## 10/20 08:00 window results (3 per track used by 08:05; no more today)
+T1: #1 t1_opt6_vertc 0.46775 (opt6 pred 0.47089 + vertical-calibration shape: helped), #2 t1_opt7_startlat 0.55138
+(opt7 pred 0.46668 + lateral start: WRONG, the GNSS start is right laterally), #3 t1_opt8 0.46303 (exact optimum over
+8 directions, pred 0.46292 -> K_T1 ~0.143 confirmed to ~1e-4). NEW BEST.
+T2: #1 t2_opt7_imgc 0.23151 (image-space shape: hurt), #2 t2_opt8_vertc 0.22698 (opt8 pred 0.21395 + vertical shape:
+hurt), #3 t2_opt9 0.21174 (exact optimum over 10 directions, pred 0.21190). NEW BEST.
+Lessons: the vertical-only calibration shape helps T1 (where the map fixes dominate) but hurts T2 alone; inside the
+optimum both contribute. Measured "bad" directions still improve the optimum (sign flips / partial weights).
