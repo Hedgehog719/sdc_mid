@@ -391,6 +391,12 @@ class H(BaseHTTPRequestHandler):
                 return self._send(404, 'not found')
             ctype = 'application/json' if f.endswith('.json') else 'image/jpeg'
             return self._send(200, open(f, 'rb').read(), ctype)
+        m = re.fullmatch(r'/pcd/([A-Za-z0-9_.-]+\.(?:ply|json))', p)   # map slices for CloudCompare (pcd_slice.py)
+        if m:
+            f = os.path.join(VIEWER_DIR, 'pcd', m.group(1))
+            if not os.path.exists(f):
+                return self._send(404, 'not found')
+            return self._send(200, open(f, 'rb').read(), 'application/octet-stream')
         m = re.fullmatch(r'/(Track[12])\.html', p)
         if m:
             t = m.group(1)
