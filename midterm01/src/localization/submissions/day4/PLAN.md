@@ -507,3 +507,7 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
    the earlier ~8 cm near-vs-lane forward disagreement was a camera height / pitch error.
  - T1 GNSS-free pipeline 0.44 (GNSS helps forward); lateral-only GNSS inflation, 20 m near range, near-anchored
    forward calibration: changes within +-0.005 (not submitted).
+ - v9 calibration (front height / pitch) makes T2 worse by both the local metric and the estimate -> v8 kept.
+   T1 t1_pipe_v8 0.43; T2 t2_pipe_v8F 0.21 (near forward trusted more; estimate 0.2204 vs v8 0.2168, near metric +).
+ - Open conflict: near-range image alignment wants T2 500-900 ~+0.2 m forward (stop lines / crosswalks), the
+   probe-based estimate wants the opposite; near forward depends on camera height / pitch (v8 vs v9 differ ~9 cm).
