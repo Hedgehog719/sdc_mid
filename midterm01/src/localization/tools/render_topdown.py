@@ -20,6 +20,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
 from common import TiledMap  # noqa: E402
+from bev import ImageBEV  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument('track_dir')
@@ -33,6 +34,7 @@ ap.add_argument('--size', type=int, default=600, help='panel size (three panels 
 ap.add_argument('--cam_h', type=float, default=1.70)
 ap.add_argument('--yaw_mount', type=float, default=-1.5, help='front camera yaw relative to the vehicle (deg), as in the pipeline')
 ap.add_argument('--scale_win', type=int, default=30, help='+-frames median of the ground-based cloud scale (0 = per frame)')
+ap.add_argument('--no_ego_mask', action='store_true', help='keep cloud points on the ego vehicle (hood / body / mirrors)')
 ap.add_argument('--fps', type=float, default=10.0)
 ap.add_argument('--alpha', type=float, default=0.55, help='camera cloud opacity')
 ap.add_argument('--follow', choices=['a', 'b'], default='a', help='trajectory the view and the camera cloud follow')
@@ -51,6 +53,31 @@ I = np.load(os.path.join(a.track_dir, f'map_intensity{sfx}.npy'), mmap_mode='r')
 M.inten = np.minimum(np.asarray(I)[M.order], 255).astype(np.float32)
 del M.order
 idx = pd.read_csv(os.path.join(a.track_dir, '3cameras_ply', 'index.csv'))
+EGO = None if a.no_ego_mask else ImageBEV(a.track_dir, 1.5, 0, 0, a.yaw_mount)
+
+
+def ego_points(Qc, fr):
+    """Cloud points (camera FLU, metric) that fall on the ego vehicle in the camera that saw them (by azimuth):
+    the matcher's ego / hood masks, projected with the calibrated camera model."""
+    drop = np.zeros(len(Qc), bool)
+    az = np.degrees(np.arctan2(Qc[:, 1], Qc[:, 0]))
+    for cam, sel in (('f', np.abs(az) <= 35), ('fl', (az > 35) & (az < 150)), ('fr', (az < -35) & (az > -150))):
+        k = np.flatnonzero(sel)
+        if not len(k):
+            continue
+        K, D, Tm, w, h = EGO.C.cams[cam]
+        uv, ok = EGO.C.project(cam, Qc[k])
+        bad = EGO.ego_bad(cam, (h, w)).copy()
+        if cam in EGO.masks and fr < len(EGO.masks[cam]):
+            m = np.unpackbits(EGO.masks[cam][fr], axis=1)[:, :w // 2]
+            bad |= cv2.resize(m, (w, h), interpolation=cv2.INTER_NEAREST)
+        bad = cv2.dilate(bad, np.ones((15, 15), np.uint8))
+        u, v = uv[:, 0].astype(int), uv[:, 1].astype(int)
+        inside = ok & (u >= 0) & (u < w) & (v >= 0) & (v < h)
+        hit = np.zeros(len(k), bool)
+        hit[inside] = bad[v[inside], u[inside]] > 0
+        drop[k[hit]] = True
+    return drop
 S, R = a.size, a.res
 row0 = int(S * 0.62)                       # vehicle row (more view ahead)
 
@@ -143,6 +170,8 @@ def view(fr, F):
             pa, pb, pc = np.linalg.lstsq(np.c_[gg[:, 0], gg[:, 1], np.ones(len(gg))], gg[:, 2], rcond=None)[0]
             sc = SMOOTH.get(fr, a.cam_h / max(-pc, 0.5))
             m = (r > 1.5) & (r < 40 / sc)
+            if EGO is not None:                      # hood / body / mirror pixels reconstructed as 'ground'
+                m &= ~ego_points(Q * sc, fr)
             cm_, sm_ = np.cos(np.radians(a.yaw_mount)), np.sin(np.radians(a.yaw_mount))
             qx, qy = Q[m, 0] * sc, Q[m, 1] * sc
             qu, qv = to_px(cm_ * qx - sm_ * qy, sm_ * qx + cm_ * qy)      # camera mount yaw -> vehicle frame
@@ -155,7 +184,11 @@ def view(fr, F):
             lum = cc.astype(np.float32).mean(1)
             # markings = ground points clearly brighter than the ground around them (median of their 1.5 m cell)
             gp = hq < 0.3
-            cell = (qu // int(1.5 / R)).astype(np.int64) * 10000 + (qv // int(1.5 / R)).astype(np.int64)
+            # compare only with points of the same camera (azimuth sector): the three cameras expose differently,
+            # so mixing them makes whole blocks along the camera seams look 'brighter than the surroundings'
+            azm = np.degrees(np.arctan2(Q[m, 1], Q[m, 0]))[okc]
+            sector = np.where(np.abs(azm) <= 35, 0, np.where(azm > 0, 1, 2))
+            cell = ((qu // int(1.5 / R)).astype(np.int64) * 10000 + (qv // int(1.5 / R)).astype(np.int64)) * 3 + sector
             mk = np.zeros(len(lum), bool)
             if gp.sum() > 50:
                 cg, lg = cell[gp], lum[gp]
