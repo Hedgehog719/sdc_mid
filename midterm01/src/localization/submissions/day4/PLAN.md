@@ -396,3 +396,9 @@ Candidate submissions/day6/track1/t1_opt10_algostart.csv (opt10 with the fusion 
 lat rms 0.18 / mean -0.16). Not submitted.
 
 t1_opt10_algostart 0.41664 (opt10 0.41668): the algorithmic start (vertical-calibration lane fixes, GNSS yaw) equals the board-derived start -> the start is fixed by the algorithm. Optimal mix of the two starts (~0.5) predicted ~0.4136: submissions/day6/track1/t1_startmix.csv (not submitted).
+T1 t1_opt11 0.41123 (exact optimum incl. the algorithmic start, pred 0.41119). NEW BEST.
+T2 start (frames 0-330, GNSS, map 0-102 m warped): the best follows raw GNSS (+0.03 / +0.05). New-calibration lane
+fixes say forward -0.32..-0.39 (both calibrations, stationary and moving parts - like T1's -0.41 vs board -0.47),
+lateral -0.60 while stationary (84 correlated fixes: possible map artifact) but -0.17 moving. Fusion with start
+fixes (work/_t2start_gm.csv): forward -0.36 / -0.37, lateral -0.66 / -0.27. Candidates: t2_best_algostart.csv
+(full, start change rms 0.69 m), t2_best_algostart_fwd.csv (forward only, 0.37 m). Plan: A, B, then the exact optimum.
