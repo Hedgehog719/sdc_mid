@@ -26,8 +26,16 @@ ap.add_argument('--tag_out', required=True)
 ap.add_argument('--win', type=float, default=12.0, help='m of path per plane')
 ap.add_argument('--fit_half', type=float, default=8.0)
 ap.add_argument('--road_half', type=float, default=5.0)
+ap.add_argument('--l_left', type=float, default=None, help='clear up to this far left of the path (default road_half)')
+ap.add_argument('--l_right', type=float, default=None, help='clear up to this far right of the path (default road_half)')
+ap.add_argument('--fill_to', type=float, default=0.0,
+                help='>0: for s < fill_to the road plane is the one fitted on --trust (the correct road after the start), '
+                     'extended back to the start, and 0.1 m cells there without a ground point get a synthetic ground point')
+ap.add_argument('--trust', default='8:30')
+ap.add_argument('--fill_left', type=float, default=6.0)
+ap.add_argument('--fill_right', type=float, default=6.0)
 ap.add_argument('--clear_h', type=float, default=1.0)
-ap.add_argument('--max_h', type=float, default=4.0, help='keep points higher than road + max_h (signs, bridges, tree crowns)')
+ap.add_argument('--max_h', type=float, default=2.6, help='keep points higher than road + max_h (signs, bridges, tree crowns)')
 ap.add_argument('--env', type=float, default=0.25)
 ap.add_argument('--back', type=float, default=30.0, help='m before the start along the initial heading')
 a = ap.parse_args()
@@ -91,7 +99,21 @@ wid = np.clip(np.floor((sp + a.back) / a.win).astype(int), 0, nw - 1)
 sm = (wid + 0.5) * a.win - a.back
 pl = planes[wid]
 zref = pl[:, 0] + pl[:, 1] * (sp - sm) + pl[:, 2] * lp
-above = np.isfinite(zref) & (np.abs(lp) < a.road_half) & (zp > zref + a.clear_h) & (zp < zref + a.max_h)
+lL = a.road_half if a.l_left is None else a.l_left
+lR = a.road_half if a.l_right is None else a.l_right
+if a.fill_to > 0:   # start: road plane of the trusted road after the start, extended backwards
+    t0, t1 = (float(v) for v in a.trust.split(':'))
+    m = ok_c & (gs >= t0) & (gs <= t1)
+    A = np.stack([np.ones(m.sum()), gs[m], gl[m]], 1)
+    z = gz[m]
+    keep = np.ones(len(z), bool)
+    for _ in range(6):
+        cst = np.linalg.lstsq(A[keep], z[keep], rcond=None)[0]
+        keep = (z - A @ cst) < a.env
+    print(f'start road plane (s {a.trust}): z = {cst[0]:.3f} + {cst[1] * 100:.3f} % s + {cst[2] * 100:.3f} % l')
+    st = sp < a.fill_to
+    zref[st] = cst[0] + cst[1] * sp[st] + cst[2] * lp[st]
+above = np.isfinite(zref) & (lp < lL) & (lp > -lR) & (zp > zref + a.clear_h) & (zp < zref + a.max_h)
 drop = np.zeros(len(P), bool)
 drop[idx[above]] = True
 print(f'cleared {above.sum()} points ({above.sum() / len(P) * 100:.3f} %) road + {a.clear_h}..{a.max_h} m within {a.road_half} m of the path')
@@ -109,8 +131,25 @@ fr_of = lambda s: int(np.searchsorted(s_cum, max(s, 0)))  # noqa: E731
 for s0, s1, n in seg:
     print(f'   s {s0:7.0f}..{s1:7.0f} m (frames {fr_of(s0)}-{fr_of(s1)}): {n} points')
 np.save(os.path.join(a.track_dir, f'removed_{a.tag_out}_idx.npy'), np.flatnonzero(drop))   # indices into map_<tag_in>
-np.save(os.path.join(a.track_dir, f'map_{a.tag_out}.npy'), np.asarray(P)[~drop])
-np.save(os.path.join(a.track_dir, f'map_intensity_{a.tag_out}.npy'), np.asarray(I)[~drop])
+outP, outI = np.asarray(P)[~drop], np.asarray(I)[~drop]
+if a.fill_to > 0:
+    gnd = (np.abs(zp - zref) < 0.15) & (sp < a.fill_to + 1)
+    occ = set(zip(np.floor(sp[gnd] / 0.1).astype(int).tolist(), np.floor(lp[gnd] / 0.1).astype(int).tolist()))
+    asphalt = float(np.median(np.asarray(I)[idx[gnd & (sp > 0)]])) if (gnd & (sp > 0)).any() else 0.0
+    S, L = np.meshgrid(np.arange(-a.back, a.fill_to, 0.1) + 0.05, np.arange(-a.fill_right, a.fill_left, 0.1) + 0.05, indexing='ij')
+    S, L = S.ravel(), L.ravel()
+    new = np.array([(int(np.floor(u_ / 0.1)), int(np.floor(v_ / 0.1))) not in occ for u_, v_ in zip(S, L)])
+    S, L = S[new], L[new]
+    k = np.clip(np.searchsorted(qs, S), 0, len(qs) - 1)
+    fx = px[k] + gx[k] * (S - qs[k]) - gy[k] * L
+    fy = py[k] + gy[k] * (S - qs[k]) + gx[k] * L
+    fz = cst[0] + cst[1] * S + cst[2] * L
+    outP = np.concatenate([outP, np.stack([fx, fy, fz], 1).astype(outP.dtype)])
+    outI = np.concatenate([outI, np.full(len(S), asphalt, outI.dtype)])
+    np.save(os.path.join(a.track_dir, f'filled_{a.tag_out}.npy'), np.stack([fx, fy, fz], 1))
+    print(f'filled {len(S)} synthetic ground points (asphalt intensity {asphalt:.0f}) for s < {a.fill_to} m, l -{a.fill_right}..+{a.fill_left} m')
+np.save(os.path.join(a.track_dir, f'map_{a.tag_out}.npy'), outP)
+np.save(os.path.join(a.track_dir, f'map_intensity_{a.tag_out}.npy'), outI)
 print('saved', f'map_{a.tag_out}.npy')
 if os.environ.get('ROOF_STATS'):
     lh = np.histogram(lp[above], bins=np.arange(-5, 5.01, 1))[0]
