@@ -120,6 +120,8 @@ def main():
     p.add_argument('--yaw_rts_bev', type=float, default=0.0, help='>0: also use BEV yaw fixes with this sigma (deg)')
     p.add_argument('--imu_acc', action='store_true', help='IMU acceleration (gravity removed) as a known input of the '
                    'along-track speed in the RTS; set --rts_qacc to the IMU error level (e.g. 0.2)')
+    p.add_argument('--bev_fwd_skip', default='', help='lo:hi frames whose BEV fixes constrain lateral only (stationary start: '
+                   'the accumulated BEV degenerates, near-range fixes give forward)')
     p.add_argument('--bev_yaw_skip', default='', help='lo:hi frames whose BEV fixes are used for position only, not yaw '
                    '(map section with an unreliable orientation, e.g. a rotated start plate)')
     p.add_argument('--pole', default='', help='pole_match.py npz: pole-landmark fixes (along-track constraint)')
@@ -227,6 +229,10 @@ def main():
                 sf = np.clip(a.bev_aniso_k / np.maximum(b['sharp_f'][m], 1e-3), a.bev_aniso_min, a.bev_fwd_sigma)
                 if a.bev_aniso_lat:
                     sl = np.clip(a.bev_aniso_k / np.maximum(b['sharp_l'][m], 1e-3), a.bev_aniso_min, 3 * a.bev_lat_sigma)
+            if a.bev_fwd_skip:
+                lo_, hi_ = (int(v) for v in a.bev_fwd_skip.split(':'))
+                fi_ = np.searchsorted(ts, b['ts'][m])
+                sf = np.where((fi_ >= lo_) & (fi_ < hi_), 50.0, sf)
             D = np.zeros((m.sum(), 2, 2))
             D[:, 0, 0], D[:, 1, 1] = sf ** 2, sl ** 2
             bc = Rr @ D @ Rr.transpose(0, 2, 1)
