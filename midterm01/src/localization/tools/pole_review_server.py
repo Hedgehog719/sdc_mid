@@ -423,6 +423,9 @@ class H(BaseHTTPRequestHandler):
             except BrokenPipeError:
                 pass
             return
+        if p in ('/results', '/results/'):   # results overview page (work/viewer/results.html)
+            f = os.path.join(VIEWER_DIR, 'results.html')
+            return self._send(200, open(f, encoding='utf-8').read() if os.path.exists(f) else 'no results page yet')
         if p in ('/video', '/video/'):
             d = os.path.join(VIEWER_DIR, '..', 'video')
             rows = ''.join(f'<li><a href="/video/{n}" download>{n}</a> ({os.path.getsize(os.path.join(d, n)) / 1e6:.0f} MB)</li>'

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Midterm01 結果總覽</title>
+<style>
+  :root { --bg: #fafafa; --fg: #1d1d1f; --muted: #6e6e73; --card: #ffffff; --line: #e3e3e6; --accent: #0a66c2; --good: #1a7f37; --warn: #b35900; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161618; --fg: #ececee; --muted: #a1a1a6; --card: #1f1f22; --line: #333338; --accent: #5aa2ff; --good: #4cc26a; --warn: #f0a050; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 -apple-system, "Segoe UI", "Noto Sans TC", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 24px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 28px 0 10px; }
+  .sub { color: var(--muted); margin-bottom: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 10px 0; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .good { color: var(--good); font-weight: 600; } .warn { color: var(--warn); font-weight: 600; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  ul { margin: 6px 0 6px 20px; padding: 0; } li { margin: 3px 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  code { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SDC Midterm01 結果總覽（純流程）</h1>
+  <div class="sub">2026-10-21 · 最終計分只能用核心定位流程直接產生的結果（助教規定），以下全部是純流程輸出，沒有使用任何 leaderboard 擬合的數字。</div>
+
+  <h2>排行榜（09:11 快照）</h2>
+  <div class="card">
+    <table>
+      <tr><th>Track</th><th>我們的純流程</th><th>其他隊伍最佳</th><th>我們的 board 擬合版（不能當最終）</th></tr>
+      <tr><td>Track1</td><td class="num good">0.43</td><td class="num">0.46（第 11 隊）</td><td class="num">0.41</td></tr>
+      <tr><td>Track2</td><td class="num warn">0.21</td><td class="num">0.19（第 11 隊）</td><td class="num">0.17</td></tr>
+    </table>
+  </div>
+
+  <h2>今晚的純流程提交（10/21 00:00–08:00）</h2>
+  <div class="card">
+    <table>
+      <tr><th>Track</th><th>檔案</th><th>分數</th><th>內容</th></tr>
+      <tr><td>T1</td><td><code>t1_pipe_v5n2</code></td><td class="num">0.46</td><td>加入近處 fix（車前 1–12 m 地面標線，雙向評分），從約 0.53 進步</td></tr>
+      <tr><td>T1</td><td><code>t1_pipe_v6bn2</code></td><td class="num good">0.43</td><td>車道比對改用路面投票清理過的標線地圖</td></tr>
+      <tr><td>T1</td><td><code>t1_pipe_v6bn2_nohold</code></td><td class="num">0.43</td><td>起步段不強制直線</td></tr>
+      <tr><td>T1</td><td><code>t1_pipe_nognss</code></td><td class="num">0.44</td><td>完全不用 GNSS（Track03 預演）</td></tr>
+      <tr><td>T1</td><td><code>t1_pipe_v8</code></td><td class="num">0.43</td><td>側面相機重新校正（右前 yaw −0.9°）</td></tr>
+      <tr><td>T1</td><td><code>t1_pipe_v8y</code></td><td class="num">0.43</td><td>v8 + 近處 yaw</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v5n</code></td><td class="num">0.21</td><td>加入近處 fix</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v5n2y</code></td><td class="num">0.21</td><td>近處 fix 雙向評分 + yaw</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v5n4y</code></td><td class="num">0.22</td><td>迭代近處 fix + 起步平移地圖（330–750 前後被推錯）</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v8</code></td><td class="num">0.21</td><td>側面相機重新校正</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v8F</code></td><td class="num">0.21</td><td>更相信近處 fix 的前後</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v8y</code></td><td class="num">0.21</td><td>v8 + 近處 yaw（參考估計最佳）</td></tr>
+    </table>
+  </div>
+
+  <h2>看結果</h2>
+  <div class="grid">
+    <div class="card"><b>流程實際看到的標線（v8y）</b><br>
+      洋紅 = 影像標線（流程用來比對的），綠 = LiDAR 標線地圖依 v8y 位姿投影。<br>
+      <a href="/viewer/Track2_paint_v8y">Track2</a> · <a href="/viewer/Track1_paint_v8y">Track1</a></div>
+    <div class="card"><b>並排比較（v8y 對 0.17／0.41）</b><br>
+      左：相機點雲放在 v8y 位姿；右：放在 0.17／0.41 位姿。<br>
+      <a href="/viewer/Track2_dual_v8y">Track2</a> · <a href="/viewer/Track1_dual_v8y">Track1</a> · <a href="/video/">下載 mp4</a></div>
+    <div class="card"><b>舊版對照</b><br>
+      v5 時期的標線檢查頁：<a href="/viewer/Track2_paint">Track2</a> · <a href="/viewer/Track1_paint">Track1</a></div>
+  </div>
+
+  <h2>這次修好的東西</h2>
+  <div class="card"><ul>
+    <li><b>標線地圖清理</b>：用路面分割模型投票，刪掉樹叢、草地、天空上的假標線（T2 刪 46%）。</li>
+    <li><b>近處 fix</b>：只比對車前 1–12 m 的地面標線；地圖標線位置有影像標線加分、空白路面出現影像標線扣分。T1 從約 0.53 → 0.46。</li>
+    <li><b>相機重新校正</b>：在近處修過的軌跡上，T1+T2 一起擬合；右前相機 yaw 偏了 0.9°（貼合度 +20–24%）。</li>
+    <li><b>融合</b>：IMU 加速度當已知輸入、fix 時間一致性檢查、起步板塊上的車道 fix 不定 yaw、GNSS 雜訊用 NIS 選。</li>
+  </ul></div>
+
+  <h2>還沒解決</h2>
+  <div class="card"><ul>
+    <li><b>T2 前後方向</b>：500–900 幀近處影像（停止線、斑馬線）說要往前約 0.2 m，參考估計說要往後；近處前後判斷依賴相機高度與俯仰，兩套校正差約 9 cm。</li>
+    <li><b>T2 被第 11 隊 0.19 超過</b>：接下來的重點。</li>
+    <li><b>Track03（不給 GNSS）</b>：T1 不用 GNSS 也有 0.44；T2 不用 GNSS 會在結尾因 IMU yaw 漂移而發散，要改用車道 fix 的 yaw 持續校正。</li>
+  </ul></div>
+</main>
+</body>
+</html>
