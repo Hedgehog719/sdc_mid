@@ -586,3 +586,4 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
    0.072 - the vote removes true markings the camera does not show clearly); window brute force on the voted D map
    still noise-dominated (rms 0.14-0.27 m). T2 more lateral freedom in the map bias / GNSS bias 0.1: no gain.
    T1: GNSS along-track inflation (fuse --gnss_fwd_sigma) no gain; tau / sigma / map-bias fine grid within 0.003.
+ - T1 t1_pipe_v14g01 (v14m with GNSS bias sigma 0.1): 0.42 (v14m sigma 0.15: 0.40) -> 0.15 kept.
