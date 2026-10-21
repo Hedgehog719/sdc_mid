@@ -48,8 +48,9 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     if nb:
         tau_b, sig_b, sig_w = gnss_bias
         gmask = np.zeros(len(tm), bool) if gnss_mask is None else np.asarray(gnss_mask, bool)
-    if nm:
-        len_m, sig_m = map_bias
+    if nm:   # (L, sigma) isotropic, or (L, sigma_along, sigma_cross): along / across the heading
+        len_m, sig_m = map_bias[0], map_bias[1]
+        sig_mc = map_bias[2] if len(map_bias) > 2 else sig_m
         mmask = np.zeros(len(tm), bool) if map_mask is None else np.asarray(map_mask, bool)
     xs = np.zeros((n, d))
     Ps = np.zeros((n, d, d))
@@ -62,6 +63,10 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     x = np.zeros(d)
     x[:3] = [z_meas[first[0], 0], z_meas[first[0], 1], v0]
     P = np.diag([1.0, 1.0, 4.0] + ([sig_b ** 2] * nb if nb else []) + ([sig_m ** 2] * nm if nm else []))
+    if nm:   # initial map-bias covariance oriented with the first heading
+        c0, s0_ = np.cos(psi_fn(np.array([times[0]]))[0]), np.sin(psi_fn(np.array([times[0]]))[0])
+        R0 = np.array([[c0, -s0_], [s0_, c0]])
+        P[jm:jm + 2, jm:jm + 2] = R0 @ np.diag([sig_m ** 2, sig_mc ** 2]) @ R0.T
     H = np.zeros((2, d))
     H[0, 0] = H[1, 1] = 1.0
     Hg = H.copy()
@@ -98,8 +103,8 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
         if nm:  # map bias: Gauss-Markov in travelled distance (speed from the current estimate)
             phm = np.exp(-abs(x[2]) * dt / len_m)
             F[jm, jm] = F[jm + 1, jm + 1] = phm
-            Q[jm, jm] += sig_m ** 2 * (1 - phm * phm) + 1e-12
-            Q[jm + 1, jm + 1] += sig_m ** 2 * (1 - phm * phm) + 1e-12
+            Rh_ = np.array([[c, -s], [s, c]])
+            Q[jm:jm + 2, jm:jm + 2] += Rh_ @ np.diag([sig_m ** 2, sig_mc ** 2]) @ Rh_.T * (1 - phm * phm) + np.eye(2) * 1e-12
         x = F @ x
         if acc_fn is not None and dt > 0:
             aw = acc_fn(np.array([(times[k] + t_prev) / 2]))[0]

@@ -559,3 +559,21 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
      estimate unchanged (forward mean flips sign, rms 0.086 -> 0.085). Per segment vs the 0.17 file: lane fixes rms
      0.070, near fixes 0.115, 50/50 blend 0.072 -> the lane fixes are the best forward source; improving them
      (marking map quality: aligned paint voting + blob thinning) is the next lever.
+ - 10/21 evening, goal "match the 0.17 approach within the rules" (reference used only as a diagnostic; global
+   parameters only, every output a pipeline product):
+   * window brute force of the forward offset (work/mb/fwd_brute.py / fwd_brute_eval.py: per-frame score curves per
+     camera / band, summed over 45-180 frame windows): estimates too noisy (rms 0.15-0.28 m, corr with the reference
+     difference 0.2-0.37) -> not usable with the current marking map.
+   * diagnostic: (0.17 - ours) forward correlates +0.63 with (GNSS-only - ours) (slope 0.34), not with lane / near /
+     pole fixes -> the fusion under-used GNSS in forward. Model fix (rts.py: anisotropic map-bias state, along-track
+     sigma / cross-track sigma; fuse --map_bias_sigma_lat): map fixes share a slowly varying along-track error, GNSS
+     corrects it. T2 grid (estimate, reference only): GNSS white 0.03 -> 0.08, bias sigma 0.14 -> 0.07 (tau 20 s),
+     map bias L 1000 m, sigma along 0.05 / cross 0.02, pole forward sigma 0.25: 0.2163 -> 0.2059.
+   * yaw smoother: base 2 s, lane heading sigma 2.0, near heading 0.3, q 0.05: -0.0004.
+   * lane-fix set choice under the new model: vert_bm_t2m (map clean, marks mk_S, cam_fix_vert) 0.2013 best single
+     set (v10g 0.2055); ensembles of sets (sqrt(k) inflation, fuse --bev_inflate) no better; >= 5 sets break the start.
+     near_yaw_skip 0:330 (start headings from the repaired plate not used): 0.2011; fine grid -> 0.2004 (L 1000).
+     Pole weights flat. T2 candidate model: work/gv/l0.02_f0.05_L1000.csv (estimate 0.2004).
+   * T1: no source family explains (0.41 - ours) (|corr| <= 0.5); lateral mean -0.09 vs the reference after 330
+     (near fixes set it; no independent evidence -> not corrected). Kerb removal / other lane sets: 0.5068 -> 0.504
+     (T1 estimate unreliable).

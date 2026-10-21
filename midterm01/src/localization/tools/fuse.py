@@ -93,6 +93,8 @@ def main():
     p.add_argument('--map_bias_len', type=float, default=0.0,
                    help='>0: common error of the map fixes as Gauss-Markov in distance, correlation length (m)')
     p.add_argument('--map_bias_sigma', type=float, default=0.15, help='map-error steady-state sigma (m) per axis')
+    p.add_argument('--map_bias_sigma_lat', type=float, default=-1.0, help='>=0: cross-track map-error sigma (m); '
+                   '--map_bias_sigma is then the along-track one (e.g. lane fixes: forward is the weak axis)')
     p.add_argument('--gnss_huber', type=float, default=0.0, help='>0: Huber threshold for the GNSS rows (bias model)')
     p.add_argument('--nis', action='store_true', help='print the filter consistency (NIS) per measurement group')
     p.add_argument('--gnss_lat_sigma', type=float, default=0.0, help='>0: extra lateral (cross-track) noise of the GNSS rows '
@@ -123,6 +125,10 @@ def main():
     p.add_argument('--yaw_selfcal', action='store_true', help='remove the median offset of each camera heading source '
                    '(lane / near fixes) from the course of the fused path on moving frames before the yaw smoother '
                    '(per-recording camera-rig heading, self-calibrated on the own trajectory)')
+    p.add_argument('--near_yaw_skip', default='', help='lo:hi frames whose near fixes give no heading (e.g. the start, '
+                   'where the map plate was repaired; the yaw then follows the IMU from the departure course)')
+    p.add_argument('--bev_inflate', type=float, default=1.0, help='multiply every lane-fix sigma (e.g. sqrt(k) when k '
+                   'correlated lane-fix sets from different maps / calibrations are fused together as an ensemble)')
     p.add_argument('--bev_fwd_skip', default='', help='lo:hi frames whose BEV fixes constrain lateral only (stationary start: '
                    'the accumulated BEV degenerates, near-range fixes give forward)')
     p.add_argument('--bev_yaw_skip', default='', help='lo:hi frames whose BEV fixes are used for position only, not yaw '
@@ -238,7 +244,7 @@ def main():
                 sf = np.where((fi_ >= lo_) & (fi_ < hi_), 50.0, sf)
             D = np.zeros((m.sum(), 2, 2))
             D[:, 0, 0], D[:, 1, 1] = sf ** 2, sl ** 2
-            bc = Rr @ D @ Rr.transpose(0, 2, 1)
+            bc = Rr @ D @ Rr.transpose(0, 2, 1) * a.bev_inflate ** 2
             if a.bev_peak_ref > 0:
                 sc = np.clip(a.bev_peak_ref / np.maximum(b['peak'][m], 1e-3), 0.5, 3.0)
                 bc = bc * (sc ** 2)[:, None, None]
@@ -312,7 +318,7 @@ def main():
             gmask[:len(s.gt)] = True
         mb, mmask = None, None
         if a.map_bias_len > 0:  # the map fixes (all rows after the GNSS ones) share the map's own error
-            mb = (a.map_bias_len, a.map_bias_sigma)
+            mb = (a.map_bias_len, a.map_bias_sigma) + ((a.map_bias_sigma_lat,) if a.map_bias_sigma_lat >= 0 else ())
             mmask = np.zeros(len(tm), bool)
             mmask[len(s.gt):] = True
         acc_fn = None
@@ -417,6 +423,9 @@ def main():
             nz_ = np.load(a.near)
             if 'sharp_y' in nz_:
                 ky = nz_['sharp_y'] > 0
+                if a.near_yaw_skip:
+                    lo_, hi_ = (int(v) for v in a.near_yaw_skip.split(':'))
+                    ky &= ~((nz_['idx'] >= lo_) & (nz_['idx'] < hi_))
                 nyaw = nz_['myaw'][ky]
                 if a.yaw_selfcal:
                     nyaw = nyaw - heading_offset(nz_['ts_i'][ky].astype(mt.dtype), nyaw, mt0, my0, 'near')
