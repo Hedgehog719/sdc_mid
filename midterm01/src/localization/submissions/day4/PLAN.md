@@ -532,3 +532,18 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
  Next: (2) start pose: T1 back 0.1-0.3 m by all cameras; T2 start forward +0.14 m by the estimate = the user's viewer
    observation (LiDAR points shifted back at the start); make the start maps of all fix sources consistent first.
    (3) LiDAR marking map voting on per-frame aligned projections (near range, well-aligned frames only) + blob thinning.
+ - 10/21 afternoon, T2 start (0-330), step 2:
+   * old near fixes had 5 fixes in 0-330 (unshifted start map); on the plate map (c16p20_10) 52, saying back 0.2-0.6 m.
+     The fused start forward was held by the lane fixes alone (stationary: the accumulated BEV degenerates).
+     fuse --bev_fwd_skip 0:330 (lane fixes lateral-only) -> v11f: start back 0.11 m, estimate 0.2152 (v10 0.2166).
+   * user (paint viewer on the plate map): on v11f the paint sits behind the LiDAR marks at the start = too far back.
+     Segment-level forward curves (work/mb/seg_fwd_curve.py, common offset per segment, 1-15 m, |lat| < 8 m) on v11f:
+     f +0.1..+0.2, fl -0.15, fr -0.55..-0.60 = the edge of the +-0.6 search: fr has no usable markings at the start
+     (only the kerb line; user: "no good markings nearby"), the all-camera near fixes were pulled back by it.
+   * v11g: start near fixes from the front camera only (near_fix --cams f): start -0.10 / -0.05 m vs v10,
+     estimate 0.2174. v12: plate shift over the full width (curb / cars / walls too): no change (near fixes use
+     |lat| < 4 m, the road band was already shifted) -> hypothesis wrong, not used.
+   * camera clouds (MapAnything, cc_t2 on clean16): segment biases vs the fused track 0.1-0.4 m forward, up to 0.3 m
+     lateral where the pose is known (per-frame IQR 0.5-1.0 m); at the start they say ~0.4 m back (plate-corrected).
+     Too biased to settle a 0.1 m start question.
+   * all start variants change the estimate by +-0.002 (start = 10 % of the frames).
