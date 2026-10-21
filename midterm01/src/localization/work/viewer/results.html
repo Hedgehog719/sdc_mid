@@ -77,6 +77,23 @@
     <li><b>右前相機高度（v10，10/21 上午）</b>：三台相機各自找最佳平移，只有右前相機（fr）偏（往前 0.1–0.45 m）。只用近處標線重新校正 fr：兩條路各自擬合都要求調高 9–10 cm，俯仰／滾轉兩條路不同，所以每條路各一套。fr 貼合度在沒參與擬合的幀上：T2 +8.3%／T1 +5.4%（近處）。但軌跡只動 1–2 cm（位姿本來就跟著 f、fl），分數預期不變，未提交。</li>
   </ul></div>
 
+  <h2>10/21 下午–晚上：主路段（參考估計，只當參考，尚未提交）</h2>
+  <div class="card">
+    <table>
+      <tr><th>Track</th><th>版本</th><th>參考估計</th><th>內容</th></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v8y</code>（已交 0.21）</td><td class="num">0.2163</td><td>原本的最佳純流程</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v13</code></td><td class="num">0.2163</td><td>yaw 自我校正（相機方向和行進方向的固定偏差扣掉）＋起步只用前相機</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v14m</code></td><td class="num good">0.2004</td><td>融合模型：GNSS 白雜訊／偏差重新設定，地圖 fix 共用緩慢變化的前後偏差（GNSS 可以修正），車道 fix 改用 vert 那組</td></tr>
+      <tr><td>T1</td><td><code>t1_pipe_v8y</code>（已交 0.43）</td><td class="num">0.5078</td><td>原本的最佳純流程（T1 估計整體偏高約 0.08）</td></tr>
+      <tr><td>T1</td><td><code>t1_pipe_v14m</code></td><td class="num">0.4923</td><td>yaw 自我校正＋GNSS 偏差 sigma 0.4 → 0.15（風險：GNSS 一致性指標偏高）</td></tr>
+    </table>
+    <ul>
+      <li>0.17 那份只拿來檢查（全域相關），沒有用進任何輸出；所有參數都是全域的。</li>
+      <li>關鍵發現：0.17 那份和我們的前後差，和 GNSS 的前後差相關 +0.63；我們的融合讓車道 fix 完全主導前後，GNSS 被自己的偏差狀態吸收掉了。</li>
+      <li>前後的逐段暴力搜尋（影像分數）太雜訊（每段 0.15–0.28 m），用不上。</li>
+    </ul>
+  </div>
+
   <h2>還沒解決</h2>
   <div class="card"><ul>
     <li><b>T2 前後方向</b>：500–900 幀近處影像（停止線、斑馬線）說要往前約 0.2 m，參考估計說要往後；近處前後判斷依賴相機高度與俯仰，兩套校正差約 9 cm。</li>
