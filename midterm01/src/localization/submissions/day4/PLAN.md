@@ -577,3 +577,6 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
    * T1: no source family explains (0.41 - ours) (|corr| <= 0.5); lateral mean -0.09 vs the reference after 330
      (near fixes set it; no independent evidence -> not corrected). Kerb removal / other lane sets: 0.5068 -> 0.504
      (T1 estimate unreliable).
+ - 10/21 15:30 submissions (user: submit directly): T2 t2_pipe_v14m 0.18 (was 0.21; estimate 0.2004), T1 t1_pipe_v14m
+   0.40 (was 0.43; estimate 0.4923 - the T1 estimate is ~0.09 high). Both pure pipeline outputs, global parameters.
+   T1 now beats the board-fitted 0.41123; T2 beats team 11 (0.19).
