@@ -547,3 +547,15 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
      lateral where the pose is known (per-frame IQR 0.5-1.0 m); at the start they say ~0.4 m back (plate-corrected).
      Too biased to settle a 0.1 m start question.
    * all start variants change the estimate by +-0.002 (start = 10 % of the frames).
+ - 10/21 afternoon, main stretch (330+):
+   * yaw: T2 fused yaw sat +0.13 deg off the course of its own path (0.17 file +0.03); camera headings biased vs the
+     course: T2 near +0.14 / lane +0.29 deg, T1 near -0.01 / lane +0.18. fuse --yaw_selfcal removes each camera
+     heading source's median offset from the course (moving frames) before the yaw smoother -> T2 yaw - course
+     -0.005 (rms 0.273 -> 0.240), yaw vs the 0.17 file rms 0.148 -> 0.112; positions unchanged. v13 = v11g start +
+     yaw selfcal (estimates T2 0.2163, T1 0.5068). Saved t2_pipe_v13 / t1_pipe_v13 (not submitted).
+   * forward: the fused forward follows the lane fixes (lane - ours ~0); the remaining difference to the 0.17 file
+     is slow (> 5-15 s, rms ~0.07), no jitter. Front camera range bands 5-14 m agree (no pitch / height trend;
+     T2 +0.06, T1 -0.03 at the v13 poses). One constant lane-fix forward offset anchored to the near fixes (v13b):
+     estimate unchanged (forward mean flips sign, rms 0.086 -> 0.085). Per segment vs the 0.17 file: lane fixes rms
+     0.070, near fixes 0.115, 50/50 blend 0.072 -> the lane fixes are the best forward source; improving them
+     (marking map quality: aligned paint voting + blob thinning) is the next lever.

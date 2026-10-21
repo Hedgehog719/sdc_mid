@@ -120,6 +120,9 @@ def main():
     p.add_argument('--yaw_rts_bev', type=float, default=0.0, help='>0: also use BEV yaw fixes with this sigma (deg)')
     p.add_argument('--imu_acc', action='store_true', help='IMU acceleration (gravity removed) as a known input of the '
                    'along-track speed in the RTS; set --rts_qacc to the IMU error level (e.g. 0.2)')
+    p.add_argument('--yaw_selfcal', action='store_true', help='remove the median offset of each camera heading source '
+                   '(lane / near fixes) from the course of the fused path on moving frames before the yaw smoother '
+                   '(per-recording camera-rig heading, self-calibrated on the own trajectory)')
     p.add_argument('--bev_fwd_skip', default='', help='lo:hi frames whose BEV fixes constrain lateral only (stationary start: '
                    'the accumulated BEV degenerates, near-range fixes give forward)')
     p.add_argument('--bev_yaw_skip', default='', help='lo:hi frames whose BEV fixes are used for position only, not yaw '
@@ -382,6 +385,17 @@ def main():
             mt, my_, ms = motion_heading(s.gt.astype(np.int64), s.gxyz[:, :2], a.yaw_rts_base, a.yaw_rts_sigpos)
         else:  # fused trajectory (BEV-corrected positions)
             mt, my_, ms = motion_heading(ts, np.stack([x, y], 1), a.yaw_rts_base, a.yaw_rts_sigpos)
+        mt0, my0 = mt.copy(), np.unwrap(my_)
+
+        def heading_offset(tq, yq, ct, cy, name):
+            # median (camera heading - course of the fused path) over moving frames (course samples within 0.15 s)
+            cy = np.unwrap(cy)
+            k = np.clip(np.searchsorted(ct, tq), 1, len(ct) - 1)
+            near_t = np.minimum(np.abs(ct[k] - tq), np.abs(ct[k - 1] - tq)) < 0.15e9
+            d = (yq - np.interp(tq.astype(float), ct.astype(float), cy) + np.pi) % (2 * np.pi) - np.pi
+            off = float(np.median(d[near_t])) if near_t.sum() > 20 else 0.0
+            print(f'yaw selfcal: {name} heading - course median {np.degrees(off):+.3f} deg ({near_t.sum()} moving fixes) removed')
+            return off
         if a.yaw_rts_bev > 0 and a.bev:
             parts = [np.load(f) for f in a.bev]
             bt = np.concatenate([q['ts'] for q in parts])
@@ -394,6 +408,8 @@ def main():
                 bi = np.concatenate([q['idx'] for q in parts])
                 ok &= ~((bi >= lo) & (bi < hi))
             bt, byaw = bt[ok], byaw[ok]
+            if a.yaw_selfcal:
+                byaw = byaw - heading_offset(bt, byaw, mt, my_, 'lane')
             mt = np.concatenate([mt, bt])
             my_ = np.concatenate([my_, byaw])
             ms = np.concatenate([ms, np.full(len(bt), np.radians(a.yaw_rts_bev))])
@@ -401,8 +417,11 @@ def main():
             nz_ = np.load(a.near)
             if 'sharp_y' in nz_:
                 ky = nz_['sharp_y'] > 0
+                nyaw = nz_['myaw'][ky]
+                if a.yaw_selfcal:
+                    nyaw = nyaw - heading_offset(nz_['ts_i'][ky].astype(mt.dtype), nyaw, mt0, my0, 'near')
                 mt = np.concatenate([mt, nz_['ts_i'][ky].astype(mt.dtype)])
-                my_ = np.concatenate([my_, nz_['myaw'][ky]])
+                my_ = np.concatenate([my_, nyaw])
                 ms = np.concatenate([ms, np.full(ky.sum(), np.radians(a.near_yaw_sigma))])
                 print('near yaw fixes used: %d / %d' % (ky.sum(), len(ky)))
         o = np.argsort(mt)
