@@ -84,10 +84,13 @@
       <tr><td>T2</td><td><code>t2_pipe_v8y</code>（已交 0.21）</td><td class="num">0.2163</td><td>原本的最佳純流程</td></tr>
       <tr><td>T2</td><td><code>t2_pipe_v13</code></td><td class="num">0.2163</td><td>yaw 自我校正（相機方向和行進方向的固定偏差扣掉）＋起步只用前相機</td></tr>
       <tr><td>T2</td><td><code>t2_pipe_v14m</code>（已交 <b>0.18</b>）</td><td class="num good">0.2004</td><td>融合模型：GNSS 白雜訊／偏差重新設定，地圖 fix 共用緩慢變化的前後偏差（GNSS 可以修正），車道 fix 改用 vert 那組</td></tr>
+      <tr><td>T2</td><td><code>t2_pipe_v14t10</code>（已交 0.18）</td><td class="num good">0.1995</td><td>v14m 的 GNSS 偏差相關時間 20 → 10 s</td></tr>
       <tr><td>T1</td><td><code>t1_pipe_v8y</code>（已交 0.43）</td><td class="num">0.5078</td><td>原本的最佳純流程（T1 估計整體偏高約 0.08）</td></tr>
       <tr><td>T1</td><td><code>t1_pipe_v14m</code>（已交 <b>0.40</b>）</td><td class="num good">0.4923</td><td>yaw 自我校正＋GNSS 偏差 sigma 0.4 → 0.15（風險：GNSS 一致性指標偏高）</td></tr>
     </table>
     <ul>
+      <li>T1 <code>t1_pipe_v14g01</code>（GNSS 偏差 sigma 0.1）0.42：0.15 最好。</li>
+      <li>沒用的：長累積窗口車道 fix、對齊投票清理過的標線地圖（會清掉真標線）、多組車道 fix 集成、桿子權重。</li>
       <li>0.17 那份只拿來檢查（全域相關），沒有用進任何輸出；所有參數都是全域的。</li>
       <li>關鍵發現：0.17 那份和我們的前後差，和 GNSS 的前後差相關 +0.63；我們的融合讓車道 fix 完全主導前後，GNSS 被自己的偏差狀態吸收掉了。</li>
       <li>前後的逐段暴力搜尋（影像分數）太雜訊（每段 0.15–0.28 m），用不上。</li>

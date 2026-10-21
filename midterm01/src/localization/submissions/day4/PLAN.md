@@ -587,3 +587,7 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
    still noise-dominated (rms 0.14-0.27 m). T2 more lateral freedom in the map bias / GNSS bias 0.1: no gain.
    T1: GNSS along-track inflation (fuse --gnss_fwd_sigma) no gain; tau / sigma / map-bias fine grid within 0.003.
  - T1 t1_pipe_v14g01 (v14m with GNSS bias sigma 0.1): 0.42 (v14m sigma 0.15: 0.40) -> 0.15 kept.
+ - T1 lane fixes on paint-voted marks (v15 T1): estimate 0.5007 vs 0.4923 -> worse (as T2): not used.
+ - T2 t2_pipe_v14t10 (v14m with GNSS bias tau 10 s; estimate 0.1995 vs 0.2004): 0.18 (same display as v14m).
+ Final designations now (pure pipeline, global parameters): T2 t2_pipe_v14m 0.18 (or v14t10 0.18), T1 t1_pipe_v14m 0.40.
+ Recipes: work/mb/v14m_fuse.sh (T2), work/mb/v14m_fuse_t1.sh (T1).
