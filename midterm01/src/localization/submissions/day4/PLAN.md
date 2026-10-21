@@ -515,3 +515,20 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
    no better. Last submissions: t2_pipe_v8y 0.21, t1_pipe_v8y 0.43 (v8 + near-range heading fixes; estimates 0.2163 /
    0.5078, the best pipeline estimates). Day quota used (6 + 6).
  Recommended final designations (pipeline outputs, TA rule): T2 t2_pipe_v8y (or v8), T1 t1_pipe_v8y (or v8 / v6bn2).
+ - 10/21 morning, per-camera check (work/mb/percam_align.py: per camera, the best (fwd, lat) shift of the projected
+   1-15 m markings at the v8y poses): fl / f agree with the pose on most segments; fr alone wants +0.1..+0.45 m forward
+   (-0.1..-0.2 lateral) -> fr calibration. Starts: T1 0-300 all cameras want back 0.1-0.3 m; T2 0-300 f / fl want left
+   0.1-0.2 m -> start pose errors.
+ - v10 = fr near-range re-calibration (calib_img2 --rmax 15 --xmin 1, yaw / pitch / roll / height at the v8y poses):
+   height +9-10 cm on both tracks fitted separately (0.08 -> 0.17 / 0.18); pitch / roll differ (T2 0.0 / -0.65, T1
+   0.45 / -1.05 deg); held-out frames prefer each track's own fit (T2 +8.3 % near / +6.5 % to 30 m vs joint +4.1 / +3.7;
+   T1 +5.4 / +10.8) -> cam_fix_v10t2 (T2), cam_fix_v10t1 (T1). fr now agrees with fl / f on T1 at 300 / 600 / 900 / 2100
+   (lateral bias gone), still +0.1..+0.35 forward at 1200 / 1800 / 2400; T2 fr little change.
+   Lane + near fixes redone with it (work/mb/v10_match.sh): trajectories move 1-2 cm rms (T2 fwd -0.010, T1 -0.003);
+   estimates 0.2166 / 0.5075 (v8y 0.2163 / 0.5078), near metric equal -> the poses already followed fl / f, the fr error
+   only showed on the viewer's right side. Saved as t2_pipe_v10 / t1_pipe_v10 (not submitted).
+ - Found: at the T2 start the near fixes use the unshifted map (mk16v_D) while the lane fixes use the start-plate-shifted
+   map (c16p20_10, 0.55 m) -> they pull against each other there.
+ Next: (2) start pose: T1 back 0.1-0.3 m by all cameras; T2 start forward +0.14 m by the estimate = the user's viewer
+   observation (LiDAR points shifted back at the start); make the start maps of all fix sources consistent first.
+   (3) LiDAR marking map voting on per-frame aligned projections (near range, well-aligned frames only) + blob thinning.
