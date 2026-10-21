@@ -41,6 +41,7 @@ ap.add_argument('--span', type=float, default=1.2)
 ap.add_argument('--res', type=float, default=0.1)
 ap.add_argument('--tol', type=float, default=0.15)
 ap.add_argument('--workers', type=int, default=4)
+ap.add_argument('--scale_csv', default='', help='per-frame scale (k, scale) from work/cam3d/fuse_scale.py')
 ap.add_argument('--scale_win', type=int, default=30, help='+-frames of the median used as the cloud scale (the '
                 'model scale drifts slowly, ~2 %% between frames; the per-frame ground estimate jitters ~6 %%); 0 = per frame')
 a = ap.parse_args()
@@ -181,7 +182,12 @@ def work(k):
 if __name__ == '__main__':
     lo, hi, st = (int(v) for v in a.frames.split(':'))
     frames = list(range(lo, len(TR) if hi < 0 else hi, st))
-    if a.scale_win > 0:   # temporally smoothed scale from the per-frame ground heights
+    if a.scale_csv:
+        sc_ = pd.read_csv(a.scale_csv)
+        for f in range(min(len(TR), len(IDX))):
+            SMOOTH[f] = float(np.interp(f, sc_.k.values, sc_.scale.values))
+        print('scale: from', a.scale_csv)
+    elif a.scale_win > 0:   # temporally smoothed scale from the per-frame ground heights
         allf = list(range(0, min(len(TR), len(IDX)), st))
         with Pool(a.workers) as pool:
             gp = pool.map(ground, allf, chunksize=8)
