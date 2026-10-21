@@ -580,3 +580,9 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
  - 10/21 15:30 submissions (user: submit directly): T2 t2_pipe_v14m 0.18 (was 0.21; estimate 0.2004), T1 t1_pipe_v14m
    0.40 (was 0.43; estimate 0.4923 - the T1 estimate is ~0.09 high). Both pure pipeline outputs, global parameters.
    T1 now beats the board-fitted 0.41123; T2 beats team 11 (0.19).
+ - After the submissions (offline, estimate): long accumulation window for the lane fixes (40 frames / 20 m, v14b)
+   0.2069 (worse: forward rms 0.064, lateral mean +0.04); v14a (clean map / mk_S with cam_fix_v10t2) 0.2009 ~ vert;
+   lane fixes on the paint-voted soft marks (tools/marking_paint_vote.py, mk_Spv, v15) 0.2064 (worse: forward rms
+   0.072 - the vote removes true markings the camera does not show clearly); window brute force on the voted D map
+   still noise-dominated (rms 0.14-0.27 m). T2 more lateral freedom in the map bias / GNSS bias 0.1: no gain.
+   T1: GNSS along-track inflation (fuse --gnss_fwd_sigma) no gain; tau / sigma / map-bias fine grid within 0.003.
