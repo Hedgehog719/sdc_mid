@@ -51,7 +51,12 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     if nm:   # (L, sigma) isotropic, or (L, sigma_along, sigma_cross): along / across the heading
         len_m, sig_m = map_bias[0], map_bias[1]
         sig_mc = map_bias[2] if len(map_bias) > 2 else sig_m
+        path_frame = len(map_bias) > 2   # anisotropic: the state is (along-track, cross-track), rotated by the heading
+                                         # in the measurement (a world-frame state would turn forward error into
+                                         # lateral error after every bend for long correlation lengths)
         mmask = np.zeros(len(tm), bool) if map_mask is None else np.asarray(map_mask, bool)
+    if not nm:
+        path_frame = False
     xs = np.zeros((n, d))
     Ps = np.zeros((n, d, d))
     xp = np.zeros((n, d))
@@ -63,10 +68,8 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
     x = np.zeros(d)
     x[:3] = [z_meas[first[0], 0], z_meas[first[0], 1], v0]
     P = np.diag([1.0, 1.0, 4.0] + ([sig_b ** 2] * nb if nb else []) + ([sig_m ** 2] * nm if nm else []))
-    if nm:   # initial map-bias covariance oriented with the first heading
-        c0, s0_ = np.cos(psi_fn(np.array([times[0]]))[0]), np.sin(psi_fn(np.array([times[0]]))[0])
-        R0 = np.array([[c0, -s0_], [s0_, c0]])
-        P[jm:jm + 2, jm:jm + 2] = R0 @ np.diag([sig_m ** 2, sig_mc ** 2]) @ R0.T
+    if nm:
+        P[jm:jm + 2, jm:jm + 2] = np.diag([sig_m ** 2, sig_mc ** 2])
     H = np.zeros((2, d))
     H[0, 0] = H[1, 1] = 1.0
     Hg = H.copy()
@@ -103,8 +106,7 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
         if nm:  # map bias: Gauss-Markov in travelled distance (speed from the current estimate)
             phm = np.exp(-abs(x[2]) * dt / len_m)
             F[jm, jm] = F[jm + 1, jm + 1] = phm
-            Rh_ = np.array([[c, -s], [s, c]])
-            Q[jm:jm + 2, jm:jm + 2] += Rh_ @ np.diag([sig_m ** 2, sig_mc ** 2]) @ Rh_.T * (1 - phm * phm) + np.eye(2) * 1e-12
+            Q[jm:jm + 2, jm:jm + 2] += np.diag([sig_m ** 2, sig_mc ** 2]) * (1 - phm * phm) + np.eye(2) * 1e-12
         x = F @ x
         if acc_fn is not None and dt > 0:
             aw = acc_fn(np.array([(times[k] + t_prev) / 2]))[0]
@@ -121,6 +123,9 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
             is_g = nb and gmask[ref[k]]
             is_m = nm and mmask[ref[k]]
             Hm = Hg if is_g else (Hmap if is_m else H)
+            if is_m and path_frame:
+                Hm = Hmap.copy()
+                Hm[:, jm:jm + 2] = np.array([[c, -s], [s, c]])
             if is_g:
                 R = np.eye(2) * sig_w ** 2
                 if gnss_fwd_extra > 0:   # GNSS forward worse than its lateral: inflate the along-track part only

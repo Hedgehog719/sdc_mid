@@ -591,3 +591,13 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
  - T2 t2_pipe_v14t10 (v14m with GNSS bias tau 10 s; estimate 0.1995 vs 0.2004): 0.18 (same display as v14m).
  Final designations now (pure pipeline, global parameters): T2 t2_pipe_v14m 0.18 (or v14t10 0.18), T1 t1_pipe_v14m 0.40.
  Recipes: work/mb/v14m_fuse.sh (T2), work/mb/v14m_fuse_t1.sh (T1).
+ - Fix (rts.py): the anisotropic map-bias state was a world-frame state with heading-rotated noise - with long
+   correlation lengths it turned forward error into lateral error after bends (the fused T2 track sat left of every
+   source's median). Now a path-frame state (along, cross), rotated by the heading in the measurement. T2 v16
+   (+ GNSS tau 10 s, near fixes' forward corrected for acceleration against GNSS (slope 0.21 m per m/s2, near fwd
+   sigma 0.2, aniso k 0.002), map bias 500 m / along 0.05 / cross 0): estimate 0.1964, board 0.17 (pure pipeline).
+ - T1 checks after the fix: path-frame anisotropic map bias no better than isotropic 0.03 (0.4913 vs 0.4923);
+   near-fix acceleration correction negligible (T1 GNSS too noisy for the slope, corr 0.06) -> T1 stays v14m (0.40).
+ - Reproducible: tools/near_accel_corr.py, work/mb/v16_all.sh (GNSS-only fusion -> near accel correction -> v16
+   fusion; reproduction exact).
+ FINAL (pure pipeline, global parameters): T2 t2_pipe_v16 0.17, T1 t1_pipe_v14m 0.40 (board-fitted 0.17 / 0.41).
