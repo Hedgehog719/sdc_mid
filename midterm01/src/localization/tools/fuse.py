@@ -97,6 +97,7 @@ def main():
                    '--map_bias_sigma is then the along-track one (e.g. lane fixes: forward is the weak axis)')
     p.add_argument('--gnss_huber', type=float, default=0.0, help='>0: Huber threshold for the GNSS rows (bias model)')
     p.add_argument('--nis', action='store_true', help='print the filter consistency (NIS) per measurement group')
+    p.add_argument('--gnss_fwd_sigma', type=float, default=0.0, help='>0: extra along-track noise of the GNSS rows (m)')
     p.add_argument('--gnss_lat_sigma', type=float, default=0.0, help='>0: extra lateral (cross-track) noise of the GNSS rows '
                    '(m): GNSS keeps its forward information while the map fixes decide the lateral position')
     p.add_argument('--gnss_keep_s', type=float, default=-1.0, help='>=0: GNSS-free run - keep only the first N seconds of '
@@ -337,7 +338,7 @@ def main():
         st = rts_smooth(ts, tm, zm, psi_fn, a.rts_sigma, a.rts_qacc, a.rts_qpos, huber=huber, meas_cov=cov,
                         q_lat=a.rts_qlat, t_zupt=tz, gnss_bias=gb, gnss_mask=gmask, map_bias=mb, map_mask=mmask,
                         return_nis=a.nis, huber_g=a.gnss_huber if a.gnss_huber > 0 else None, acc_fn=acc_fn,
-                        gnss_lat_extra=a.gnss_lat_sigma)
+                        gnss_lat_extra=a.gnss_lat_sigma, gnss_fwd_extra=a.gnss_fwd_sigma)
         if a.nis:  # filter consistency per group: mean NIS ~ 2 (2D) if the noise model matches the data
             st, nis = st
             lo_ = 0

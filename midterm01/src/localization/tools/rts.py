@@ -12,7 +12,7 @@ import numpy as np
 def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos=0.05, huber=3.0,
                meas_sigma=None, meas_cov=None, q_lat=None, t_zupt=None, sigma_zupt=0.02,
                gnss_bias=None, gnss_mask=None, map_bias=None, map_mask=None, return_nis=False, huber_g=None,
-               acc_fn=None, gnss_lat_extra=0.0):
+               acc_fn=None, gnss_lat_extra=0.0, gnss_fwd_extra=0.0):
     """meas_cov: optional (N, 2, 2) per-measurement covariance (overrides sigma), e.g. lateral-only fixes.
 
     gnss_bias: (tau_s, sigma_b, sigma_w) models the GNSS error as coloured noise: a first-order Gauss-Markov bias
@@ -123,6 +123,9 @@ def rts_smooth(t_query, t_meas, z_meas, psi_fn, sigma_meas=0.3, q_acc=1.0, q_pos
             Hm = Hg if is_g else (Hmap if is_m else H)
             if is_g:
                 R = np.eye(2) * sig_w ** 2
+                if gnss_fwd_extra > 0:   # GNSS forward worse than its lateral: inflate the along-track part only
+                    fv = np.array([c, s])
+                    R = R + gnss_fwd_extra ** 2 * np.outer(fv, fv)
                 if gnss_lat_extra > 0:   # GNSS lateral much worse than forward (biased across the road): inflate it only
                     lv = np.array([-s, c])
                     R = R + gnss_lat_extra ** 2 * np.outer(lv, lv)
