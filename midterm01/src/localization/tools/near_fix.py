@@ -41,6 +41,8 @@ ap.add_argument('--span', type=float, default=0.6)
 ap.add_argument('--workers', type=int, default=4)
 ap.add_argument('--out', required=True)
 ap.add_argument('--bg_weight', type=float, default=0.0, help='>0: score = marks - w * background: paint on map road without markings is penalised')
+ap.add_argument('--cams', default='fl,f,fr', help='cameras used (e.g. f at the T2 start, where the side cameras see parked '
+                'cars that leak into the marking map)')
 ap.add_argument('--yaw_search', type=float, default=0.0, help='>0: also search the heading (+-deg, 0.1 deg steps)')
 a = ap.parse_args()
 
@@ -50,7 +52,7 @@ MK = MarkingMap(a.marks)
 B = ImageBEV(a.track_dir, 1.5, 0, 0, a.yaw_mount)
 C = B.C
 Rm = Rotation.from_euler('ZYX', [a.yaw_mount, 0, 0], degrees=True).as_matrix()
-CAMS = ('fl', 'f', 'fr')
+CAMS = tuple(a.cams.split(','))
 RD = {c: np.load(os.path.join(a.track_dir, 'road', f'{c}.npz'))['road'] for c in CAMS}
 
 
