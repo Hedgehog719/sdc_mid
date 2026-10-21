@@ -34,6 +34,9 @@ ap.add_argument('--frames', default='450:-1:20')
 ap.add_argument('--params', default='yaw,pitch,roll,tx,ty,tz')
 ap.add_argument('--yaw_mount', type=float, default=-1.5)
 ap.add_argument('--eval', default='', help='only score: comma list of calibration json files (cross-track check)')
+ap.add_argument('--rmax', type=float, default=30.0, help='max range of the map points (m); 15 = near range as in near_fix')
+ap.add_argument('--xmin', type=float, default=-8.0, help='min forward coordinate of the map points (m)')
+ap.add_argument('--min_pts', type=int, default=50)
 a = ap.parse_args()
 Rm = Rotation.from_euler('ZYX', [a.yaw_mount, 0, 0], degrees=True).as_matrix()
 rng = np.random.default_rng(0)
@@ -89,13 +92,13 @@ for track_dir, traj_csv, marks_npz, poses in tracks:
     if len(P) < 100:
         continue
     q = vehicle_frame(P, (x, y, yaw), MK.height)
-    q = q[road_level(q) & (q[:, 0] > -8) & (np.hypot(q[:, 0], q[:, 1]) < 30)]
+    q = q[road_level(q) & (q[:, 0] > a.xmin) & (np.hypot(q[:, 0], q[:, 1]) < a.rmax)]
     Bw = MK.background(x, y, 40, 1500, rng)
     qb = vehicle_frame(Bw, (x, y, yaw), MK.height)
-    qb = qb[road_level(qb, tol=0.15, slope=0.02) & (qb[:, 0] > -8) & (np.hypot(qb[:, 0], qb[:, 1]) < 30)]
+    qb = qb[road_level(qb, tol=0.15, slope=0.02) & (qb[:, 0] > a.xmin) & (np.hypot(qb[:, 0], qb[:, 1]) < a.rmax)]
     Qm, Qb = q @ Rm, qb @ Rm
     Qm, Qb = Qm[onroad(Qm, i, RD)], Qb[onroad(Qb, i, RD)]
-    if len(Qm) < 50 or len(Qb) < 50:
+    if len(Qm) < a.min_pts or len(Qb) < a.min_pts:
         continue
     if len(Qm) > 2000:
         Qm = Qm[rng.choice(len(Qm), 2000, replace=False)]
