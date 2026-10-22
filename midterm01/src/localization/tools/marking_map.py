@@ -218,7 +218,7 @@ def road_level(q, cam_height=1.5, tol=0.4, slope=0.06):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('track_dir')
-    ap.add_argument('traj_csv', help='driven path: tiles are built along it')
+    ap.add_argument('traj_csv', help="driven path: tiles are built along it; 'ALL' = every occupied map tile (no trajectory)")
     ap.add_argument('out_npz')
     ap.add_argument('--hi', type=float, default=3.0)
     ap.add_argument('--lo', type=float, default=1.5)
@@ -230,13 +230,18 @@ def main():
     a = ap.parse_args()
     import pandas as pd
     from bev_match import load_map
-    tr = pd.read_csv(a.traj_csv)
     M = load_map(a.track_dir)
     tiles = set()
-    for px, py in tr[['x', 'y']].values[::10]:
-        for tx in range(int(np.floor((px - a.corridor) / TILE)), int(np.floor((px + a.corridor) / TILE)) + 1):
-            for ty in range(int(np.floor((py - a.corridor) / TILE)), int(np.floor((py + a.corridor) / TILE)) + 1):
-                tiles.add((tx, ty))
+    if a.traj_csv == 'ALL':   # no trajectory (Track03, GNSS-free): every map tile with enough points
+        tk, cnt = np.unique(np.floor(np.asarray(M.pts[::20, :2]) / TILE).astype(np.int64), axis=0, return_counts=True)
+        tiles = {(int(x_), int(y_)) for (x_, y_), c_ in zip(tk, cnt) if c_ * 20 >= 1000}
+        print(f'ALL: {len(tiles)} occupied tiles', flush=True)
+    else:
+        tr = pd.read_csv(a.traj_csv)
+        for px, py in tr[['x', 'y']].values[::10]:
+            for tx in range(int(np.floor((px - a.corridor) / TILE)), int(np.floor((px + a.corridor) / TILE)) + 1):
+                for ty in range(int(np.floor((py - a.corridor) / TILE)), int(np.floor((py + a.corridor) / TILE)) + 1):
+                    tiles.add((tx, ty))
     tiles = sorted(tiles)
     kernels = line_kernels()
     keys, resp, ground, sigs = [], [], [], []
