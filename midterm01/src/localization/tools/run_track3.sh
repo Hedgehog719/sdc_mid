@@ -7,7 +7,8 @@
 #  3. road-surface visual odometry (speed)
 #  4. pass 1: sequential tracker (gyro heading + bias, IMU accel + VO speed, single-frame lane matches + near
 #     alignment as measurements)
-#  5. pass 2: lane / near fixes around pass 1, RTS fusion with the initial pose only (no GNSS)
+#  5. pass 2: lane / near fixes around pass 1, RTS fusion with the initial pose only (no GNSS); start segment
+#     (path < 15 m) lateral-only; pass 3 = the same around pass 2
 #  6. Kaggle csv (idx, x, y, yaw)
 set -e
 cd /root/midterm/src/localization
@@ -34,6 +35,12 @@ python3 tools/track_seq.py $T work/t3/${N}_mk_D.npz work/t3/${N}_p1.csv --lane_m
 tail -n 1 work/t3/${N}_p1.log
 echo "[$(date +%H:%M:%S)] pass 2"
 bash work/mb/t3_pass2.sh $T $N
-cp work/t3/${N}_p2.csv work/t3/${N}_result.csv
+# pass 3: the same fixes recomputed around the pass-2 trajectory (a better prior sharpens the accumulated lane
+# response; rehearsal vs the GNSS-aided best: T1 0.250 -> 0.203 m, T2 0.202 -> 0.152 m)
+echo "[$(date +%H:%M:%S)] pass 3"
+cp work/t3/${N}_p2.csv work/t3/${N}p3_p1.csv
+for f in mk_S mk_D; do ln -sf ${N}_$f.npz work/t3/${N}p3_$f.npz; done
+bash work/mb/t3_pass2.sh $T ${N}p3 work/t3/${N}p3_p1.csv
+cp work/t3/${N}p3_p2.csv work/t3/${N}_result.csv
 chown -R 1000:1000 work/t3
 echo "[$(date +%H:%M:%S)] done -> work/t3/${N}_result.csv (Kaggle format idx,x,y,yaw)"

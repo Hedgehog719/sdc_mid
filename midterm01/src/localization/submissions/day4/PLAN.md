@@ -634,3 +634,5 @@ Pipeline (tools/run_track3.sh):
   * Start rule (pass 2): until the path length exceeds 15 m (accumulation window) lane fixes lateral-only, no camera
     headings; detected automatically: T2 0:394, T1 0:220 (= the manual GNSS-pipeline value) -> vs best T2 0.265 ->
     0.202 m, yaw 0.236 -> 0.200 deg; T1 0.250 m, yaw 0.239 -> 0.217.
+  * Pass 3 (fixes recomputed around pass 2): vs best T1 0.250 -> 0.203 m (yaw 0.193 deg), T2 0.202 -> 0.152 m
+    (yaw 0.173 deg). run_track3.sh now runs pass 3.
