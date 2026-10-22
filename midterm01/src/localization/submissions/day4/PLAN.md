@@ -622,3 +622,5 @@ Pipeline (tools/run_track3.sh):
     Board (as T1/T2 submissions): T1 t1_nognss_t3pipe 0.44, T2 t2_nognss_t3pipe 0.36 (raw map start of T2 hurts).
  Fixed on the way: near_fix front-image times from the file names when 3cameras_ply is absent; bev_match needs an
  explicit frame range (0:-1 = none).
+ No-IMU fallback (tracker without gyro / IMU accel, VO speed only): T2 diverges in the bend after 1200 (heading only
+ from lane-match yaw) -> needs a visual heading-rate source (VO rotation) if Track03 has no IMU.
