@@ -636,3 +636,5 @@ Pipeline (tools/run_track3.sh):
     0.202 m, yaw 0.236 -> 0.200 deg; T1 0.250 m, yaw 0.239 -> 0.217.
   * Pass 3 (fixes recomputed around pass 2): vs best T1 0.250 -> 0.203 m (yaw 0.193 deg), T2 0.202 -> 0.152 m
     (yaw 0.173 deg). run_track3.sh now runs pass 3.
+  * Board (GNSS-free, as T1/T2 submissions): T2 v2 (start rule) 0.30, v3 (+ pass 3) 0.25; T1 v3 0.40 (= the
+    GNSS-aided best). Today's submissions: T2 7, T1 4.

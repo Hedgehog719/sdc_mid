@@ -101,13 +101,13 @@
   <h2>10/22 Track03 準備（完全不用 GNSS）</h2>
   <div class="card">
     <table>
-      <tr><th>演練</th><th>第一輪（逐幀追蹤）</th><th>第二輪（雙向平滑）</th><th>排行榜（當成 T1/T2 提交）</th></tr>
-      <tr><td>T1（拿掉 GNSS）</td><td class="num">0.55 m</td><td class="num good">0.25 m</td><td class="num">0.44（有 GNSS 最佳 0.40）</td></tr>
-      <tr><td>T2（拿掉 GNSS）</td><td class="num">0.59 m</td><td class="num good">0.27 m</td><td class="num">0.36（有 GNSS 最佳 0.17）</td></tr>
+      <tr><th>演練</th><th>第一輪（逐幀追蹤）</th><th>第二輪 → 第三輪</th><th>排行榜（當成 T1/T2 提交）</th></tr>
+      <tr><td>T1（拿掉 GNSS）</td><td class="num">0.55 m</td><td class="num good">0.25 → 0.20 m</td><td class="num">0.44 → <b>0.40</b>（有 GNSS 最佳 0.40）</td></tr>
+      <tr><td>T2（拿掉 GNSS）</td><td class="num">0.59 m</td><td class="num good">0.27 → 0.15 m</td><td class="num">0.36 → 0.30 → <b>0.25</b>（有 GNSS 最佳 0.17）</td></tr>
     </table>
     <ul>
       <li>誤差是和我們有 GNSS 的最佳軌跡比較；T3 私榜及格線 1.40。</li>
-      <li>流程：起點大範圍搜尋（init_guess 的 yaw 可能差 18°）→ 路面視覺里程計（車速）→ 陀螺儀＋偏差估計（車頭方向）→ 逐幀車道比對追蹤 → 累積車道 fix＋雙向平滑。</li>
+      <li>流程：起點大範圍搜尋（init_guess 的 yaw 可能差 18°）→ 路面視覺里程計（車速）→ 陀螺儀＋偏差估計（車頭方向）→ 逐幀車道比對追蹤 → 累積車道 fix＋雙向平滑（起步 15 m 內車道 fix 只修左右）→ 用結果再迭代一輪。</li>
       <li>一行指令：<code>tools/run_track3.sh /root/data/Track3 T3</code>（約一小時，含影像分割）。</li>
       <li>弱點：沒有 IMU 時彎道會發散，需要讓視覺里程計也估轉角。</li>
     </ul>
