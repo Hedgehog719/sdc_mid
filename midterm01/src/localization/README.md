@@ -78,7 +78,7 @@ bash tools/run_online.sh /root/data/Track3 T3    # -> work/runs/T3/T3_online.csv
    - 起步時位置還不確定（前後 σ > 0.5 m），前後方向接受較弱的車道比對（峰值 > 0.13），第 6 幀就能完成前後鎖定。
 9. **輸出**：該幀的後驗位姿，寫出後不再修改。
 
-可重現性：用 `tools/run_online.sh` 從頭執行，T1、T2、T3 的輸出和我們提交的檔案逐位元相同（`submissions/online/`：`t1_online_v6.csv`、`t2_online_v6.csv`、`t3_online_bank_mle.csv`）。GPU 推論的微小差異可能讓分割結果有極小不同。
+可重現性：用 `tools/run_online.sh` 從頭執行，T1、T2、T3 的輸出和我們提交的檔案逐位元相同（`submissions/online/`：`t1_online_v6.csv`、`t2_online_v6.csv`、`t3_online_b6.csv`）。GPU 推論的微小差異可能讓分割結果有極小不同。
 
 量測品質用「擾動測試」檢查：把參考軌跡偏移已知的量（航向 +1°、橫向 +0.3 m、前後 +1 m），在偏移後的位姿做量測，看量測能修回多少。近距對齊的航向只修回約 10%，等於一直把航向拉回先驗，所以最終流程不使用它。車道比對的航向能完整修回。
 

@@ -746,3 +746,4 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    apart, +0.55 vs +0.80; 2700-3142: ~1-1.4 m apart, +0.92/+0.43 vs +1.01/+0.64; 2100-2400 slightly A), total 1510 vs
    1583, and A crept 0.8 m during the 40 s red-light stop (the same image measured hundreds of times; low-sharpness
    fixes are biased). -> run_online.sh T3 uses B (t3_online_b6.csv, public 0.51).
+ * from-scratch tools/run_online.sh T3 == t3_online_b6.csv (byte-identical).
