@@ -4,12 +4,14 @@
 The frame-0 lane match can be flat over several degrees (Track03: peaks 0.19-0.22 from +13.5 to +21.5 deg), and a
 filter started a few degrees off may never lock. localize_online.py is therefore started with several heading offsets
 (--init_offset) for the first N frames. For every frame k the output is the pose of the hypothesis with the highest
-score up to frame k (score = accepted map measurements so far: lane forward + lane lateral + 2 x lane heading + near
-lateral), ties going to the first hypothesis listed. At frame N the best hypothesis is kept (the others are pruned)
+score up to frame k: the log-likelihood of its map measurements so far (Gaussian term of every accepted lane / near
+measurement, a gate-sized penalty for every one outside the gate; column 'll' of the debug csv). Scores within MARGIN
+of the best count as a tie, and a tie goes to the hypothesis with the smallest heading offset (the measured frame-0
+heading is the prior). At frame N the best hypothesis is kept (the others are pruned)
 and its full-length run supplies the frames after N. Every output uses data up to its own frame only.
 
-usage: hyp_select.py select <N> <hyp.csv:hyp_debug.csv> ...        -> prints the winning hypothesis index at frame N
-       hyp_select.py combine <out.csv> <N> <winner_full.csv> <hyp.csv:hyp_debug.csv> ...
+usage: hyp_select.py select <N> <offsets a,b,..> <hyp.csv:hyp_debug.csv> ...   -> prints the winning index at frame N
+       hyp_select.py combine <out.csv> <N> <winner_full.csv> <offsets a,b,..> <hyp.csv:hyp_debug.csv> ...
 """
 import sys
 
@@ -18,37 +20,34 @@ import pandas as pd
 
 
 def scores(dbg_files, n):
-    S = []
-    for f in dbg_files:
-        D = pd.read_csv(f)
-        acc = np.zeros(n)
-        for c, w in (('ln_fa', 1.0), ('ln_la', 1.0), ('ln_ya', 2.0), ('nr_la', 1.0)):
-            if c in D:
-                v = np.nan_to_num(D[c].values[:n].astype(float))
-                acc[:len(v)] += w * v
-        S.append(np.cumsum(acc))
-    return np.array(S)                      # (hypotheses, frames)
+    return np.array([pd.read_csv(f)['ll'].values[:n].astype(float) for f in dbg_files])   # (hypotheses, frames)
 
 
-def choice(S):
+MARGIN = 5.0
+
+
+def choice(S, offsets):
     best = S.max(0)
-    return np.array([int(np.flatnonzero(S[:, k] == best[k])[0]) for k in range(S.shape[1])])
+    order = np.argsort(np.abs(offsets), kind='stable')
+    return np.array([int(next(h for h in order if S[h, k] >= best[k] - MARGIN)) for k in range(S.shape[1])])
 
 
 if __name__ == '__main__':
     mode = sys.argv[1]
     if mode == 'select':
         n = int(sys.argv[2])
-        pairs = [p.split(':') for p in sys.argv[3:]]
+        offs = np.array([float(v) for v in sys.argv[3].split(',')])
+        pairs = [p.split(':') for p in sys.argv[4:]]
         S = scores([d for _, d in pairs], n)
-        ch = choice(S)
+        ch = choice(S, offs)
         print(int(ch[n - 1]))
         sys.stderr.write('scores at frame %d: %s\n' % (n, ' '.join(f'{v:.0f}' for v in S[:, n - 1])))
     else:
         out, n, full = sys.argv[2], int(sys.argv[3]), sys.argv[4]
-        pairs = [p.split(':') for p in sys.argv[5:]]
+        offs = np.array([float(v) for v in sys.argv[5].split(',')])
+        pairs = [p.split(':') for p in sys.argv[6:]]
         S = scores([d for _, d in pairs], n)
-        ch = choice(S)
+        ch = choice(S, offs)
         H = [pd.read_csv(c) for c, _ in pairs]
         F = pd.read_csv(full)
         R = F.copy()

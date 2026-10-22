@@ -705,3 +705,16 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    (tools/hyp_select.py, run_online.sh T3).
  * v6 submissions: T1 0.48, T2 0.34 (public; the old non-causal 0.40 / 0.17 are not eligible). T1/T2 runner outputs
    are byte-identical to the validation runs.
+ * Bank selection by accepted-measurement counts was noise early on (scores 1-25, a -3 deg hypothesis led by one point
+   after one wrong 3 m forward fix): submitted bank output (frames 0-45 from the 0-offset hypothesis, 2-3 m behind)
+   scored public 1.26 vs 0.86 for the stand-in run -> the public part is about the first 10 % (~314 frames) and is
+   dominated by the first 60 frames. Selection now by the log-likelihood of the map measurements (Gaussian term per
+   accepted lane / near measurement, gate penalty per rejected one; 'll' in the debug csv), ties (margin 5) to the
+   smallest heading offset. Only versions reproducible from the official data may be selected (the stand-in run is
+   not: fl frames 0-34 were black).
+ * --min_peak_lo 0.13 (weaker lane matches while the state is uncertain): T3 forward lock at frame 6 instead of 60
+   (positions identical after frame 60); T1 rehearsal: start better (300-600 lateral +0.88 -> 0.00) but a 1 m wrong
+   lateral lock at 1800-2400 -> forward direction only (--lo_peak_sd 0.5 99).
+ * GNSS as Gauss-Markov bias state (--gnss_bias_sd, tau 3 s): vs the reference T1 0.429 -> 0.671, T2 0.283 -> 0.323
+   (the map fixes at the T1/T2 starts are biased too) -> off.
+ * Causal lane-match accumulation (--accum_dist 15): s1 diverged (60 m) -> not used.

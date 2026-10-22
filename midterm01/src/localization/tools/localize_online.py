@@ -43,7 +43,11 @@ ap.add_argument('lane_marks', help='soft marking map (marking_map.py ALL ... --m
 ap.add_argument('out')
 ap.add_argument('--vo', default='', help='bev_vo.py npz (road-surface odometry)')
 ap.add_argument('--gnss', action='store_true', help='use sensors/gnss.csv (Track01/02)')
-ap.add_argument('--gnss_sigma', type=float, nargs=2, default=[0.3, 0.3], help='m: along / across-track GNSS noise')
+ap.add_argument('--gnss_sigma', type=float, nargs=2, default=[0.3, 0.3], help='m: along / across-track GNSS noise (white part '
+                'when --gnss_bias_sd > 0)')
+ap.add_argument('--gnss_bias_sd', type=float, default=0.0, help='m (joint EKF): GNSS error modelled as a first-order Gauss-Markov bias '
+                'state of this sd (GNSS errors are strongly time-correlated: autocorrelation 0.8-0.9 at 1 s); 0 = white noise only')
+ap.add_argument('--gnss_bias_tau', type=float, default=3.0, help='s: correlation time of the GNSS bias')
 ap.add_argument('--no_imu', action='store_true')
 ap.add_argument('--step', type=int, default=3, help='map measurement every step frames')
 ap.add_argument('--init', default='', help='x,y,yaw_rad instead of init_guess.txt')
@@ -389,7 +393,10 @@ if __name__ == '__main__':
         print('--joint needs the IMU: using the separate filters', flush=True)
         a.joint = False
     # joint EKF state [x, y, heading, speed, accel bias, VO scale, gyro bias] (the variables x, y, yaw, v, b, kvo, bg)
-    PJ = np.diag([1.0, 1.0, np.radians(a.yaw0_sd), a.v0_sd, 0.05, 0.05, np.radians(a.gyro_bias_sd)]) ** 2
+    # + GNSS bias [x, y] (time-correlated GNSS error, first-order Gauss-Markov; zero variance = off)
+    PJ = np.diag([1.0, 1.0, np.radians(a.yaw0_sd), a.v0_sd, 0.05, 0.05, np.radians(a.gyro_bias_sd), a.gnss_bias_sd, a.gnss_bias_sd]) ** 2
+    gbx = gby = 0.0
+    LL = 0.0          # running log-likelihood of the map measurements
     out = np.zeros((n, 3))
     big_f, big_l = [], []
     vo_hist = []
@@ -429,34 +436,39 @@ if __name__ == '__main__':
     def jupd(h, e, r2, gate, robust=False):
         """Scalar measurement update of the joint EKF: innovation e = z - h.s, noise variance r2. robust: Huber
         weight (map matches have heavy tails: a normalised innovation above --huber inflates the noise)."""
-        global x, y, yaw, v, b, kvo, bg, PJ
+        global x, y, yaw, v, b, kvo, bg, PJ, gbx, gby, LL
         S = float(h @ PJ @ h) + r2
         if e * e >= gate * S:
+            if robust:   # map measurement outside the gate: counts against this filter (hypothesis selection)
+                LL -= 0.5 * gate + 0.5 * np.log(2 * np.pi * S)
             return False
+        if robust:   # log-likelihood of the map measurements (tools/hyp_select.py)
+            LL -= 0.5 * e * e / S + 0.5 * np.log(2 * np.pi * S)
         t = abs(e) / np.sqrt(S)
         if robust and a.huber > 0 and t > a.huber:
             S = S - r2 + r2 * t / a.huber
         K = PJ @ h / S
         x, y, yaw = x + K[0] * e, y + K[1] * e, yaw + K[2] * e
         v, b, kvo, bg = max(0.0, v + K[3] * e), b + K[4] * e, float(np.clip(kvo + K[5] * e, *a.kvo_range)), bg + K[6] * e
+        gbx, gby = gbx + K[7] * e, gby + K[8] * e
         PJ = PJ - np.outer(K, h @ PJ)
         PJ = 0.5 * (PJ + PJ.T)
         return True
 
     def jpredict(dt, dpsi, dvm):
         """Joint EKF prediction over dt: heading change dpsi (gyro - bias), speed change dvm (IMU, before the bias)."""
-        global x, y, yaw, v, PJ
+        global x, y, yaw, v, PJ, gbx, gby
         v_new = max(0.0, v + dvm - b * dt)
         ym = yaw + 0.5 * dpsi
         d = 0.5 * (v + v_new) * dt
         cm, sm = np.cos(ym), np.sin(ym)
-        F = np.eye(7)
+        F = np.eye(9)
         F[0, 2], F[1, 2] = -d * sm, d * cm
         F[0, 3], F[1, 3] = dt * cm, dt * sm
         F[0, 4], F[1, 4] = -0.5 * dt * dt * cm, -0.5 * dt * dt * sm
         F[0, 6], F[1, 6] = 0.5 * d * dt * sm, -0.5 * d * dt * cm
         F[2, 6], F[3, 4] = -dt, -dt
-        Gv = np.array([0.5 * dt * dt * cm, 0.5 * dt * dt * sm, 0, dt, 0, 0, 0])
+        Gv = np.array([0.5 * dt * dt * cm, 0.5 * dt * dt * sm, 0, dt, 0, 0, 0, 0, 0])
         Q = sa ** 2 * np.outer(Gv, Gv)
         Rr = np.array([[cm, -sm], [sm, cm]])
         Q[:2, :2] += Rr @ np.diag([1e-4 * dt, a.lat_q ** 2 * dt]) @ Rr.T
@@ -464,6 +476,11 @@ if __name__ == '__main__':
         Q[4, 4] += a.bias_walk ** 2 * dt
         Q[5, 5] += 1e-6 * dt
         Q[6, 6] += np.radians(a.gyro_bias_walk) ** 2 * dt
+        if a.gnss_bias_sd > 0:
+            rho = np.exp(-dt / a.gnss_bias_tau)
+            F[7, 7] = F[8, 8] = rho
+            Q[7, 7] = Q[8, 8] = a.gnss_bias_sd ** 2 * (1 - rho * rho)
+            gbx, gby = rho * gbx, rho * gby
         PJ = F @ PJ @ F.T + Q
         x, y, yaw, v = x + d * cm, y + d * sm, yaw + dpsi, v_new
         return d
@@ -471,7 +488,7 @@ if __name__ == '__main__':
     def upd_fwd(e, sig, gate=16.0, robust=False):
         global x, y, v, b, kvo, P3
         if a.joint:
-            return jupd(np.r_[axis('f'), np.zeros(5)], e, sig ** 2, gate, robust)
+            return jupd(np.r_[axis('f'), np.zeros(7)], e, sig ** 2, gate, robust)
         S = P3[0, 0] + sig ** 2
         if e * e >= gate * S:
             return False
@@ -485,7 +502,7 @@ if __name__ == '__main__':
     def upd_lat(e, sig, gate=16.0, robust=False):
         global x, y, Pl
         if a.joint:
-            return jupd(np.r_[axis('l'), np.zeros(5)], e, sig ** 2, gate, robust)
+            return jupd(np.r_[axis('l'), np.zeros(7)], e, sig ** 2, gate, robust)
         S = Pl + sig ** 2
         if e * e >= gate * S:
             return False
@@ -498,7 +515,7 @@ if __name__ == '__main__':
     def upd_yaw(e, sig, gate=16.0, robust=False):
         global yaw, bg, PY, w
         if a.joint:
-            return jupd(np.eye(7)[2], e, sig ** 2, gate, robust)
+            return jupd(np.eye(9)[2], e, sig ** 2, gate, robust)
         S = PY[0, 0] + sig ** 2
         if e * e >= gate * S:
             return False
@@ -542,8 +559,8 @@ if __name__ == '__main__':
                     ti_, wz_ = IMU_RAW[0], IMU_RAW[1]
                     j0, j1 = np.searchsorted(ti_, t0, 'right'), np.searchsorted(ti_, t1, 'right')
                     if j1 > j0:
-                        jupd(np.eye(7)[6], float(wz_[j0:j1].mean()) - bg, np.radians(0.1) ** 2 / (j1 - j0), 25.0)
-                        jupd(np.eye(7)[3], -v, 0.05 ** 2, 1e9)
+                        jupd(np.eye(9)[6], float(wz_[j0:j1].mean()) - bg, np.radians(0.1) ** 2 / (j1 - j0), 25.0)
+                        jupd(np.eye(9)[3], -v, 0.05 ** 2, 1e9)
                         cnt['still'] += 1
                         D['still'] = 1
                 if VO is not None and (k - 1) in VO and VO[k - 1][2] > 0.5:   # speed of the pair (k-1, k)
@@ -557,11 +574,11 @@ if __name__ == '__main__':
                         # first VO pair has no prediction) -> wait for 5 valid pairs, initialise with their median
                         if len(vo_hist) >= 5:
                             zm = float(np.median(vo_hist[-5:]))
-                            D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0]), zm - kvo * v, (0.1 * max(zm, 1.0)) ** 2, 1e9))
+                            D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0, 0, 0]), zm - kvo * v, (0.1 * max(zm, 1.0)) ** 2, 1e9))
                             cnt['vo'] += D['vo_a']
                         Sv = -1.0
                     elif a.joint:
-                        D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0]), inn, rv, 16.0))
+                        D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0, 0, 0]), inn, rv, 16.0))
                         cnt['vo'] += D['vo_a']
                         Sv = -1.0
                     else:
@@ -580,9 +597,15 @@ if __name__ == '__main__':
                         lag = (TS[k] - G[0][gi]) * 1e-9
                         gx, gy = G[1][gi] + v * lag * np.cos(yaw), G[2][gi] + v * lag * np.sin(yaw)
                         c, s = np.cos(yaw), np.sin(yaw)
-                        ef, el = c * (gx - x) + s * (gy - y), -s * (gx - x) + c * (gy - y)
-                        ok1 = upd_fwd(ef, a.gnss_sigma[0], 25.0)
-                        ok2 = upd_lat(el, a.gnss_sigma[1], 25.0)
+                        if a.joint and a.gnss_bias_sd > 0:   # GNSS = position + time-correlated bias + white noise
+                            ef = c * (gx - x - gbx) + s * (gy - y - gby)
+                            ok1 = jupd(np.array([c, s, 0, 0, 0, 0, 0, c, s]), ef, a.gnss_sigma[0] ** 2, 25.0)
+                            el = -s * (gx - x - gbx) + c * (gy - y - gby)
+                            ok2 = jupd(np.array([-s, c, 0, 0, 0, 0, 0, -s, c]), el, a.gnss_sigma[1] ** 2, 25.0)
+                        else:
+                            ef, el = c * (gx - x) + s * (gy - y), -s * (gx - x) + c * (gy - y)
+                            ok1 = upd_fwd(ef, a.gnss_sigma[0], 25.0)
+                            ok2 = upd_lat(el, a.gnss_sigma[1], 25.0)
                         D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
                         gi += 1
@@ -693,7 +716,7 @@ if __name__ == '__main__':
                 floor('y', np.radians(a.floor[2]))
             out[k] = (x, y, yaw)                   # written once: frame k's estimate uses data up to frame k
             if a.debug:
-                D.update(x=x, y=y, yaw=np.degrees(yaw), v=v, ba=b, kvo=kvo, bg=np.degrees(bg), sdf=np.sqrt(var('f')),
+                D.update(x=x, y=y, yaw=np.degrees(yaw), v=v, ba=b, kvo=kvo, bg=np.degrees(bg), ll=LL, sdf=np.sqrt(var('f')),
                          sdl=np.sqrt(var('l')), sdy=np.degrees(np.sqrt(var('y'))))
                 DBG.append(D)
             if a.accum_dist > 0 and REPLAY is None:

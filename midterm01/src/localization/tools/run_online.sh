@@ -34,8 +34,10 @@ case $TR in
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.08 --acc_noise 0.05" ;;
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS: forward fixes down to sharpness 0.005 always (stop drift)
-      P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --min_sharp_f 0.005 --v0_sd 10" ;;
-      # T3 starts moving (~8 m/s at frame 0): unknown initial speed, the first VO pair sets it
+      P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --min_sharp_f 0.005 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99" ;;
+      # T3 starts moving (~8 m/s at frame 0): unknown initial speed (median of the first VO pairs); while the position is
+      # uncertain (start) weaker lane matches count for the forward direction (peak > 0.13): forward lock at frame 6
+      # instead of 60 (for the lateral direction they caused a 1 m wrong lock in the T1 rehearsal)
   *) echo "track must be T1, T2 or T3"; exit 1 ;;
 esac
 
@@ -73,11 +75,12 @@ if [ "$TR" = T3 ]; then
     [ $((i % 3)) -eq 0 ] && wait     # at most 3 map-loading runs at a time (memory)
   done
   wait
-  BEST=$(python3 tools/hyp_select.py select $NH $PAIRS 2> $W/hyp_select.log)
+  OFFS=$(echo $HYP | tr ' ' ',')
+  BEST=$(python3 tools/hyp_select.py select $NH $OFFS $PAIRS 2> $W/hyp_select.log)
   OB=$(echo $HYP | cut -d' ' -f$((BEST + 1)))
   echo "heading hypothesis $OB deg selected at frame $NH ($(cat $W/hyp_select.log))"
   $LOC $W/full.csv --vo $W/vo.npz $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
-  python3 tools/hyp_select.py combine "$OUT" $NH $W/full.csv $PAIRS 2>> $W/hyp_select.log
+  python3 tools/hyp_select.py combine "$OUT" $NH $W/full.csv $OFFS $PAIRS 2>> $W/hyp_select.log
   tail -n 1 $W/hyp_select.log
 else
   $LOC "$OUT" --vo "$W/vo.npz" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1
