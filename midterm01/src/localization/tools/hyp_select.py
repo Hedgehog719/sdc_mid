@@ -5,9 +5,9 @@ The frame-0 lane match can be flat over several degrees (Track03: peaks 0.19-0.2
 filter started a few degrees off may never lock. localize_online.py is therefore started with several heading offsets
 (--init_offset) for the first N frames. For every frame k the output is the pose of the hypothesis with the highest
 score up to frame k: the log-likelihood of its map measurements so far (Gaussian term of every accepted lane / near
-measurement, a gate-sized penalty for every one outside the gate; column 'll' of the debug csv). Scores within MARGIN
-of the best count as a tie, and a tie goes to the hypothesis with the smallest heading offset (the measured frame-0
-heading is the prior). At frame N the best hypothesis is kept (the others are pruned)
+measurement, a gate-sized penalty for every one outside the gate; column 'll' of the debug csv), i.e. the maximum-
+likelihood hypothesis (an exact tie goes to the smallest heading offset). A margin of 5 that preferred the 0 offset on
+near-ties kept a worse hypothesis for 25 frames on Track03. At frame N the best hypothesis is kept (the others are pruned)
 and its full-length run supplies the frames after N. Every output uses data up to its own frame only.
 
 usage: hyp_select.py select <N> <offsets a,b,..> <hyp.csv:hyp_debug.csv> ...   -> prints the winning index at frame N
@@ -23,7 +23,7 @@ def scores(dbg_files, n):
     return np.array([pd.read_csv(f)['ll'].values[:n].astype(float) for f in dbg_files])   # (hypotheses, frames)
 
 
-MARGIN = 5.0
+MARGIN = 0.0
 
 
 def choice(S, offsets):

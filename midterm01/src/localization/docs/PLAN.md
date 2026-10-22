@@ -718,3 +718,7 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
  * GNSS as Gauss-Markov bias state (--gnss_bias_sd, tau 3 s): vs the reference T1 0.429 -> 0.671, T2 0.283 -> 0.323
    (the map fixes at the T1/T2 starts are biased too) -> off.
  * Causal lane-match accumulation (--accum_dist 15): s1 diverged (60 m) -> not used.
+ * Selection by log-likelihood with a margin of 5 preferring the 0 offset kept the 0-offset hypothesis (behind) until
+   frame ~25; plain maximum likelihood (the standard multiple-model choice; changed after seeing this, no ground
+   truth / board involved) switches to the winner (-1.5 deg) at frame 12 -> T3 public 0.86 (stand-in) / 1.26 (count
+   bank) -> 0.51 (t3_online_bank_mle, reproducible from the official data; leaderboard 1st, next 0.99).
