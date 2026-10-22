@@ -740,3 +740,9 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    but another one (900-1200, forward -1.1 m) failed instead (0.781). Within each section the run with the higher
    map-likelihood rate was the better one, but a causal sliding-window choice between two runs only gave 0.717-0.755
    (the switch comes after the error has grown). Not used; T3's two independent runs agree within cm after frame 60.
+ * T3 configuration check without ground truth (work/online/cmp_runs.py): A = submitted (every forward fix with
+   sharpness > 0.005), B = v6 rule (low-sharpness forward fixes only while the forward sd > 0.35). Same hypothesis
+   winner; public parts identical (both 0.51). Where they differ the map-likelihood rate favours B (600-900: 0.71 m
+   apart, +0.55 vs +0.80; 2700-3142: ~1-1.4 m apart, +0.92/+0.43 vs +1.01/+0.64; 2100-2400 slightly A), total 1510 vs
+   1583, and A crept 0.8 m during the 40 s red-light stop (the same image measured hundreds of times; low-sharpness
+   fixes are biased). -> run_online.sh T3 uses B (t3_online_b6.csv, public 0.51).
