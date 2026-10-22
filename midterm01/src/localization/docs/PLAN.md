@@ -686,3 +686,22 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    1 s; T2 0.15 / 0.13, 0.92 at 1 s -> the replay-tuned T1 cross sigma 0.2 is far too small (test 1.5 / 1.0).
    Memory: 4 runs + extra map-loading test scripts hit the 20 GB container cap (OOM killed one run); runs now go
    through work/online/queue.sh (max 4 main processes) and no map-loading scripts run beside them.
+
+## 10/23 night: Track03 released (no GNSS; IMU in the bag) and v6 submissions
+ * Data: Kaggle API bulk download 404, per-file download rate-limited (429) after ~520 files. The camera images were
+   decoded from the bag's h265 streams (ffmpeg -> JPEG quality 95, named <frame>_ts_<bag time>.jpg): byte-identical to
+   the official JPGs (checked after the user downloaded Track3.zip by hand); only frames before the first keyframe
+   differ (fl 0-34, fr 0-2; black stand-ins until the official files arrived). raw_ply is used only for frame names.
+ * T3 facts: 3142 frames, IMU 100 Hz, no GNSS topic, starts moving (~8 m/s, turning -2 deg/s), red-light stops (zupt
+   bias -0.232 deg/s = calibration), map 57.4 M points, shuffled order. init_guess: heading off ~17 deg, position
+   ~1.5 m; the map ground around the start is smooth (no T1-like dip). YOLO masks catch the parked scooters.
+ * Start fixes: unknown initial speed (--v0_sd 10) initialised from the median of the first 5 VO pairs (the first
+   pair has no prediction and aliased to 23.9 m/s, which the filter had taken -> 24 m/s, VO scale at its limit).
+ * The frame-0 heading match is flat (peaks 0.19-0.22 over +13.5..+21.5 deg); the stand-in run (fl black at frame 0)
+   started at 162.83 deg and locked (public 0.86, 1st), the official-image run started at 165.06 and lost lock
+   (lane heading never accepted). Hypotheses 162.5 / 163.5 / 164.5 / 165.5: 162.5 and 163.5 lock (same solution),
+   165.5 nearly, 164.5 not -> lock is chaotic -> bank of heading hypotheses (offsets 0, +-1.5, +-3 deg around the
+   frame-0 search), per-frame causal selection by accepted map measurements, winner kept at frame 600
+   (tools/hyp_select.py, run_online.sh T3).
+ * v6 submissions: T1 0.48, T2 0.34 (public; the old non-causal 0.40 / 0.17 are not eligible). T1/T2 runner outputs
+   are byte-identical to the validation runs.

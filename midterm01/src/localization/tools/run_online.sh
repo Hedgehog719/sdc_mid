@@ -61,7 +61,26 @@ echo "[$(date +%H:%M:%S)] 4. visual odometry"
 [ -f "$W/vo.npz" ] || python3 tools/bev_vo.py "$TD" "$W/vo.npz" $IMU | tail -n 1
 
 echo "[$(date +%H:%M:%S)] 5. online localization ($N)"
-python3 tools/localize_online.py "$TD" "$W/mk_D.npz" "$W/mk_S.npz" "$OUT" --vo "$W/vo.npz" $IMU $COMMON $P \
-  --debug "$W/debug.csv" > "$W/localize.log" 2>&1
+LOC="python3 tools/localize_online.py $TD $W/mk_D.npz $W/mk_S.npz"
+if [ "$TR" = T3 ]; then
+  # no GNSS and init_guess off by ~17 deg: the frame-0 heading search is flat over several degrees and a filter started
+  # a few degrees off may never lock -> bank of heading hypotheses (frame-0 search + offsets) for the first NH frames,
+  # per-frame causal selection by accepted map measurements, the winner continues (tools/hyp_select.py)
+  NH=600; HYP="0 -1.5 1.5 -3 3"; PAIRS=""; i=0
+  for o in $HYP; do
+    $LOC $W/hyp_$o.csv --vo $W/vo.npz $IMU $COMMON $P --init_offset $o --frames $NH --debug $W/hyp_${o}_dbg.csv > $W/hyp_$o.log 2>&1 &
+    PAIRS="$PAIRS $W/hyp_$o.csv:$W/hyp_${o}_dbg.csv"; i=$((i + 1))
+    [ $((i % 3)) -eq 0 ] && wait     # at most 3 map-loading runs at a time (memory)
+  done
+  wait
+  BEST=$(python3 tools/hyp_select.py select $NH $PAIRS 2> $W/hyp_select.log)
+  OB=$(echo $HYP | cut -d' ' -f$((BEST + 1)))
+  echo "heading hypothesis $OB deg selected at frame $NH ($(cat $W/hyp_select.log))"
+  $LOC $W/full.csv --vo $W/vo.npz $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
+  python3 tools/hyp_select.py combine "$OUT" $NH $W/full.csv $PAIRS 2>> $W/hyp_select.log
+  tail -n 1 $W/hyp_select.log
+else
+  $LOC "$OUT" --vo "$W/vo.npz" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1
+fi
 tail -n 1 "$W/localize.log"
 echo "[$(date +%H:%M:%S)] done -> $OUT"

@@ -48,6 +48,8 @@ ap.add_argument('--no_imu', action='store_true')
 ap.add_argument('--step', type=int, default=3, help='map measurement every step frames')
 ap.add_argument('--init', default='', help='x,y,yaw_rad instead of init_guess.txt')
 ap.add_argument('--init_yaw', type=float, default=25.0, help='deg: heading window of the initial search')
+ap.add_argument('--init_offset', type=float, default=0.0, help='deg added to the frame-0 heading (heading hypotheses, '
+                'tools/hyp_select.py: the frame-0 match can be flat over several degrees)')
 ap.add_argument('--rmax', type=float, default=14.0)
 ap.add_argument('--lat', type=float, default=6.0)
 ap.add_argument('--bg_weight', type=float, default=1.0)
@@ -64,6 +66,10 @@ ap.add_argument('--floor', type=float, nargs=3, default=[0.3, 0.15, 0.3], help='
 ap.add_argument('--min_peak', type=float, default=0.2)
 ap.add_argument('--min_peak_yaw', type=float, default=0.25)
 ap.add_argument('--min_sharp_l', type=float, default=0.1)
+ap.add_argument('--min_peak_lo', type=float, default=0.2, help='lane-match peak needed while the state is uncertain (see --lo_peak_sd)')
+ap.add_argument('--lo_peak_sd', type=float, nargs=2, default=[0.5, 0.3], help='m: forward / lateral sd above which --min_peak_lo applies')
+ap.add_argument('--init_pos', type=float, default=0.0, help='>0 (no GNSS): when the frame-0 heading search corrects init_guess by more '
+                'than --gross_yaw, also take the frame-0 match position (shift window this many metres)')
 ap.add_argument('--gyro_bias', type=float, default=-0.23)
 ap.add_argument('--gyro_bias_sd', type=float, default=0.003, help='deg/s: the gyro bias is a sensor calibration constant')
 ap.add_argument('--gyro_bias_walk', type=float, default=0.0001)
@@ -253,7 +259,8 @@ def near_yaw(j, pose, cams=('f',), span=3.0, step=0.2):
     return float(ys[m] + (np.clip(0.5 * (g[m - 1] - g[m + 1]) / den, -0.5, 0.5) if den < 0 else 0) * np.radians(step)), True
 
 
-def lane_measure(j, pose, win):
+def lane_measure(j, pose, win, lo_f=False, lo_l=False):
+    """lo_f / lo_l: the forward / lateral state is uncertain -> accept weaker matches (peak > --min_peak_lo)."""
     try:
         r = LS.match(j, pose)
     except (IndexError, ValueError):   # no map around the pose (map edge)
@@ -264,8 +271,8 @@ def lane_measure(j, pose, win):
     if peak < 0.08:
         return None
     lim = win - 0.15
-    f_ok = abs(fwd) < lim and sharp_f > 0.003 and peak > a.min_peak
-    l_ok = abs(lat) < lim and sharp_l > a.min_sharp_l and peak > a.min_peak
+    f_ok = abs(fwd) < lim and sharp_f > 0.003 and peak > (a.min_peak_lo if lo_f else a.min_peak)
+    l_ok = abs(lat) < lim and sharp_l > a.min_sharp_l and peak > (a.min_peak_lo if lo_l else a.min_peak)
     y_ok = abs(np.degrees(dyaw)) < 3.0 - 0.05 and peak > a.min_peak_yaw
     return fwd, lat, dyaw, sharp_f, sharp_l, peak, f_ok, l_ok, y_ok
 
@@ -333,6 +340,17 @@ def initial_pose(G):
     LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
     if abs(np.degrees(yaw - y0)) < a.gross_yaw:   # init_guess heading is fine: keep it (the start map can be defective)
         yaw = y0
+    elif a.init_pos and G is None:   # init_guess grossly off (heading > gross_yaw): its position is suspect as well ->
+        LS.set_window(max_shift=a.init_pos, max_yaw=1.0, yaw_step=0.5)   # frame-0 match position, wide window
+        try:
+            r = LS.match(0, (x, y, yaw))
+        except (IndexError, ValueError):
+            r = None
+        if r is not None and r[0] > a.min_peak_lo:
+            c, s = np.cos(yaw), np.sin(yaw)
+            x, y = x + c * r[2] - s * r[3], y + s * r[2] + c * r[3]
+            print(f'frame-0 position correction: forward {r[2]:+.2f} m, lateral {r[3]:+.2f} m (peak {r[0]:.3f})', flush=True)
+        LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
     return [x, y, yaw]
 
 
@@ -357,6 +375,7 @@ if __name__ == '__main__':
         VO = {int(j): (f, d, r) for j, f, d, r in zip(zv['j'], zv['fwd'], zv['dt'], zv['resp'])}   # pair (j, j + 1)
     print(f'{T}: {n} frames, IMU {"yes" if heading else "no"}, GNSS {"yes" if G is not None else "no"}, VO {"yes" if VO else "no"}', flush=True)
     x, y, yaw = REPLAY['init'] if REPLAY is not None else initial_pose(G)
+    yaw += np.radians(a.init_offset)
     REC['init'] = (x, y, yaw)
     print(f'initial pose (frame 0): x {x:.2f} y {y:.2f} yaw {np.degrees(yaw):.2f} deg', flush=True)
     v, b, w, kvo = 0.0, 0.0, 0.0, 1.0
@@ -580,7 +599,7 @@ if __name__ == '__main__':
                     mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
                     if a.accum_dist > 0:
                         LS.set_pose(k, mp)   # current prior of frame k (past frames hold their final poses)
-                    r = lane_measure(k, mp, win)
+                    r = lane_measure(k, mp, win, var('f') > a.lo_peak_sd[0] ** 2, var('l') > a.lo_peak_sd[1] ** 2)
                     if r is not None:   # record as absolute pose + match quality
                         cm, sm = np.cos(mp[2]), np.sin(mp[2])
                         REC['lane'][k] = (mp[0] + cm * r[0] - sm * r[1], mp[1] + sm * r[0] + cm * r[1], mp[2] + r[2], r[3], r[4], r[5])
