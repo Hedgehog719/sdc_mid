@@ -638,3 +638,51 @@ Pipeline (tools/run_track3.sh):
     (yaw 0.173 deg). run_track3.sh now runs pass 3.
   * Board (GNSS-free, as T1/T2 submissions): T2 v2 (start rule) 0.30, v3 (+ pass 3) 0.25; T1 v3 0.40 (= the
     GNSS-aided best). Today's submissions: T2 7, T1 4.
+
+## 10/22-10/23 Causal (online) pipeline after the 10/22 rules
+Rules 10/22: causal / online only (frame k from frames 1..k, poses never revised), no backward smoothing, no offline
+correction, TA re-runs the code. Everything older moved to legacy/ (legacy/README.md has the rule timeline).
+New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/run_online.sh, calibration in calib/.
+ * v1/v2 (separate along-track / cross-track / heading filters, replay-tuned): vs the old best (t2_pipe_v16 /
+   t1_pipe_v14m) t2g 0.182 m / 0.70 deg (score-like 0.32), t1g 0.43 m / 0.80 deg (0.59), GNSS-free s2 0.51 / 0.74,
+   s1 0.84 / 0.62. Replays had promised ~0.14 deg. Heading errors persist for hundreds of frames (T1 start +1.0 ->
+   +1.9 deg for 450 frames, T2 standstill start -2.5 deg).
+ * Why: PERTURBATION TEST (work/online/perturb.py + sens.sh: record the map measurements around the reference
+   shifted by +1 deg / +0.3 m lateral / +1 m forward and see how much each measurement takes back):
+     near-alignment heading  recovers ~10 % (median error +0.9 deg after a +1 deg shift) -> it just returns the prior
+                             heading; with sigma 0.3 deg it pinned the filter to whatever heading it had
+     lane-match heading      recovers ~100 % (bias +0.30 deg, robust sd 0.45-0.77 deg; none at the T1/T2 starts)
+     near-alignment lateral  recovers ~100 % (core sd 0.03 m T2 / 0.09 m T1, 20-40 % heavy-tail outliers)
+     lane lateral / forward  ~100 % / ~90 % (robust sd 0.12-0.16 m / 0.13-0.23 m)
+   Lesson: measurements recorded around the reference (the replay set-up) cannot reveal a measurement that
+   returns its prior: it looks perfect there. The near heading profile (best over lateral per heading) is flat
+   within +-2 deg: 1-14 m of marks is too short a baseline for heading at the image-response blur.
+ * Changes: near heading off (--near_yaw_sigma 0), lane heading sigma 0.7 deg (offset 0.30), joint EKF (--joint:
+   [x, y, heading, speed, accel bias, VO scale, gyro bias] in one filter, so lateral fixes and GNSS also correct
+   the heading through the motion model), standstill update (--zupt: IMU steady for 1 s -> gyro reading = bias,
+   speed = 0; T2 standstill 0-5 s gives -0.247 deg/s = the calibration value, T1 0-2 s -0.217), optional Huber
+   weights for map matches (--huber), per-frame debug csv (--debug), frame limit (--frames).
+ * T2 start (standstill, frames 0-330): no reliable heading source (lane heading +1.2..1.8 deg vs the reference
+   with peaks 0.15-0.2, frame-0 wide search fragile: lane offset 0.32 -> 0.30 moves it by 0.64 deg). GNSS-pose and
+   IMU orientations are not absolute headings (+3.6 / -4.0 deg at the T2 start).
+ * Speed: the lane match at the T2 start takes 3.4 s per frame (18.5 M map points within 42 m where the mapping car
+   stood, normal 0.15-0.5 s). bev.map_bev now drops points outside the BEV first (identical output), but the dense
+   points lie inside the BEV, so the start stays slow.
+ * Results vs the old best (full track | steady state = from frame 600 on T1, 400 on T2), score-like = pos + 0.2 yaw:
+     t1g v1 0.592 | 0.396   v3j (joint, zupt, near heading off, lane heading 0.7) 0.452 | 0.398   v4 (+ forward
+         sigma 0.05/sqrt(sharpness), forward fixes down to sharpness 0.005, Huber 2.5) 0.474 | 0.420
+     s1  v1 0.966 | 0.524   v3j 1.206 | 1.166 (forward drift -3.4 m at 2000-2300: the lane forward fixes there said
+         +1.2..+2.5 m but had sharpness < 0.02 and were discarded)   v4 0.728 | 0.486
+     t2g v1 0.321 | 0.251   v3j 0.329 | 0.231 (heading 0.46 -> 0.30 deg steady; forward worse: the first zupt took
+         slow creeping at the start for standstill -> speed 0.35 instead of 1.4 m/s at frame 300; now the VO must
+         agree, |pair displacement| < 4 mm)
+   Lane forward error vs sharpness (around the reference): sharpness 0.01-0.02 robust sd 0.42 m (median -0.2),
+   0.006-0.01 0.61 (-0.47), 0.003-0.006 0.75 (-0.4), >= 0.02 0.2 -> sigma ~ 0.05/sqrt(sharpness). The low-sharpness
+   fixes are biased backwards: with GNSS they hurt (t1g forward 0.23 -> 0.30), without GNSS they stop the drift. Rule
+   now: low-sharpness fixes only while the forward sd > 0.35 m (--min_sharp_f_lo 0.005 --lo_sharp_sd 0.35).
+   T1 300-600: GNSS (+0.65 m) and the map lateral fixes (+0.95 m) agree against the reference -> the reference is
+   probably off there; T1 comparisons use the steady state.
+   GNSS vs the reference: T1 cross rms 0.50 / along 0.68 (segment means up to 0.65 / 1.30), autocorrelation 0.79 at
+   1 s; T2 0.15 / 0.13, 0.92 at 1 s -> the replay-tuned T1 cross sigma 0.2 is far too small (test 1.5 / 1.0).
+   Memory: 4 runs + extra map-loading test scripts hit the 20 GB container cap (OOM killed one run); runs now go
+   through work/online/queue.sh (max 4 main processes) and no map-loading scripts run beside them.

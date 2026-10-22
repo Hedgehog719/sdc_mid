@@ -44,7 +44,9 @@ if [ "$TR" != T3 ] && [ ! -s "$TD/sensors/gnss.csv" ]; then echo "no GNSS for $T
 
 echo "[$(date +%H:%M:%S)] 2. road segmentation and vehicle masks (per image)"
 [ -f "$TD/road/f.npz" ] || python3 tools/segment_road.py "$TD"
-[ -f "$TD/masks/f.npz" ] || python3 tools/segment_vehicles.py "$TD" --model "${YOLO_WEIGHTS:-yolo11x-seg.pt}"
+YW=${YOLO_WEIGHTS:-yolo11x-seg.pt}   # ultralytics downloads it when it is not a local file
+[ -z "$YOLO_WEIGHTS" ] && [ -f /root/data/weights/yolo11x-seg.pt ] && YW=/root/data/weights/yolo11x-seg.pt
+[ -f "$TD/masks/f.npz" ] || python3 tools/segment_vehicles.py "$TD" --model "$YW"
 
 echo "[$(date +%H:%M:%S)] 3. road-marking maps (whole map)"
 [ -f "$W/mk_D.npz" ] || python3 tools/marking_map.py "$TD" ALL "$W/mk_D.npz" --hi 2.5 --lo 1.2 --cell 0.7 > "$W/mk_D.log" 2>&1

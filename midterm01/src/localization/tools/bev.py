@@ -318,6 +318,10 @@ def _map_bev(xyz, intensity, pose_xy, yaw, plane_tol, rough_max, mode):
     d = xyz[:, :2] - pose_xy
     x = c * d[:, 0] + s * d[:, 1]
     y = -s * d[:, 0] + c * d[:, 1]
+    # only the BEV extent (+ the road-profile margin) is used below: drop the rest of the 42 m disc first (where the
+    # mapping car stood still the disc holds ~18 M points)
+    keep = (x > X_MIN - 1.5) & (x < X_MAX + 3.5) & (np.abs(y) < Y_MAX + 0.5)
+    x, y, xyz, intensity = x[keep], y[keep], xyz[keep], np.asarray(intensity)[keep]
     z = xyz[:, 2].astype(np.float64)
     # local road plane from points under the vehicle footprint
     near = (np.abs(x) < 6) & (np.abs(y) < 2.5)
