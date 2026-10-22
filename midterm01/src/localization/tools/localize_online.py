@@ -86,6 +86,9 @@ ap.add_argument('--near_yaw_sigma', type=float, default=0.6, help='deg; 0 = no h
                 'responds weakly: perturbing the prior heading by 1 deg moves it by only ~0.1 deg)')
 ap.add_argument('--lane_k', type=float, nargs=2, default=[0.01, 0.01], help='lane fix sigma = k / sharpness (forward, lateral)')
 ap.add_argument('--near_k', type=float, default=0.006)
+ap.add_argument('--near_fwd', type=float, default=0.0, help='>0: near-alignment forward offset as a measurement, sigma = '
+                'near_fwd / forward sharpness (0 = recorded only)')
+ap.add_argument('--near_fwd_min', type=float, default=0.02, help='smallest forward sharpness for a near forward measurement')
 ap.add_argument('--near_min_sigma', type=float, default=0.08, help='m: smallest near-alignment lateral sigma (perturbation '
                 'test: core sd 0.02-0.03 m, 20-40 %% outliers)')
 ap.add_argument('--lane_fc', type=float, default=0.0, help='>0: lane forward sigma = lane_fc / sqrt(sharpness) (measured: '
@@ -224,9 +227,17 @@ def near_measure(j, pose, resp, span_l, yaw_span=1.0):
     if den < 0:
         dl += float(np.clip(0.5 * (gl[0] - gl[2]) / den, -1, 1)) * 0.05
     sl = peak - max(g[i, max(k - 3, 0)], g[i, min(k + 3, len(lo_) - 1)])
+    # forward offset from the same grid (transverse marks: stop lines, crosswalks, dash ends), refined at the heading
+    f_ok = 0 < i < len(fo) - 1
+    gf = np.nan_to_num(np.array([sc(df + w, dl, dyaw) for w in (-0.05, 0.0, 0.05)]), nan=-1.0)
+    den = gf[0] - 2 * gf[1] + gf[2]
+    if den < 0:
+        df += float(np.clip(0.5 * (gf[0] - gf[2]) / den, -1, 1)) * 0.05
+    sf = peak - max(g[max(i - 2, 0), k], g[min(i + 2, len(fo) - 1), k])
     # the same correction about the vehicle origin: translation (df, dl) + c - R(dyaw) c
     dl += cy * (1 - np.cos(dyaw)) - np.sin(dyaw) * cx
-    return dl, dyaw, sl, l_ok, y_ok
+    df += cx * (1 - np.cos(dyaw)) + np.sin(dyaw) * cy
+    return dl, dyaw, sl, l_ok, y_ok, df, sf, f_ok
 
 
 def near_yaw(j, pose, cams=('f',), span=3.0, step=0.2):
@@ -674,18 +685,25 @@ if __name__ == '__main__':
                     rn = near_measure(k, mp, resp, float(np.clip(3 * np.sqrt(var('l')), 0.4, 1.0)) if MP is None else 1.0, yspan)
                     if rn is not None:
                         cm, sm = np.cos(mp[2]), np.sin(mp[2])
-                        REC['near'][k] = (mp[0] - sm * rn[0], mp[1] + cm * rn[0], mp[2] + rn[1], rn[2], rn[3], rn[4])
+                        REC['near'][k] = (mp[0] - sm * rn[0], mp[1] + cm * rn[0], mp[2] + rn[1], rn[2], rn[3], rn[4],
+                                          mp[0] + cm * rn[5], mp[1] + sm * rn[5], rn[6], rn[7])
                         if MP is not None:
                             nx, ny, nyaw = REC['near'][k][:3]
-                            rn = (-s0 * (nx - x) + c0 * (ny - y), (nyaw - yaw + np.pi) % (2 * np.pi) - np.pi, rn[2], rn[3], rn[4])
+                            fx, fy = REC['near'][k][6:8]
+                            rn = (-s0 * (nx - x) + c0 * (ny - y), (nyaw - yaw + np.pi) % (2 * np.pi) - np.pi, rn[2], rn[3], rn[4],
+                                  c0 * (fx - x) + s0 * (fy - y), rn[6], rn[7])
                 else:
                     rn = None
                     if k in REPLAY['near']:
-                        nx, ny, nyaw, sl_, lok, yok = REPLAY['near'][k]
-                        rn = (-s0 * (nx - x) + c0 * (ny - y), (nyaw - yaw + np.pi) % (2 * np.pi) - np.pi, sl_, lok, yok)
+                        nx, ny, nyaw, sl_, lok, yok = REPLAY['near'][k][:6]
+                        rn = (-s0 * (nx - x) + c0 * (ny - y), (nyaw - yaw + np.pi) % (2 * np.pi) - np.pi, sl_, lok, yok, 0.0, 0.0, False)
                 if rn is not None:
-                    dl2, dyaw2, sl2, l_ok2, y_ok2 = rn
-                    D.update(nr_dl=dl2, nr_dy=np.degrees(dyaw2), nr_sl=sl2, nr_lok=int(l_ok2), nr_yok=int(y_ok2), nr_la=0, nr_ya=0)
+                    dl2, dyaw2, sl2, l_ok2, y_ok2, df2, sf2, f_ok2 = rn
+                    D.update(nr_dl=dl2, nr_dy=np.degrees(dyaw2), nr_sl=sl2, nr_lok=int(l_ok2), nr_yok=int(y_ok2), nr_la=0, nr_ya=0,
+                             nr_df=df2, nr_sf=sf2, nr_fok=int(f_ok2), nr_fa=0)
+                    if a.near_fwd > 0 and f_ok2 and sf2 > a.near_fwd_min:
+                        D['nr_fa'] = int(upd_fwd(df2, float(np.clip(a.near_fwd / sf2, 0.08, 1.0)), robust=True))
+                        cnt['fwd'] += D['nr_fa']
                     if l_ok2 and sl2 > 0:
                         D['nr_la'] = int(upd_lat(dl2, float(np.clip(a.near_k / sl2, a.near_min_sigma, 0.6)), robust=True))
                         cnt['lat'] += D['nr_la']

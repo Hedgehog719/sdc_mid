@@ -722,3 +722,12 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    frame ~25; plain maximum likelihood (the standard multiple-model choice; changed after seeing this, no ground
    truth / board involved) switches to the winner (-1.5 deg) at frame 12 -> T3 public 0.86 (stand-in) / 1.26 (count
    bank) -> 0.51 (t3_online_bank_mle, reproducible from the official data; leaderboard 1st, next 0.99).
+ * Reproducibility: a from-scratch run of tools/run_online.sh T3 (bank, selection, full run, combination) gives a file
+   byte-identical to the submitted t3_online_bank_mle.csv; the T1/T2 runner outputs are byte-identical to
+   t1/t2_online_v6.
+ * Near-alignment forward offset (now recorded, --near_fwd 0 = unused): around the reference median +0.05 m, robust sd
+   0.22 (sharpness < 0.01, most samples) / 0.10 (0.02-0.04, few); after a +0.3 m forward shift it takes back only
+   0.10-0.15 m (gain ~0.4) -> half sticky, not used.
+ * T2 heading-hypothesis bank: during the standstill the map-measurement likelihood favours the WRONG headings
+   (offset -3: error -4.7 deg, ll -1; offset +1.5: error -0.2 deg, ll -8) - the start map pulls the heading the same
+   way as the frame-0 search (-1.8 deg) -> no causal heading source at the T2 standstill; not used.
