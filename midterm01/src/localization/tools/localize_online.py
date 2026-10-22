@@ -72,6 +72,11 @@ ap.add_argument('--min_peak_yaw', type=float, default=0.25)
 ap.add_argument('--min_sharp_l', type=float, default=0.1)
 ap.add_argument('--min_peak_lo', type=float, default=0.2, help='lane-match peak needed while the state is uncertain (see --lo_peak_sd)')
 ap.add_argument('--lo_peak_sd', type=float, nargs=2, default=[0.5, 0.3], help='m: forward / lateral sd above which --min_peak_lo applies')
+ap.add_argument('--drift_n', type=int, default=0, help='>0: this many consecutive lane matches (any lateral sharpness) all '
+                'more than 2.5 sigma off to the same side -> the lateral state has drifted: inflate its variance (T1 rehearsal: '
+                'a 1.5 m wrong lock lasted 20 s while the rejected lane matches kept saying +0.5..+1.7 m)')
+ap.add_argument('--lo_peak_start', action='store_true', help='weak lane matches (--min_peak_lo) only before the first regular forward fix '
+                '(the start); later they caused a 1 m wrong lateral lock in the T1 rehearsal')
 ap.add_argument('--init_pos', type=float, default=0.0, help='>0 (no GNSS): when the frame-0 heading search corrects init_guess by more '
                 'than --gross_yaw, also take the frame-0 match position (shift window this many metres)')
 ap.add_argument('--gyro_bias', type=float, default=-0.23)
@@ -410,7 +415,9 @@ if __name__ == '__main__':
     LL = 0.0          # running log-likelihood of the map measurements
     out = np.zeros((n, 3))
     big_f, big_l = [], []
+    drift_l = []
     vo_hist = []
+    lo_ok = True      # weak lane matches allowed (--min_peak_lo); with --lo_peak_start only until the first regular lock
     travelled = 0.0
     cnt = dict(fwd=0, lat=0, yaw=0, vo=0, gnss=0, still=0)
     gi = 0
@@ -633,7 +640,7 @@ if __name__ == '__main__':
                     mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
                     if a.accum_dist > 0:
                         LS.set_pose(k, mp)   # current prior of frame k (past frames hold their final poses)
-                    r = lane_measure(k, mp, win, var('f') > a.lo_peak_sd[0] ** 2, var('l') > a.lo_peak_sd[1] ** 2)
+                    r = lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if r is not None:   # record as absolute pose + match quality
                         cm, sm = np.cos(mp[2]), np.sin(mp[2])
                         REC['lane'][k] = (mp[0] + cm * r[0] - sm * r[1], mp[1] + sm * r[0] + cm * r[1], mp[2] + r[2], r[3], r[4], r[5])
@@ -666,6 +673,15 @@ if __name__ == '__main__':
                             big_f.clear()
                         D['ln_fa'] = int(upd_fwd(df, sig, robust=True))
                         cnt['fwd'] += D['ln_fa']
+                        if a.lo_peak_start and D['ln_fa'] and peak > a.min_peak:   # first regular forward lock: no
+                            lo_ok = False                                          # weak matches from now on
+                    if a.drift_n > 0 and peak > a.min_peak and abs(dl) < win - 0.15:   # wrong-lock detector: weak lane
+                        S2 = var('l') + max(a.lane_k[1] / max(sl, 1e-3), 0.1) ** 2   # matches (low sharpness) are not
+                        drift_l.append(np.sign(dl) if dl * dl > 6.25 * S2 else 0)    # used, but a run of large
+                        if len(drift_l) >= a.drift_n and abs(sum(drift_l[-a.drift_n:])) == a.drift_n:   # same-sign ones
+                            inflate('l', dl * dl)                                    # means the filter drifted
+                            drift_l.clear()
+                            D['drift'] = 1
                     if l_ok and sl > 0:
                         sig = float(np.clip(a.lane_k[1] / sl, 0.1, 1.0))
                         S = var('l') + sig ** 2

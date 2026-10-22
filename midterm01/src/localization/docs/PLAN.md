@@ -731,3 +731,12 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
  * T2 heading-hypothesis bank: during the standstill the map-measurement likelihood favours the WRONG headings
    (offset -3: error -4.7 deg, ll -1; offset +1.5: error -0.2 deg, ll -8) - the start map pulls the heading the same
    way as the frame-0 search (-1.8 deg) -> no causal heading source at the T2 standstill; not used.
+ * T1 hypothesis bank: -1.5 deg chosen (scores 254-296 at frame 600, weak), 0.425 vs v6 0.429 -> no change. Near
+   lateral sigma floor 0.04: T1 0.434 / T2 0.284 vs 0.429 / 0.283 -> no change.
+ * GNSS-free T1 rehearsal is chaotic in sparse-marking sections: v4 (0.486 steady) vs v9 (0.733) first differ at frame
+   210 (one weak start fix), are within 3 cm from 600 to 1800, then split by 1.4 m in 1800-2100 (heading drifts -0.45
+   deg, the lane matches keep saying +0.5..+1.7 m but are rejected for low sharpness / the gate). A wrong-lock detector
+   (--drift_n 6: six same-sign lane-match lateral innovations > 2.5 sigma, any sharpness -> inflate) fixed that section
+   but another one (900-1200, forward -1.1 m) failed instead (0.781). Within each section the run with the higher
+   map-likelihood rate was the better one, but a causal sliding-window choice between two runs only gave 0.717-0.755
+   (the switch comes after the error has grown). Not used; T3's two independent runs agree within cm after frame 60.
