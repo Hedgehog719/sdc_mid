@@ -5,6 +5,8 @@ import argparse
 import os
 import sys
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(__file__))
 import bev as _bev  # noqa: E402
 import bev_match as BM  # noqa: E402
@@ -41,3 +43,48 @@ def set_window(max_shift=None, max_yaw=None, yaw_step=None):
 
 def match(i, pose):
     return BM.match_frame(i, tuple(pose))
+
+
+# ---- causal accumulation (online): past frames only, warped by the filter's own past poses -------------------------
+_CACHE = {}
+
+
+def _render_cached(j, fn):
+    """Camera lane response of frame j (image only, pose independent): rendered once, kept for later frames."""
+    if j not in _CACHE:
+        _CACHE[j] = _RENDER(j, fn)
+        if len(_CACHE) > 300:
+            for k in sorted(_CACHE)[:50]:
+                del _CACHE[k]
+    return _CACHE[j]
+
+
+def _causal_neighbours(i):
+    """Frames accumulated with frame i: frames j <= i within accum_dist metres of travel behind (one per accum_ds);
+    when nearly stationary, the last frames of a time window."""
+    s = BM.PATH_S
+    lo = int(np.searchsorted(s[:i + 1], s[i] - BM.A.accum_dist))
+    cand = np.arange(lo, i + 1)
+    key = np.floor((s[cand] - s[i]) / BM.A.accum_ds).astype(int)
+    _, first = np.unique(key, return_index=True)
+    sel = set(cand[first].tolist()) | {i}
+    if len(sel) < 5:
+        sel |= {j for j in range(i - BM.A.accum, i + 1, BM.A.accum_step) if j >= 0}
+    return sorted(sel)
+
+
+def setup_accum(n, accum_dist=15.0, accum_ds=0.7, accum=12, accum_step=3):
+    global _RENDER
+    BM.A.accum, BM.A.accum_dist, BM.A.accum_ds, BM.A.accum_step = accum, accum_dist, accum_ds, accum_step
+    BM.PRIOR_REL = np.zeros((n, 3))
+    BM.PATH_S = np.zeros(n)
+    BM.neighbour_frames = _causal_neighbours
+    _RENDER = BM.BEV.render_resp
+    BM.BEV.render_resp = _render_cached
+
+
+def set_pose(j, pose):
+    """Store the (final) pose of frame j, or the current prior of the frame being matched."""
+    BM.PRIOR_REL[j] = pose
+    if j > 0:
+        BM.PATH_S[j] = BM.PATH_S[j - 1] + float(np.hypot(pose[0] - BM.PRIOR_REL[j - 1][0], pose[1] - BM.PRIOR_REL[j - 1][1]))

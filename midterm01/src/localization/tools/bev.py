@@ -87,9 +87,11 @@ class ImageBEV:
         # front replaces the supplied hood mask, side cameras get their visible body corners masked
         self.ego = {}
         if USE_EGO_MASK:
-            wdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'work')
+            root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
             for c in cams:
-                f = os.path.join(wdir, f'ego_mask_{c}.png')
+                f = os.path.join(root, 'calib', f'ego_mask_{c}.png')
+                if not os.path.exists(f):
+                    f = os.path.join(root, 'work', f'ego_mask_{c}.png')
                 if os.path.exists(f):
                     self.ego[c] = cv2.imread(f, cv2.IMREAD_GRAYSCALE) > 0
             if 'f' in self.ego:

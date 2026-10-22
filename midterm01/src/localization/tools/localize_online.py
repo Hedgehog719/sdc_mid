@@ -68,6 +68,15 @@ ap.add_argument('--yaw_sigma', type=float, default=0.6)
 ap.add_argument('--max_window', type=float, default=6.0)
 ap.add_argument('--yaw_mount', type=float, default=-1.5)
 ap.add_argument('--workers', type=int, default=3)
+ap.add_argument('--near_yaw_sigma', type=float, default=0.6, help='deg; 0 = no heading from the near alignment (its heading '
+                'responds weakly: perturbing the prior heading by 1 deg moves it by only ~0.1 deg)')
+ap.add_argument('--lane_k', type=float, nargs=2, default=[0.01, 0.01], help='lane fix sigma = k / sharpness (forward, lateral)')
+ap.add_argument('--near_k', type=float, default=0.006)
+ap.add_argument('--vo_noise', type=float, default=0.04, help='relative VO speed noise of a 3-pair mean')
+ap.add_argument('--meas_prior', default='', help='parameter studies only: record the map measurements around this '
+                'trajectory (own earlier output) instead of the filter state, so that replays stay valid')
+ap.add_argument('--accum_dist', type=float, default=0.0, help='>0: lane matches on the camera response accumulated over '
+                'the past accum_dist metres (frames <= k, warped by the filter\'s own past poses)')
 ap.add_argument('--record', default='', help='save the per-frame map measurements (absolute poses) for --replay')
 ap.add_argument('--replay', default='', help='run the filter on recorded map measurements (fast parameter studies)')
 ap.add_argument('--lane_yaw_off', type=float, default=0.25, help='deg: heading bias of the lane-match headings (calibration, '
@@ -76,6 +85,14 @@ ap.add_argument('--near_yaw_off', type=float, default=0.2, help='deg: heading bi
 ap.add_argument('--gross_yaw', type=float, default=5.0, help='deg: the frame-0 search corrects init_guess only above this')
 ap.add_argument('--start_yaw_sigma', type=float, default=1.5, help='deg: front-camera near heading noise in the start segment')
 ap.add_argument('--start_dist', type=float, default=15.0, help='m travelled (so far) below which lane matches give lateral only')
+ap.add_argument('--joint', action='store_true', help='one EKF over [x, y, heading, speed, accel bias, VO scale, gyro bias]: '
+                'lateral fixes also correct the heading through the motion model (needs the IMU)')
+ap.add_argument('--lat_q', type=float, default=0.05, help='m/sqrt(s): lateral model noise (side slip, unmodelled motion)')
+ap.add_argument('--yaw0_sd', type=float, default=2.0, help='deg: initial heading uncertainty')
+ap.add_argument('--pivot', choices=['marks', 'origin'], default='marks', help='near alignment: heading candidates rotate '
+                'about the centroid of the visible marks (decoupled from the lateral shift) or about the vehicle origin')
+ap.add_argument('--frames', type=int, default=0, help='>0: stop after this many frames (diagnostics)')
+ap.add_argument('--debug', default='', help='csv: per-frame state and every measurement (value, accepted or not)')
 a = ap.parse_args()
 
 T = os.path.basename(os.path.normpath(a.track_dir))
@@ -122,7 +139,7 @@ def score(q, resp):
     return float(v.mean()) if len(v) > 30 else np.nan
 
 
-def near_measure(j, pose, resp, span_l):
+def near_measure(j, pose, resp, span_l, yaw_span=1.0):
     """Near-range image alignment of frame j: (dlat, dyaw, sharp_l, lateral ok, heading ok) or None."""
     x, y, yaw = pose
     P = MK.points(x, y, a.rmax + 6)
@@ -142,12 +159,17 @@ def near_measure(j, pose, resp, span_l):
         if len(qb) < 60:
             qb = None
 
+    # heading candidates rotate about the centroid of the visible marks, not the vehicle origin: marks in a narrow range
+    # band move sideways under a rotation about the origin, the lateral search absorbs that and the heading stays wrong
+    cx, cy = (float(q[:, 0].mean()), float(q[:, 1].mean())) if a.pivot == 'marks' else (0.0, 0.0)
+
     def sc(df, dl, rot=0.0):
         def tf(p):
             p = p - [df, dl, 0]
             if rot:
                 ct, st_ = np.cos(-rot), np.sin(-rot)
-                p = np.c_[ct * p[:, 0] - st_ * p[:, 1], st_ * p[:, 0] + ct * p[:, 1], p[:, 2]]
+                px, py = p[:, 0] - cx, p[:, 1] - cy
+                p = np.c_[ct * px - st_ * py + cx, st_ * px + ct * py + cy, p[:, 2]]
             return p
         v = score(tf(q), resp)
         if qb is not None and np.isfinite(v):
@@ -164,7 +186,7 @@ def near_measure(j, pose, resp, span_l):
         return None
     l_ok = 0 < k < len(lo_) - 1
     df, dl = fo[i], lo_[k]
-    ys = np.radians(np.arange(-1.0, 1.0001, 0.2))
+    ys = np.radians(np.arange(-yaw_span, yaw_span + 1e-4, 0.2))
     gy = np.nan_to_num(np.array([sc(df, dl, th) for th in ys]), nan=-1.0)
     m = int(np.argmax(gy))
     dyaw, y_ok = 0.0, 0 < m < len(ys) - 1
@@ -176,6 +198,8 @@ def near_measure(j, pose, resp, span_l):
     if den < 0:
         dl += float(np.clip(0.5 * (gl[0] - gl[2]) / den, -1, 1)) * 0.05
     sl = peak - max(g[i, max(k - 3, 0)], g[i, min(k + 3, len(lo_) - 1)])
+    # the same correction about the vehicle origin: translation (df, dl) + c - R(dyaw) c
+    dl += cy * (1 - np.cos(dyaw)) - np.sin(dyaw) * cx
     return dl, dyaw, sl, l_ok, y_ok
 
 
@@ -284,14 +308,18 @@ def initial_pose(G):
 
 
 if __name__ == '__main__':
-    n = len(TS)
+    n = len(TS) if a.frames <= 0 else min(len(TS), a.frames)
+    DBG = []
     REC = {'lane': {}, 'near': {}, 'front': {}}
+    MP = pd.read_csv(a.meas_prior) if a.meas_prior else None
     REPLAY = None
     if a.replay:
         zr = np.load(a.replay, allow_pickle=True)
         REPLAY = zr['rec'].item()
     else:
         LS.setup(a.track_dir, a.lane_marks, yaw_mount=a.yaw_mount)
+        if a.accum_dist > 0:
+            LS.setup_accum(n, accum_dist=a.accum_dist)
     heading, dvel = load_imu()
     G = load_gnss()
     VO = None
@@ -306,9 +334,14 @@ if __name__ == '__main__':
     P3 = np.diag([1.0, a.v0_sd, 0.05, 0.05]) ** 2      # along-track [position, speed, accel bias, VO scale]
     Pl = 1.0 ** 2                                       # cross-track position
     bg = np.radians(a.gyro_bias)
-    PY = np.diag([np.radians(2.0), np.radians(a.gyro_bias_sd)]) ** 2   # [heading, gyro bias]
+    PY = np.diag([np.radians(a.yaw0_sd), np.radians(a.gyro_bias_sd)]) ** 2   # [heading, gyro bias]
     sa = a.acc_noise if dvel else 1.5
     qy = np.radians(a.gyro_noise) ** 2 if heading else np.radians(1.0) ** 2
+    if a.joint and not heading:
+        print('--joint needs the IMU: using the separate filters', flush=True)
+        a.joint = False
+    # joint EKF state [x, y, heading, speed, accel bias, VO scale, gyro bias] (the variables x, y, yaw, v, b, kvo, bg)
+    PJ = np.diag([1.0, 1.0, np.radians(a.yaw0_sd), a.v0_sd, 0.05, 0.05, np.radians(a.gyro_bias_sd)]) ** 2
     out = np.zeros((n, 3))
     big_f, big_l = [], []
     travelled = 0.0
@@ -317,8 +350,75 @@ if __name__ == '__main__':
     if G is not None:
         gi = int(np.searchsorted(G[0], TS[0], side='right'))   # samples up to frame 0 are not used afterwards
 
+    def axis(kind):   # unit vector of the vehicle's forward ('f') or left ('l') axis in the map frame
+        return np.array([np.cos(yaw), np.sin(yaw)]) if kind == 'f' else np.array([-np.sin(yaw), np.cos(yaw)])
+
+    def var(kind):    # current variance: forward / lateral position (m^2), heading ('y', rad^2)
+        if a.joint:
+            return float(PJ[2, 2]) if kind == 'y' else float(axis(kind) @ PJ[:2, :2] @ axis(kind))
+        return {'f': P3[0, 0], 'l': Pl, 'y': PY[0, 0]}[kind]
+
+    def inflate(kind, dv):
+        global P3, Pl, PY, PJ
+        if a.joint:
+            if kind == 'y':
+                PJ[2, 2] += dv
+            else:
+                PJ[:2, :2] += dv * np.outer(axis(kind), axis(kind))
+        elif kind == 'f':
+            P3[0, 0] += dv
+        elif kind == 'l':
+            Pl += dv
+        else:
+            PY[0, 0] += dv
+
+    def floor(kind, sd):
+        cur = var(kind)
+        if cur < sd * sd:
+            inflate(kind, sd * sd - cur)
+
+    def jupd(h, e, r2, gate):
+        """Scalar measurement update of the joint EKF: innovation e = z - h.s, noise variance r2."""
+        global x, y, yaw, v, b, kvo, bg, PJ
+        S = float(h @ PJ @ h) + r2
+        if e * e >= gate * S:
+            return False
+        K = PJ @ h / S
+        x, y, yaw = x + K[0] * e, y + K[1] * e, yaw + K[2] * e
+        v, b, kvo, bg = max(0.0, v + K[3] * e), b + K[4] * e, float(np.clip(kvo + K[5] * e, 0.7, 1.3)), bg + K[6] * e
+        PJ = PJ - np.outer(K, h @ PJ)
+        PJ = 0.5 * (PJ + PJ.T)
+        return True
+
+    def jpredict(dt, dpsi, dvm):
+        """Joint EKF prediction over dt: heading change dpsi (gyro - bias), speed change dvm (IMU, before the bias)."""
+        global x, y, yaw, v, PJ
+        v_new = max(0.0, v + dvm - b * dt)
+        ym = yaw + 0.5 * dpsi
+        d = 0.5 * (v + v_new) * dt
+        cm, sm = np.cos(ym), np.sin(ym)
+        F = np.eye(7)
+        F[0, 2], F[1, 2] = -d * sm, d * cm
+        F[0, 3], F[1, 3] = dt * cm, dt * sm
+        F[0, 4], F[1, 4] = -0.5 * dt * dt * cm, -0.5 * dt * dt * sm
+        F[0, 6], F[1, 6] = 0.5 * d * dt * sm, -0.5 * d * dt * cm
+        F[2, 6], F[3, 4] = -dt, -dt
+        Gv = np.array([0.5 * dt * dt * cm, 0.5 * dt * dt * sm, 0, dt, 0, 0, 0])
+        Q = sa ** 2 * np.outer(Gv, Gv)
+        Rr = np.array([[cm, -sm], [sm, cm]])
+        Q[:2, :2] += Rr @ np.diag([1e-4 * dt, a.lat_q ** 2 * dt]) @ Rr.T
+        Q[2, 2] += qy * dt
+        Q[4, 4] += a.bias_walk ** 2 * dt
+        Q[5, 5] += 1e-6 * dt
+        Q[6, 6] += np.radians(a.gyro_bias_walk) ** 2 * dt
+        PJ = F @ PJ @ F.T + Q
+        x, y, yaw, v = x + d * cm, y + d * sm, yaw + dpsi, v_new
+        return d
+
     def upd_fwd(e, sig, gate=16.0):
         global x, y, v, b, kvo, P3
+        if a.joint:
+            return jupd(np.r_[axis('f'), np.zeros(5)], e, sig ** 2, gate)
         S = P3[0, 0] + sig ** 2
         if e * e >= gate * S:
             return False
@@ -331,6 +431,8 @@ if __name__ == '__main__':
 
     def upd_lat(e, sig, gate=16.0):
         global x, y, Pl
+        if a.joint:
+            return jupd(np.r_[axis('l'), np.zeros(5)], e, sig ** 2, gate)
         S = Pl + sig ** 2
         if e * e >= gate * S:
             return False
@@ -342,6 +444,8 @@ if __name__ == '__main__':
 
     def upd_yaw(e, sig, gate=16.0):
         global yaw, bg, PY, w
+        if a.joint:
+            return jupd(np.eye(7)[2], e, sig ** 2, gate)
         S = PY[0, 0] + sig ** 2
         if e * e >= gate * S:
             return False
@@ -359,27 +463,38 @@ if __name__ == '__main__':
         pending = iter(())
         resp_cache = {}
         for k in range(n):
+            D = {'k': k}
             if k > 0:
                 t0, t1 = TS[k - 1] * 1.0, TS[k] * 1.0
                 dt = (t1 - t0) * 1e-9
                 dyaw_p = (heading(t0, t1) - bg * dt) if heading else w * dt
-                v_new = max(0.0, v + ((dvel(t0, t1) if dvel else 0.0) - b * dt))
-                ym = yaw + 0.5 * dyaw_p
-                d = 0.5 * (v + v_new) * dt
-                x, y, yaw, v = x + d * np.cos(ym), y + d * np.sin(ym), yaw + dyaw_p, v_new
+                if a.joint:
+                    d = jpredict(dt, dyaw_p, dvel(t0, t1) if dvel else 0.0)
+                else:
+                    v_new = max(0.0, v + ((dvel(t0, t1) if dvel else 0.0) - b * dt))
+                    ym = yaw + 0.5 * dyaw_p
+                    d = 0.5 * (v + v_new) * dt
+                    x, y, yaw, v = x + d * np.cos(ym), y + d * np.sin(ym), yaw + dyaw_p, v_new
+                    F = np.array([[1, dt, -dt * dt / 2, 0], [0, 1, -dt, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
+                    Gv = np.array([dt * dt / 2, dt, 0.0, 0.0])
+                    P3 = F @ P3 @ F.T + sa ** 2 * np.outer(Gv, Gv) + np.diag([1e-4 * dt, 0, a.bias_walk ** 2 * dt, 1e-6 * dt])
+                    Pl = Pl + a.lat_q ** 2 * dt + d * d * PY[0, 0]
+                    Fy = np.array([[1.0, -dt], [0.0, 1.0]]) if heading else np.eye(2)
+                    PY = Fy @ PY @ Fy.T + np.diag([qy * dt, np.radians(a.gyro_bias_walk) ** 2 * dt])
                 travelled += abs(d)
-                F = np.array([[1, dt, -dt * dt / 2, 0], [0, 1, -dt, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
-                Gv = np.array([dt * dt / 2, dt, 0.0, 0.0])
-                P3 = F @ P3 @ F.T + sa ** 2 * np.outer(Gv, Gv) + np.diag([1e-4 * dt, 0, a.bias_walk ** 2 * dt, 1e-6 * dt])
-                Pl = Pl + 0.05 ** 2 * dt + d * d * PY[0, 0]
-                Fy = np.array([[1.0, -dt], [0.0, 1.0]]) if heading else np.eye(2)
-                PY = Fy @ PY @ Fy.T + np.diag([qy * dt, np.radians(a.gyro_bias_walk) ** 2 * dt])
                 if VO is not None and (k - 1) in VO and VO[k - 1][2] > 0.5:   # speed of the pair (k-1, k)
                     zf, zd, _ = VO[k - 1]
                     zv_ = zf / max(zd, 1e-3)
-                    Hv = np.array([0, kvo, 0, v])
-                    Sv = Hv @ P3 @ Hv + (0.04 * max(v, 1.0)) ** 2 * 3   # single pair: noisier than a 3-pair mean
+                    rv = (a.vo_noise * max(v, 1.0)) ** 2 * 3   # single pair: noisier than a 3-pair mean
                     inn = zv_ - kvo * v
+                    D['vo_z'], D['vo_v'] = zv_, kvo * v
+                    if a.joint:
+                        D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0]), inn, rv, 16.0))
+                        cnt['vo'] += D['vo_a']
+                        Sv = -1.0
+                    else:
+                        Hv = np.array([0, kvo, 0, v])
+                        Sv = Hv @ P3 @ Hv + rv
                     if inn * inn < 16 * Sv:
                         K = P3 @ Hv / Sv
                         c, s = np.cos(yaw), np.sin(yaw)
@@ -387,6 +502,7 @@ if __name__ == '__main__':
                         v, b, kvo = max(0.0, v + K[1] * inn), b + K[2] * inn, float(np.clip(kvo + K[3] * inn, 0.7, 1.3))
                         P3 = P3 - np.outer(K, Hv @ P3)
                         cnt['vo'] += 1
+                        D['vo_a'] = 1
                 if G is not None:   # GNSS samples received in (t_k-1, t_k], propagated to t_k
                     while gi < len(G[0]) and G[0][gi] <= TS[k]:
                         lag = (TS[k] - G[0][gi]) * 1e-9
@@ -395,11 +511,12 @@ if __name__ == '__main__':
                         ef, el = c * (gx - x) + s * (gy - y), -s * (gx - x) + c * (gy - y)
                         ok1 = upd_fwd(ef, a.gnss_sigma[0], 25.0)
                         ok2 = upd_lat(el, a.gnss_sigma[1], 25.0)
+                        D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
                         gi += 1
             if k in meas_frames[mi:mi + 1]:
                 mi += 1
-                win = float(np.clip(3 * np.sqrt(P3[0, 0]), 2.5, a.max_window))
+                win = float(np.clip(3 * np.sqrt(var('f')), 2.5, a.max_window))
                 c0, s0 = np.cos(yaw), np.sin(yaw)
                 if REPLAY is None:
                     if k not in resp_cache:   # prefetch the next block of measurement frames' image preprocessing
@@ -407,9 +524,17 @@ if __name__ == '__main__':
                         resp_cache = dict(pool.imap(responses, blk))
                     resp = resp_cache.pop(k)
                     LS.set_window(max_shift=win)
-                    r = lane_measure(k, (x, y, yaw), win)
+                    mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
+                    if a.accum_dist > 0:
+                        LS.set_pose(k, mp)   # current prior of frame k (past frames hold their final poses)
+                    r = lane_measure(k, mp, win)
                     if r is not None:   # record as absolute pose + match quality
-                        REC['lane'][k] = (x + c0 * r[0] - s0 * r[1], y + s0 * r[0] + c0 * r[1], yaw + r[2], r[3], r[4], r[5])
+                        cm, sm = np.cos(mp[2]), np.sin(mp[2])
+                        REC['lane'][k] = (mp[0] + cm * r[0] - sm * r[1], mp[1] + sm * r[0] + cm * r[1], mp[2] + r[2], r[3], r[4], r[5])
+                        if MP is not None:   # express relative to the filter state
+                            ax, ay, ayaw = REC['lane'][k][:3]
+                            dfr, dlr = c0 * (ax - x) + s0 * (ay - y), -s0 * (ax - x) + c0 * (ay - y)
+                            r = (dfr, dlr, (ayaw - yaw + np.pi) % (2 * np.pi) - np.pi) + tuple(r[3:6]) + (r[6], r[7], r[8])
                 else:
                     r = None
                     if k in REPLAY['lane']:
@@ -424,29 +549,40 @@ if __name__ == '__main__':
                     df, dl, dyaw, sf, sl, peak, f_ok, l_ok, y_ok = r
                     if travelled < a.start_dist:   # (near-)stationary start: heading / forward from the near markings
                         f_ok = y_ok = False
+                    D.update(ln_df=df, ln_dl=dl, ln_dy=np.degrees(dyaw), ln_sf=sf, ln_sl=sl, ln_pk=peak, ln_fok=int(f_ok),
+                             ln_lok=int(l_ok), ln_yok=int(y_ok), ln_fa=0, ln_la=0, ln_ya=0)
                     if f_ok and sf > a.min_sharp_f:
-                        sig = float(np.clip(0.01 / sf, 0.2, 3.0))
-                        S = P3[0, 0] + sig ** 2
+                        sig = float(np.clip(a.lane_k[0] / sf, 0.2, 3.0))
+                        S = var('f') + sig ** 2
                         big_f.append(np.sign(df) if df * df > 6.25 * S else 0)
                         if len(big_f) >= 4 and abs(sum(big_f[-4:])) == 4:   # 4 consistent large corrections: drifted
-                            P3[0, 0] += df * df
+                            inflate('f', df * df)
                             big_f.clear()
-                        cnt['fwd'] += int(upd_fwd(df, sig))
+                        D['ln_fa'] = int(upd_fwd(df, sig))
+                        cnt['fwd'] += D['ln_fa']
                     if l_ok and sl > 0:
-                        sig = float(np.clip(0.01 / sl, 0.1, 1.0))
-                        S = Pl + sig ** 2
+                        sig = float(np.clip(a.lane_k[1] / sl, 0.1, 1.0))
+                        S = var('l') + sig ** 2
                         big_l.append(np.sign(dl) if (dl * dl > 6.25 * S and sl > 0.15) else 0)
                         if len(big_l) >= 4 and abs(sum(big_l[-4:])) == 4:
-                            Pl += dl * dl
+                            inflate('l', dl * dl)
                             big_l.clear()
-                        cnt['lat'] += int(upd_lat(dl, sig))
+                        D['ln_la'] = int(upd_lat(dl, sig))
+                        cnt['lat'] += D['ln_la']
                     if y_ok:
-                        cnt['yaw'] += int(upd_yaw(dyaw - np.radians(a.lane_yaw_off), np.radians(a.yaw_sigma)))
+                        D['ln_ya'] = int(upd_yaw(dyaw - np.radians(a.lane_yaw_off), np.radians(a.yaw_sigma)))
+                        cnt['yaw'] += D['ln_ya']
                 c0, s0 = np.cos(yaw), np.sin(yaw)
                 if REPLAY is None:
-                    rn = near_measure(k, (x, y, yaw), resp, float(np.clip(3 * np.sqrt(Pl), 0.4, 1.0)))
+                    mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
+                    yspan = float(np.clip(3 * np.degrees(np.sqrt(var('y'))), 1.0, 3.0)) if MP is None else 3.0
+                    rn = near_measure(k, mp, resp, float(np.clip(3 * np.sqrt(var('l')), 0.4, 1.0)) if MP is None else 1.0, yspan)
                     if rn is not None:
-                        REC['near'][k] = (x - s0 * rn[0], y + c0 * rn[0], yaw + rn[1], rn[2], rn[3], rn[4])
+                        cm, sm = np.cos(mp[2]), np.sin(mp[2])
+                        REC['near'][k] = (mp[0] - sm * rn[0], mp[1] + cm * rn[0], mp[2] + rn[1], rn[2], rn[3], rn[4])
+                        if MP is not None:
+                            nx, ny, nyaw = REC['near'][k][:3]
+                            rn = (-s0 * (nx - x) + c0 * (ny - y), (nyaw - yaw + np.pi) % (2 * np.pi) - np.pi, rn[2], rn[3], rn[4])
                 else:
                     rn = None
                     if k in REPLAY['near']:
@@ -454,14 +590,18 @@ if __name__ == '__main__':
                         rn = (-s0 * (nx - x) + c0 * (ny - y), (nyaw - yaw + np.pi) % (2 * np.pi) - np.pi, sl_, lok, yok)
                 if rn is not None:
                     dl2, dyaw2, sl2, l_ok2, y_ok2 = rn
+                    D.update(nr_dl=dl2, nr_dy=np.degrees(dyaw2), nr_sl=sl2, nr_lok=int(l_ok2), nr_yok=int(y_ok2), nr_la=0, nr_ya=0)
                     if l_ok2 and sl2 > 0:
-                        cnt['lat'] += int(upd_lat(dl2, float(np.clip(0.006 / sl2, 0.08, 0.6))))
-                    if y_ok2 and heading and travelled >= a.start_dist:
-                        cnt['yaw'] += int(upd_yaw(dyaw2 - np.radians(a.near_yaw_off), np.radians(0.6)))
+                        D['nr_la'] = int(upd_lat(dl2, float(np.clip(a.near_k / sl2, 0.08, 0.6))))
+                        cnt['lat'] += D['nr_la']
+                    if y_ok2 and heading and travelled >= a.start_dist and a.near_yaw_sigma > 0:
+                        D['nr_ya'] = int(upd_yaw(dyaw2 - np.radians(a.near_yaw_off), np.radians(a.near_yaw_sigma)))
+                        cnt['yaw'] += D['nr_ya']
                 if REPLAY is None and a.record and travelled < 3 * a.start_dist:   # record a margin for replays
-                    dyf_, okf_ = near_yaw(k, (x, y, yaw), span=2.0)
+                    mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
+                    dyf_, okf_ = near_yaw(k, mp, span=2.0)
                     if okf_:
-                        REC['front'][k] = yaw + dyf_
+                        REC['front'][k] = mp[2] + dyf_
                 if travelled < a.start_dist:   # start: heading from the front camera's near markings only, weakly
                     if REPLAY is None:
                         if a.record:
@@ -472,16 +612,26 @@ if __name__ == '__main__':
                     else:
                         okf = k in REPLAY['front']
                         dyf = ((REPLAY['front'][k] - yaw + np.pi) % (2 * np.pi) - np.pi) if okf else 0.0
+                    D['fr_dy'] = np.degrees(dyf) if okf else np.nan
                     if okf:
-                        cnt['yaw'] += int(upd_yaw(dyf - np.radians(a.near_yaw_off), np.radians(a.start_yaw_sigma)))
-                P3[0, 0] = max(P3[0, 0], a.floor[0] ** 2)
-                Pl = max(Pl, a.floor[1] ** 2)
-                PY[0, 0] = max(PY[0, 0], np.radians(a.floor[2]) ** 2)
+                        D['fr_a'] = int(upd_yaw(dyf - np.radians(a.near_yaw_off), np.radians(a.start_yaw_sigma)))
+                        cnt['yaw'] += D['fr_a']
+                floor('f', a.floor[0])
+                floor('l', a.floor[1])
+                floor('y', np.radians(a.floor[2]))
             out[k] = (x, y, yaw)                   # written once: frame k's estimate uses data up to frame k
+            if a.debug:
+                D.update(x=x, y=y, yaw=np.degrees(yaw), v=v, ba=b, kvo=kvo, bg=np.degrees(bg), sdf=np.sqrt(var('f')),
+                         sdl=np.sqrt(var('l')), sdy=np.degrees(np.sqrt(var('y'))))
+                DBG.append(D)
+            if a.accum_dist > 0 and REPLAY is None:
+                LS.set_pose(k, (x, y, yaw) if MP is None else (MP.x[k], MP.y[k], MP.yaw[k]))
             if k % 300 == 0:
-                print(f'  frame {k}: x {x:.2f} y {y:.2f} yaw {np.degrees(yaw):.2f} v {v:.2f} | sd fwd {np.sqrt(P3[0, 0]):.2f} '
-                      f'lat {np.sqrt(Pl):.2f} | bg {np.degrees(bg):+.3f} kvo {kvo:.3f} | {cnt}', flush=True)
+                print(f'  frame {k}: x {x:.2f} y {y:.2f} yaw {np.degrees(yaw):.2f} v {v:.2f} | sd fwd {np.sqrt(var("f")):.2f} '
+                      f'lat {np.sqrt(var("l")):.2f} yaw {np.degrees(np.sqrt(var("y"))):.2f} | bg {np.degrees(bg):+.3f} kvo {kvo:.3f} | {cnt}', flush=True)
     pd.DataFrame({'idx': np.arange(n), 'x': out[:, 0], 'y': out[:, 1], 'yaw': out[:, 2]}).to_csv(a.out, index=False)
     if a.record:
         np.savez(a.record, rec=np.array(REC, dtype=object))
+    if a.debug:
+        pd.DataFrame(DBG).to_csv(a.debug, index=False)
     print(f'{T}: {cnt} -> {a.out}')
