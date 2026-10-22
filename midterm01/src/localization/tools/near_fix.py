@@ -183,7 +183,15 @@ def fix(j):
 
 
 if __name__ == '__main__':
-    FT = pd.read_csv(os.path.join(a.track_dir, '3cameras_ply', 'index.csv')).f_ts.values.astype(np.float64)
+    fidx = os.path.join(a.track_dir, '3cameras_ply', 'index.csv')
+    if os.path.exists(fidx):
+        FT = pd.read_csv(fidx).f_ts.values.astype(np.float64)
+    else:   # Track03 (no 3cameras_ply): front image capture times from the file names <idx>_ts_<ns>.jpg
+        try:
+            FT = np.array([float(nm.split('_ts_')[1].split('.')[0]) for nm in B.names['f']])
+        except (IndexError, ValueError):
+            from common import ply_frames
+            FT = np.asarray(ply_frames(os.path.join(a.track_dir, 'raw_ply'))[0], np.float64)
     lo, hi, st = (int(v) for v in a.frames.split(':'))
     frames = list(range(lo, len(TRS[0]) if hi < 0 else hi, st))
     with Pool(a.workers) as pool:

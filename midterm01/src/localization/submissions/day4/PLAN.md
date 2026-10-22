@@ -601,3 +601,24 @@ end (2886-2907) shifted, big crosswalk pulls the match, billboard paint at 2874 
  - Reproducible: tools/near_accel_corr.py, work/mb/v16_all.sh (GNSS-only fusion -> near accel correction -> v16
    fusion; reproduction exact).
  FINAL (pure pipeline, global parameters): T2 t2_pipe_v16 0.17, T1 t1_pipe_v14m 0.40 (board-fitted 0.17 / 0.41).
+
+## 10/22 Track03 preparation (GNSS-free; T3 data not yet accessible - invitation required)
+Track03 (PDF 10/20): 3 camera images, raw_ply (LoGeR, front camera, per-frame local frame, unscaled), map.pcd,
+init_guess.txt (noisy: T1 0.3 m / 1 deg, T2 0.9 m / 18 deg), probably the bag (IMU); NO GNSS. Public = first 5-40 %,
+private = the rest (baseline 1.40), r = 0.4.
+Rehearsal views of T1/T2 without GNSS (tools/make_t3_view.sh: images, raw_ply, raw map, init_guess, IMU only).
+Pipeline (tools/run_track3.sh):
+ 1. marking maps from the whole map (marking_map.py ALL, no trajectory)
+ 2. initial pose: tools/init_search.py (bev_match around init_guess, heading +-25 deg, shift +-1 m; +-3.5 m locks
+    onto neighbouring lanes) -> T1 0.33 m / 1.0 deg, T2 0.85 m / 1.0 deg (from 18 deg)
+ 3. speed: tools/bev_vo.py road-surface VO (front image -> 2 cm ground grid 5.5-12 m, band-pass in the image,
+    template match, peak tracked with the IMU velocity as a guide): T2 within ~2 % per segment, T1 ~8 % low
+ 4. pass 1: tools/track_seq.py sequential Kalman tracker: gyro heading with bias state (IMU orientation yaw drifts
+    ~4 deg; gyro bias ~-0.23 deg/s on both tracks), IMU accel + VO speed (VO scale state), single-frame lane matches
+    (tools/lane_single.py, 0.2 s) + near alignment, match-quality gates, uncertainty floors -> vs the GNSS-aided best:
+    T1 0.55 m rms / 0.55 deg, T2 0.59 m / 0.51 deg
+ 5. pass 2 (work/mb/t3_pass2.sh): bev_match (accum) + near fixes around pass 1, fuse with the initial pose only
+    (tools/t3_fake_gnss.py) -> vs best: T1 0.25 m / 0.24 deg, T2 0.27 m / 0.24 deg.
+    Board (as T1/T2 submissions): T1 t1_nognss_t3pipe 0.44, T2 t2_nognss_t3pipe 0.36 (raw map start of T2 hurts).
+ Fixed on the way: near_fix front-image times from the file names when 3cameras_ply is absent; bev_match needs an
+ explicit frame range (0:-1 = none).
