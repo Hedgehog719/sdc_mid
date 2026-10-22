@@ -624,3 +624,13 @@ Pipeline (tools/run_track3.sh):
  explicit frame range (0:-1 = none).
  No-IMU fallback (tracker without gyro / IMU accel, VO speed only): T2 diverges in the bend after 1200 (heading only
  from lane-match yaw) -> needs a visual heading-rate source (VO rotation) if Track03 has no IMU.
+ 10/22 evening, GNSS-free analysis (user: why does GNSS matter so much, can it be better?):
+  * GNSS-only vs best: T2 0.13 / 0.13 m (good, independent of the map), T1 0.66 / 0.31 m (poor) -> removing GNSS
+    costs T2 0.17 -> 0.36, T1 0.40 -> 0.44.
+  * T2 GNSS-free error vs best: 57 % of the squared error in frames 0-330 (raw-map start defects that GNSS + the
+    repaired map fixed); rest fwd -0.09 m mean (map-fix forward bias GNSS corrected), lat 0.05 m.
+  * Speed prediction: per frame a few cm; VO dead reckoning alone drifts ~4 % (T2) / ~25 % (T1) over 1-10 s, so
+    continuous map fixes are needed (they come every 0.1 s).
+  * Start rule (pass 2): until the path length exceeds 15 m (accumulation window) lane fixes lateral-only, no camera
+    headings; detected automatically: T2 0:394, T1 0:220 (= the manual GNSS-pipeline value) -> vs best T2 0.265 ->
+    0.202 m, yaw 0.236 -> 0.200 deg; T1 0.250 m, yaw 0.239 -> 0.217.
