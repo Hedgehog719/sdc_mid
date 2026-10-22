@@ -76,9 +76,13 @@ ap.add_argument('--near_yaw_sigma', type=float, default=0.6, help='deg; 0 = no h
                 'responds weakly: perturbing the prior heading by 1 deg moves it by only ~0.1 deg)')
 ap.add_argument('--lane_k', type=float, nargs=2, default=[0.01, 0.01], help='lane fix sigma = k / sharpness (forward, lateral)')
 ap.add_argument('--near_k', type=float, default=0.006)
+ap.add_argument('--near_min_sigma', type=float, default=0.08, help='m: smallest near-alignment lateral sigma (perturbation '
+                'test: core sd 0.02-0.03 m, 20-40 %% outliers)')
 ap.add_argument('--lane_fc', type=float, default=0.0, help='>0: lane forward sigma = lane_fc / sqrt(sharpness) (measured: '
                 'robust sd 0.42 m at sharpness 0.015, 0.75 m at 0.0045, 0.2 m at 0.06 -> ~0.05) instead of lane_k[0] / sharpness')
 ap.add_argument('--vo_noise', type=float, default=0.04, help='relative VO speed noise of a 3-pair mean')
+ap.add_argument('--kvo_range', type=float, nargs=2, default=[0.85, 1.15], help='VO scale limits (measured: T2 ~1.0, T1 ~0.9; '
+                'a loose range let a wrong speed be absorbed into the scale)')
 ap.add_argument('--meas_prior', default='', help='parameter studies only: record the map measurements around this '
                 'trajectory (own earlier output) instead of the filter state, so that replays stay valid')
 ap.add_argument('--accum_dist', type=float, default=0.0, help='>0: lane matches on the camera response accumulated over '
@@ -369,6 +373,7 @@ if __name__ == '__main__':
     PJ = np.diag([1.0, 1.0, np.radians(a.yaw0_sd), a.v0_sd, 0.05, 0.05, np.radians(a.gyro_bias_sd)]) ** 2
     out = np.zeros((n, 3))
     big_f, big_l = [], []
+    vo_hist = []
     travelled = 0.0
     cnt = dict(fwd=0, lat=0, yaw=0, vo=0, gnss=0, still=0)
     gi = 0
@@ -414,7 +419,7 @@ if __name__ == '__main__':
             S = S - r2 + r2 * t / a.huber
         K = PJ @ h / S
         x, y, yaw = x + K[0] * e, y + K[1] * e, yaw + K[2] * e
-        v, b, kvo, bg = max(0.0, v + K[3] * e), b + K[4] * e, float(np.clip(kvo + K[5] * e, 0.7, 1.3)), bg + K[6] * e
+        v, b, kvo, bg = max(0.0, v + K[3] * e), b + K[4] * e, float(np.clip(kvo + K[5] * e, *a.kvo_range)), bg + K[6] * e
         PJ = PJ - np.outer(K, h @ PJ)
         PJ = 0.5 * (PJ + PJ.T)
         return True
@@ -454,7 +459,7 @@ if __name__ == '__main__':
         K = P3[:, 0] / S
         c, s = np.cos(yaw), np.sin(yaw)
         x, y = x + c * K[0] * e, y + s * K[0] * e
-        v, b, kvo = max(0.0, v + K[1] * e), b + K[2] * e, float(np.clip(kvo + K[3] * e, 0.7, 1.3))
+        v, b, kvo = max(0.0, v + K[1] * e), b + K[2] * e, float(np.clip(kvo + K[3] * e, *a.kvo_range))
         P3 = P3 - np.outer(K, P3[0, :])
         return True
 
@@ -511,13 +516,15 @@ if __name__ == '__main__':
                     Fy = np.array([[1.0, -dt], [0.0, 1.0]]) if heading else np.eye(2)
                     PY = Fy @ PY @ Fy.T + np.diag([qy * dt, np.radians(a.gyro_bias_walk) ** 2 * dt])
                 travelled += abs(d)
+                # standstill: IMU quiet for 1 s, no speed change over that second (a gentle start barely changes the
+                # accelerometer norm: T2 frames 200-220 at 0.3 m/s^2), slow, and the VO (when valid) agrees
                 vo_moving = VO is not None and (k - 1) in VO and VO[k - 1][2] > 0.5 and abs(VO[k - 1][0]) > 0.004
-                if a.zupt and a.joint and standstill(t1) and not vo_moving:   # gyro reading = bias, speed = 0
+                if a.zupt and a.joint and v < 0.3 and standstill(t1) and abs(dvel(t1 - 1e9, t1)) < 0.08 and not vo_moving:
                     ti_, wz_ = IMU_RAW[0], IMU_RAW[1]
                     j0, j1 = np.searchsorted(ti_, t0, 'right'), np.searchsorted(ti_, t1, 'right')
                     if j1 > j0:
                         jupd(np.eye(7)[6], float(wz_[j0:j1].mean()) - bg, np.radians(0.1) ** 2 / (j1 - j0), 25.0)
-                        jupd(np.eye(7)[3], -v, 0.02 ** 2, 1e9)
+                        jupd(np.eye(7)[3], -v, 0.05 ** 2, 1e9)
                         cnt['still'] += 1
                         D['still'] = 1
                 if VO is not None and (k - 1) in VO and VO[k - 1][2] > 0.5:   # speed of the pair (k-1, k)
@@ -526,7 +533,15 @@ if __name__ == '__main__':
                     rv = (a.vo_noise * max(v, 1.0)) ** 2 * 3   # single pair: noisier than a 3-pair mean
                     inn = zv_ - kvo * v
                     D['vo_z'], D['vo_v'] = zv_, kvo * v
-                    if a.joint:
+                    vo_hist.append(zv_)
+                    if a.joint and PJ[3, 3] > 4.0:   # speed unknown (start in motion): one pair can be an alias (the
+                        # first VO pair has no prediction) -> wait for 5 valid pairs, initialise with their median
+                        if len(vo_hist) >= 5:
+                            zm = float(np.median(vo_hist[-5:]))
+                            D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0]), zm - kvo * v, (0.1 * max(zm, 1.0)) ** 2, 1e9))
+                            cnt['vo'] += D['vo_a']
+                        Sv = -1.0
+                    elif a.joint:
                         D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0]), inn, rv, 16.0))
                         cnt['vo'] += D['vo_a']
                         Sv = -1.0
@@ -537,7 +552,7 @@ if __name__ == '__main__':
                         K = P3 @ Hv / Sv
                         c, s = np.cos(yaw), np.sin(yaw)
                         x, y = x + c * K[0] * inn, y + s * K[0] * inn
-                        v, b, kvo = max(0.0, v + K[1] * inn), b + K[2] * inn, float(np.clip(kvo + K[3] * inn, 0.7, 1.3))
+                        v, b, kvo = max(0.0, v + K[1] * inn), b + K[2] * inn, float(np.clip(kvo + K[3] * inn, *a.kvo_range))
                         P3 = P3 - np.outer(K, Hv @ P3)
                         cnt['vo'] += 1
                         D['vo_a'] = 1
@@ -630,7 +645,7 @@ if __name__ == '__main__':
                     dl2, dyaw2, sl2, l_ok2, y_ok2 = rn
                     D.update(nr_dl=dl2, nr_dy=np.degrees(dyaw2), nr_sl=sl2, nr_lok=int(l_ok2), nr_yok=int(y_ok2), nr_la=0, nr_ya=0)
                     if l_ok2 and sl2 > 0:
-                        D['nr_la'] = int(upd_lat(dl2, float(np.clip(a.near_k / sl2, 0.08, 0.6)), robust=True))
+                        D['nr_la'] = int(upd_lat(dl2, float(np.clip(a.near_k / sl2, a.near_min_sigma, 0.6)), robust=True))
                         cnt['lat'] += D['nr_la']
                     if y_ok2 and heading and travelled >= a.start_dist and a.near_yaw_sigma > 0:
                         D['nr_ya'] = int(upd_yaw(dyaw2 - np.radians(a.near_yaw_off), np.radians(a.near_yaw_sigma)))

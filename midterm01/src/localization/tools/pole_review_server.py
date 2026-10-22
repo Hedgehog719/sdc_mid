@@ -423,6 +423,15 @@ class H(BaseHTTPRequestHandler):
             except BrokenPipeError:
                 pass
             return
+        if p in ('/t3', '/t3/'):   # Track03 gallery (work/viewer/t3/index.html + jpgs)
+            f = os.path.join(VIEWER_DIR, 't3', 'index.html')
+            return self._send(200, open(f, encoding='utf-8').read() if os.path.exists(f) else 'no Track03 page yet')
+        m = re.fullmatch(r'/t3/([A-Za-z0-9_.-]+\.jpg)', p)
+        if m:
+            f = os.path.join(VIEWER_DIR, 't3', m.group(1))
+            if not os.path.exists(f):
+                return self._send(404, 'not found')
+            return self._send(200, open(f, 'rb').read(), 'image/jpeg')
         if p in ('/results', '/results/'):   # results overview page (work/viewer/results.html)
             f = os.path.join(VIEWER_DIR, 'results.html')
             return self._send(200, open(f, encoding='utf-8').read() if os.path.exists(f) else 'no results page yet')

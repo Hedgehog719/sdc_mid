@@ -23,14 +23,19 @@ mkdir -p "$W"
 N=$(basename "$TD")
 
 # per-track settings: camera mount corrections (calibration), GNSS use, gyro bias (calibration) and measurement noise
-COMMON="--joint --step 3"
+# filter: joint EKF, standstill update, no heading from the near alignment (it returns its prior), lane heading
+# sigma 0.7 deg with its calibrated +0.30 deg offset, forward sigma 0.05/sqrt(sharpness), Huber weights
+COMMON="--step 3 --joint --zupt --near_yaw_sigma 0 --yaw_sigma 0.7 --lane_yaw_off 0.3 --near_yaw_off 0
+  --lane_fc 0.05 --min_sharp_f 0.02 --min_sharp_f_lo 0.005 --lo_sharp_sd 0.35 --huber 2.5
+  --gyro_bias_sd 0.01 --gyro_bias_walk 0.0005 --floor 0.2 0.1 0.15 --start_dist 0 --near_k 0.006"
 case $TR in
   T1) export SDC_ROT_FIX=calib/cam_fix_v10t1.json
       P="--gnss --gnss_sigma 1.0 0.2 --gyro_bias -0.220 --lane_k 0.005 0.005 --vo_noise 0.02 --acc_noise 0.05" ;;
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.08 --acc_noise 0.05" ;;
-  T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json
-      P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1" ;;
+  T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS: forward fixes down to sharpness 0.005 always (stop drift)
+      P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --min_sharp_f 0.005 --v0_sd 10" ;;
+      # T3 starts moving (~8 m/s at frame 0): unknown initial speed, the first VO pair sets it
   *) echo "track must be T1, T2 or T3"; exit 1 ;;
 esac
 
@@ -57,6 +62,6 @@ echo "[$(date +%H:%M:%S)] 4. visual odometry"
 
 echo "[$(date +%H:%M:%S)] 5. online localization ($N)"
 python3 tools/localize_online.py "$TD" "$W/mk_D.npz" "$W/mk_S.npz" "$OUT" --vo "$W/vo.npz" $IMU $COMMON $P \
-  > "$W/localize.log" 2>&1
+  --debug "$W/debug.csv" > "$W/localize.log" 2>&1
 tail -n 1 "$W/localize.log"
 echo "[$(date +%H:%M:%S)] done -> $OUT"
