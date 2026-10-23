@@ -26,7 +26,22 @@
 <body>
 <main>
   <h1>SDC Midterm01 結果總覽</h1>
-  <div class="sub">2026-10-23 22:40 更新 · 10/22 新規則：只能用因果（線上）定位，第 k 幀只用第 1…k 幀，輸出不能回頭修改；助教會重跑程式。以下第一節是新規則下的正式流程，後面各節是 10/22 以前的紀錄。</div>
+  <div class="sub">2026-10-24 06:10 更新 · 10/22 新規則：只能用因果（線上）定位，第 k 幀只用第 1…k 幀，輸出不能回頭修改；助教會重跑程式。以下第一節是新規則下的正式流程，後面各節是 10/22 以前的紀錄。</div>
+
+  <h2>10/24 凌晨：提交結果與最終建議</h2>
+  <div class="card">
+    <table>
+      <tr><th>Track</th><th>提交（public）</th><th>內容</th></tr>
+      <tr><td>T2</td><td class="num">v17 0.28 → v18 <b>0.27</b> → v19 <b class="good">0.26</b></td><td>v18：追蹤時只用相機看得到的路面（SegFormer 道路機率 &gt; 0.5）；v19：車道航向雜訊 0.7° → 2.5°（T2 車道航向在某些路段有偏差，有 GNSS 時航向也能從位置修正得到）。對參考軌跡 0.238 → 0.214。</td></tr>
+      <tr><td>T3</td><td class="num">tpr 0.25 → tpl <b class="good">0.24</b> → tps 0.35 → tpg <b class="good">0.24</b></td><td>tpl：路面橫向起伏（二維地形，公平指標車道橫向 0.096 → 0.026 m、航向偏差消失）；tps：路面遮罩從起點就套用 → 起步段前後鎖錯（不用）；tpg：遮罩從第 300 幀才套用（起點和 tpl 相同，之後追蹤更好）。</td></tr>
+      <tr><td>T1</td><td class="num">v6c 0.46 → v7 <b>0.46</b> → v8 0.47</td><td>v7：剎車點頭模型（對參考 0.411 → 0.408）；v8：9 個濾波器逐幀平均（航向更好但起點位置變差，不用）。</td></tr>
+    </table>
+    <ul>
+      <li class="good"><b>最終建議（10/29 09:00 前在 Kaggle 勾選）</b>：T1 <code>t1_online_v7</code>、T2 <code>t2_online_v19</code>、T3 <code>t3_online_tpg</code>（或 <code>t3_online_tpl</code>，public 同為 0.24）。三個都是正式流程輸出、逐位元可重現；E3 用的 <code>submissions/final/result_1..3.csv</code> 已備好。</li>
+      <li>不可行（已查證）：MapAnything 點雲修 T2 起點（尺度與航向耦合，起點地圖本身轉了約 1°）；清理地圖（起點標線一起被刪）；GNSS／IMU 姿態當絕對航向（偏差不固定）；T1／T2 地形投影（地圖扭曲）；GNSS 偏差狀態；停車量測（三種方法答案矛盾）。</li>
+      <li>排行榜（23:00）：T3 我們第一；T2 第一名 0.11，我們 0.26（0.24、0.25 在前）；T1 第一名 0.36，我們第二。</li>
+    </ul>
+  </div>
 
   <h2>逐幀檢查：T2／T3 最可疑的區段（每一幀都有）</h2>
   <div class="card">
