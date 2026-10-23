@@ -93,7 +93,7 @@ bash tools/run_online.sh /root/data/Track3 T3    # -> work/runs/T3/T3_online.csv
 15. （試過、未採用）**Track01 多濾波器逐幀平均（`tools/ensemble.py`）**：Track01 的濾波器在標線稀疏處很敏感（設定只差一點分數就差 ±0.02），試過 9 個濾波器（初始航向不確定度 × 車道航向雜訊）逐幀平均：對參考軌跡 0.408 → 0.404（航向 0.56° → 0.48°），但起點位置變差，Kaggle public 0.46 → 0.47，所以正式流程仍用單一濾波器。
 16. **輸出**：該幀的後驗位姿，寫出後不再修改。
 
-可重現性：用 `tools/run_online.sh` 從頭執行，T1、T2、T3 的輸出和 `submissions/online/` 的候選檔逐位元相同（目前版本：`t1_online_v6c.csv`、`t2_online_v19.csv`、`t3_online_tpl.csv`；`t2_online_v18.csv` 是 T2 放大車道航向雜訊之前、`t2_online_v17.csv` 是加第 14 點之前、`t3_online_tpr.csv` 是加第 13 點之前的版本；`t3_online_tpa.csv` 是加固定側傾（第 12 點）之前、`t3_online_tpd.csv` 是加快速俯仰（第 11 點）之前的版本，已提交的 `t3_online_tp.csv` 再早一版（沒有 `--vo_dr_init`）；較早提交的 `t1_online_v6`、`t2_online_v6`、`t3_online_b6` 是之前的流程設定）。GPU 推論的微小差異可能讓分割結果有極小不同。
+可重現性：用 `tools/run_online.sh` 從頭執行，T1、T2、T3 的輸出和 `submissions/online/` 的候選檔逐位元相同（目前版本：`t1_online_v7.csv`、`t2_online_v19.csv`、`t3_online_tpg.csv`；`t1_online_v6c.csv` 是 T1 加剎車點頭模型之前、`t3_online_tpl.csv` 是 T3 加路面遮罩之前的版本；`t2_online_v18.csv` 是 T2 放大車道航向雜訊之前、`t2_online_v17.csv` 是加第 14 點之前、`t3_online_tpr.csv` 是加第 13 點之前的版本；`t3_online_tpa.csv` 是加固定側傾（第 12 點）之前、`t3_online_tpd.csv` 是加快速俯仰（第 11 點）之前的版本，已提交的 `t3_online_tp.csv` 再早一版（沒有 `--vo_dr_init`）；較早提交的 `t1_online_v6`、`t2_online_v6`、`t3_online_b6` 是之前的流程設定）。GPU 推論的微小差異可能讓分割結果有極小不同。
 
 量測品質用「擾動測試」檢查：把參考軌跡偏移已知的量（航向 +1°、橫向 +0.3 m、前後 +1 m），在偏移後的位姿做量測，看量測能修回多少。近距對齊的航向只修回約 10%，等於一直把航向拉回先驗，所以最終流程不使用它。車道比對的航向能完整修回。
 
