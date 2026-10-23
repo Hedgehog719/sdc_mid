@@ -44,6 +44,8 @@ def main():
                     'as localize_online --terrain) instead of the flat road plane')
     ap.add_argument('--marks', default='', help='marking_map.py npz (mask mode): red dots from the global marking map, '
                     'drawn at their 3D map height (poles too) instead of on a flat road')
+    ap.add_argument('--dyn_csv', default='', help='localize_online --debug csv with att_p / att_r: draw with the per-frame '
+                    'dynamic body pitch / roll the filter used (dive model + fast IMU pitch) instead of the static rig')
     a = ap.parse_args()
     import bev as _bev
     _bev.GROUND_MODE = a.ground_mode
@@ -63,7 +65,16 @@ def main():
         MK = MarkingMap(a.marks)
         if a.terrain:
             B.terrain = MK.height
-    Rm = Rotation.from_euler('ZYX', [-1.5, 0, 0], degrees=True).as_matrix()
+    Rm0 = Rotation.from_euler('ZYX', [-1.5, 0, 0], degrees=True).as_matrix()
+    DY = None
+    if a.dyn_csv:   # per-frame dynamic attitude (deg) as used by the filter; frames without a value: 0
+        dd = pd.read_csv(a.dyn_csv)
+        DY = np.zeros((len(tr), 2))
+        for j, c in enumerate(('att_p', 'att_r')):
+            if c in dd:
+                v = dd[c].values[:len(tr)]
+                DY[:len(v), j] = np.nan_to_num(v.astype(float))
+        B.dyn = DY
     cams = ['fl', 'f', 'fr']
     imgdir = {c: os.path.join(a.track_dir, f'{track}_images', f'{track}_{c}_images') for c in cams}
     names = {c: sorted(os.listdir(imgdir[c])) for c in cams}
@@ -71,6 +82,7 @@ def main():
     lo, hi = (0, len(tr)) if not a.range else [int(v) for v in a.range.split(':')]
     for i in range(lo, min(hi, len(tr)), a.step):
         x, y, yaw = tr.x[i], tr.y[i], tr.yaw[i]
+        Rm = Rm0 if DY is None else Rotation.from_euler('ZYX', [-1.5, DY[i, 0], DY[i, 1]], degrees=True).as_matrix()
         idx = M.query_idx(x, y, 42.0)
         pts, inten = M.pts[idx], M.inten[idx]
         mg, road = map_bev(pts, inten, np.array([x, y]), yaw)

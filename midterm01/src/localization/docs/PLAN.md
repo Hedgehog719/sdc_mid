@@ -953,3 +953,14 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    (±0.3), those errors average ~0 there and their near-heading medians are 0.00-0.02, while T3 is negative in all
    six straight segments. Open; for the user's visual check.
  * Runner T3 + attC (tools/run_online.sh, --att_imu_map 1.5 --att_resid --att_pitch_only) started 20:41.
+ * Runner T3 + attC done 21:01: hypothesis 0 at every frame (scores at 600: 610 / 599 / 222 / 594 / 314), output ==
+   the attC offset-0 run (1e-14) -> submissions/online/t3_online_tpa.csv (yaw in (-pi, pi]); vs tpd mean |dpos| 0.14
+   (0-157), 0.12 (157-1257, public), 0.055 (stop), 0.12 m (2205+), heading rms 0.10-0.16 deg. Viewer /viewer/Track3_att
+   (make_viewer --dyn_csv: red dots and BEV drawn with the per-frame dynamic pitch / roll the filter used).
+ * Static body roll: IMU roll - map road plane is +0.37 deg along the whole of T3 (per 300 frames +0.18..+0.61, also
+   while standing). attC + --roll_add 0.37 (Cr37): fair innovations lane lat 0.108 -> 0.091 m, lane fwd 0.101 -> 0.095,
+   near lat 0.066 -> 0.069, lane heading 0.45 -> 0.38 deg, near heading 0.330 -> 0.366; more matches pass the gates
+   (fwd / lat / yaw 333 / 1068 / 374 -> 342 / 1100 / 386); 300-600 lane / near lateral 0.139 / 0.126 -> 0.107 / 0.103
+   (the lane-vs-near lateral disagreement +0.10 / -0.10 there); heading - course -0.30 -> -0.27 (the heading bias is
+   something else). Causal version --roll_imu_map 120 (running mean of the roll difference over the frames so far)
+   and controls -0.37 / +0.6 running.

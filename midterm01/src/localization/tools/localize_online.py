@@ -103,6 +103,9 @@ ap.add_argument('--att_imu_map', type=float, default=0.0, help='>0: body attitud
                 'difference over this many seconds (IMU mounting); replaces the --dyn_att values (roll in turns, dive, sway)')
 ap.add_argument('--att_roll_only', action='store_true', help='--att_imu_map: roll only (keep the --dyn_att pitch model)')
 ap.add_argument('--att_pitch_only', action='store_true', help='--att_imu_map: pitch only')
+ap.add_argument('--roll_imu_map', type=float, default=0.0, help='>0: static body roll relative to the road, estimated '
+                'online: running mean of IMU roll - map road-plane roll over the frames so far (time constant this many '
+                'seconds once longer than the elapsed time), added to the camera rig roll (Track03: +0.37 deg, steady)')
 ap.add_argument('--att_resid', action='store_true', help='--att_imu_map: high-pass the difference to the --dyn_att '
                 'values and add it to them (dive model + fast residual: bumps, sway) instead of replacing them')
 ap.add_argument('--dyn_att', action='store_true', help='per-frame dynamic body attitude (causal) in the camera models: '
@@ -114,6 +117,8 @@ ap.add_argument('--dyn_roll_scale', type=float, default=1.0, help='factor on the
 ap.add_argument('--roll_per_lat', type=float, default=0.0, help='deg of body roll per m/s^2 of lateral acceleration (speed x yaw '
                 'rate), replaces the IMU roll term for that frame (use with --dyn_roll_scale 0)')
 ap.add_argument('--dyn_sign', type=float, default=1.0)
+ap.add_argument('--roll_add', type=float, default=0.0, help='deg: constant body roll relative to the road plane added to the '
+                'camera rig (left side up +; Track03: IMU roll - map road plane = +0.37 deg along the whole track)')
 ap.add_argument('--imu_causal', action='store_true', help='IMU integrals up to the last sample at or before the frame time '
                 '(default: linear interpolation at the frame time, which reads the next sample, < 10 ms later)')
 ap.add_argument('--lo_peak_start', action='store_true', help='weak lane matches (--min_peak_lo) only before the first regular forward fix '
@@ -382,7 +387,7 @@ def load_imu():
         dvel = lambda t0, t1: float(np.interp(t1, t, ca) - np.interp(t0, t, ca))            # noqa: E731
     global IMU_RAW, DYN, ATT
     IMU_RAW = (t, wz, np.linalg.norm(im[['ax', 'ay', 'az']].values, axis=1), np.linalg.norm(im[['wx', 'wy', 'wz']].values, axis=1))
-    if a.att_imu_map > 0:
+    if a.att_imu_map > 0 or a.roll_imu_map > 0:
         ea = q.as_euler('ZYX', degrees=True)
         ATT = (t, ea[:, 1], ea[:, 2])   # IMU pitch (nose down +), roll (left side up +)
     if a.dyn_att:
@@ -482,9 +487,12 @@ if __name__ == '__main__':
         if a.accum_dist > 0:
             LS.setup_accum(n, accum_dist=a.accum_dist)
     heading, dvel = load_imu()
-    if (a.pitch_track or a.att_imu_map > 0) and DYN is None and REPLAY is None:
+    if (a.pitch_track or a.att_imu_map > 0 or a.roll_add or a.roll_imu_map > 0) and DYN is None and REPLAY is None:
         DYN = np.zeros((n, 2))
+    if a.roll_add and DYN is not None:
+        DYN[:, 1] += a.roll_add
     att_ema = None
+    roll_mean, roll_n = 0.0, 0   # --roll_imu_map
     if a.terrain and REPLAY is None:
         LS.BM.BEV.terrain = MK.height
     if DYN is not None and REPLAY is None:
@@ -755,19 +763,26 @@ if __name__ == '__main__':
                 if okp_.sum() >= 10:
                     pa_ = np.linalg.lstsq(np.stack([PL_U[okp_], PL_V[okp_], np.ones(okp_.sum())], 1), pz_[okp_], rcond=None)[0]
                     diff_ = np.array([ATT[1][ti] + np.degrees(np.arctan(pa_[0])), ATT[2][ti] - np.degrees(np.arctan(pa_[1]))])
-                    base_ = DYN[k].copy() if a.att_resid else np.zeros(2)   # --dyn_att values of this frame
-                    diff_ -= base_
-                    if att_ema is None:
-                        att_ema = diff_.copy()
-                    else:
-                        al_ = min((TS[k] - TS[k - 1]) * 1e-9 / a.att_imu_map, 1.0)
-                        att_ema = att_ema + al_ * (diff_ - att_ema)
-                    hp_ = diff_ - att_ema
-                    if not a.att_pitch_only:
-                        DYN[k, 1] = base_[1] + hp_[1]
-                    if not a.att_roll_only:
-                        DYN[k, 0] = base_[0] + hp_[0]
-                    D['att_p'], D['att_r'] = float(DYN[k, 0]), float(DYN[k, 1])
+                    if a.roll_imu_map > 0:   # static body roll: running mean of the roll difference (frames <= k)
+                        roll_n += 1
+                        al_ = max(1.0 / roll_n, min((TS[k] - TS[k - 1]) * 1e-9 / a.roll_imu_map, 1.0) if k else 1.0)
+                        roll_mean += al_ * (diff_[1] - roll_mean)
+                    if a.att_imu_map > 0:
+                        base_ = DYN[k].copy() if a.att_resid else np.zeros(2)   # --dyn_att values of this frame
+                        diff_ -= base_
+                        if att_ema is None:
+                            att_ema = diff_.copy()
+                        else:
+                            al_ = min((TS[k] - TS[k - 1]) * 1e-9 / a.att_imu_map, 1.0)
+                            att_ema = att_ema + al_ * (diff_ - att_ema)
+                        hp_ = diff_ - att_ema
+                        if not a.att_pitch_only:
+                            DYN[k, 1] = base_[1] + hp_[1]
+                        if not a.att_roll_only:
+                            DYN[k, 0] = base_[0] + hp_[0]
+                if a.roll_imu_map > 0:   # also when the map plane is missing here (last estimate)
+                    DYN[k, 1] += roll_mean
+                D['att_p'], D['att_r'] = float(DYN[k, 0]), float(DYN[k, 1])
             if (a.stand_search > 0 and REPLAY is None and D.get('still') and k % a.stand_search == 0
                     and var('y') > np.radians(0.5) ** 2):
                 # standing with an uncertain heading: repeat the frame-0 heading search (vehicles around move, other

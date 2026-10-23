@@ -88,7 +88,7 @@ bash tools/run_online.sh /root/data/Track3 T3    # -> work/runs/T3/T3_online.csv
 11. **Track03 路面不平的快速俯仰（`--att_imu_map 1.5 --att_resid --att_pitch_only`）**：路面不平時單邊車輪壓過凸起、懸吊阻尼不足，車身會快速點頭或翹頭（陀螺儀：第 617 幀 0.6 s 內 0.9°），遠處鳥瞰圖會偏好幾公尺。每幀計算「IMU 俯仰 − 先驗位姿下的地圖路面平面俯仰 − 點頭模型」，減去它過去 1.5 s 的指數平均（因果高通），加到點頭模型上。慢的部分不用：IMU 姿態解算的俯仰在剎車後會飄 0.5°、靜止時才慢慢回來，直接用會把停車位置往前推 0.6 m（靜態車道比對證實是錯的）。驗證（不用 ground truth；不同設定收進的量測數不同，地圖似然不能直接比，改比較所有版本都有量測的幀上的預測誤差）：近距橫向 0.082 → 0.066 m、車道航向 0.77° → 0.46°、車道橫向 0.121 → 0.110 m，停車位置不變。IMU 側傾、0.8 s 或 3 s 的平均都沒有更好。
 12. **輸出**：該幀的後驗位姿，寫出後不再修改。
 
-可重現性：用 `tools/run_online.sh` 從頭執行，T1、T2、T3 的輸出和 `submissions/online/` 的候選檔逐位元相同（目前版本：`t1_online_v6c.csv`、`t2_online_v17.csv`、`t3_online_tpd.csv`；已提交的 `t3_online_tp.csv` 是加 `--vo_dr_init` 之前的版本，只有第 0–314 幀不同；較早提交的 `t1_online_v6`、`t2_online_v6`、`t3_online_b6` 是之前的流程設定）。GPU 推論的微小差異可能讓分割結果有極小不同。
+可重現性：用 `tools/run_online.sh` 從頭執行，T1、T2、T3 的輸出和 `submissions/online/` 的候選檔逐位元相同（目前版本：`t1_online_v6c.csv`、`t2_online_v17.csv`、`t3_online_tpa.csv`；`t3_online_tpd.csv` 是加快速俯仰（第 11 點）之前的版本，已提交的 `t3_online_tp.csv` 再早一版（沒有 `--vo_dr_init`）；較早提交的 `t1_online_v6`、`t2_online_v6`、`t3_online_b6` 是之前的流程設定）。GPU 推論的微小差異可能讓分割結果有極小不同。
 
 量測品質用「擾動測試」檢查：把參考軌跡偏移已知的量（航向 +1°、橫向 +0.3 m、前後 +1 m），在偏移後的位姿做量測，看量測能修回多少。近距對齊的航向只修回約 10%，等於一直把航向拉回先驗，所以最終流程不使用它。車道比對的航向能完整修回。
 
