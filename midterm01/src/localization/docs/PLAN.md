@@ -871,3 +871,11 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    now maximum a posteriori with a Gaussian prior (sd 2 deg, the flatness of the frame-0 heading peak) on the offset
    around the frame-0 search: frames 6-14 -1.5 (yaw -0.7), winners at 600 unchanged for all three banks
    (frz: 0 until 12 then -1.5; terr: -1.5 from 6). t3_online_tp.csv = runner output recombined with the MAP selection.
+ * Yaw range: the filter writes its continuous heading; Track03 turns through 180 deg at frame 2458 -> 684 frames
+   (2458-3141, all private) had yaw up to 4.39 rad in every T3 file so far (b6 / bank_mle submitted included). The ground
+   truth is almost surely atan2-based like the TA converter (processing_codes/txt_to_idx_x_y_yaw.py: (-pi, pi]); if the
+   Kaggle metric does not wrap angle differences those frames carry ~360 deg each. localize_online.py now writes yaw in
+   (-pi, pi] (values already inside unchanged -> T1 / T2 outputs byte-identical). Dominant choice: same score if the
+   metric wraps, avoids the catastrophe if it does not (only frames straddling +-180 remain at risk).
+ * Competition PDF: score = RMSE of ATE, translation (m) + rotation (deg) with k = 0.2; Track03 public = first 5-40 % of
+   the trajectory, private = the rest (final ranking), private baseline 1.40; Track03 weight r = 0.4 (T1 / T2 0.3).

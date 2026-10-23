@@ -45,7 +45,7 @@ bash tools/run_online.sh /root/data/Track2 T2    # -> work/runs/T2/T2_online.csv
 bash tools/run_online.sh /root/data/Track3 T3    # -> work/runs/T3/T3_online.csv（不用 GNSS）
 ```
 
-輸出是 Kaggle 格式 `idx,x,y,yaw`（yaw 單位 rad）。每個步驟的輸出已存在時會跳過，所以中斷後可以接著跑。
+輸出是 Kaggle 格式 `idx,x,y,yaw`（yaw 單位 rad，範圍 (−π, π]，和助教 `processing_codes/txt_to_idx_x_y_yaw.py` 的 atan2 相同；濾波器內部的航向是連續的，Track03 在第 2458 幀轉過 180°，輸出時才換回這個範圍）。每個步驟的輸出已存在時會跳過，所以中斷後可以接著跑。
 
 | 步驟 | 程式 | 輸出 |
 |---|---|---|

@@ -888,7 +888,10 @@ if __name__ == '__main__':
             if k % 300 == 0:
                 print(f'  frame {k}: x {x:.2f} y {y:.2f} yaw {np.degrees(yaw):.2f} v {v:.2f} | sd fwd {np.sqrt(var("f")):.2f} '
                       f'lat {np.sqrt(var("l")):.2f} yaw {np.degrees(np.sqrt(var("y"))):.2f} | bg {np.degrees(bg):+.3f} kvo {kvo:.3f} | {cnt}', flush=True)
-    pd.DataFrame({'idx': np.arange(n), 'x': out[:, 0], 'y': out[:, 1], 'yaw': out[:, 2]}).to_csv(a.out, index=False)
+    # yaw in (-pi, pi] like the ground truth (txt_to_idx_x_y_yaw.py: atan2 of the rotation matrix); the filter heading is
+    # continuous (Track03 turns through 180 deg at frame ~2458); values already inside are written unchanged
+    yaw_out = out[:, 2] - 2 * np.pi * np.round(out[:, 2] / (2 * np.pi))
+    pd.DataFrame({'idx': np.arange(n), 'x': out[:, 0], 'y': out[:, 1], 'yaw': yaw_out}).to_csv(a.out, index=False)
     if a.record:
         np.savez(a.record, rec=np.array(REC, dtype=object))
     if a.debug:
