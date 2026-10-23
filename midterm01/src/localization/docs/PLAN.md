@@ -1096,3 +1096,6 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
  * T1 3x3 grid (initial heading sd 0.6 / 1.0 / 2.0 x lane heading sigma 0.5 / 0.7 / 1.0, all with the dive model):
    members 0.408 (2.0 / 0.7 = v7) ... 0.429, frame-wise mean 0.404 (heading 0.48 deg; start heading 1.26 -> 0.90 but
    start position 0.434 -> 0.467); 13 members 0.404. Runner T1 = 9-member ensemble (tools/ensemble.py), started 05:28.
+ * Runner T1 9-member ensemble -> t1_online_v8 (== the offline ensemble; members byte-identical to the variant runs).
+   SUBMITTED 06:04: public 0.47 (v7 0.46) - the ensemble's start position is worse (0-300: 0.434 -> 0.467 m vs the
+   reference) and the public part favours the start -> T1 runner back to the single filter; T1 final t1_online_v7.

@@ -131,21 +131,6 @@ if [ "$TR" = T3 ]; then
   $LOC $W/full.csv --vo $W/vo.npz $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
   python3 tools/hyp_select.py combine "$OUT" $NH $W/full.csv $OFFS $PAIRS 2>> $W/hyp_select.log
   tail -n 1 $W/hyp_select.log
-elif [ "$TR" = T1 ]; then
-  # the Track01 filter is chaotic in sparse-marking sections (near-identical settings differ by +-0.02 in the score):
-  # frame-wise mean of 9 causal runs over the two uncertain heading settings, initial heading sd x lane heading sigma
-  # (still causal: frame k averages the members' frame k) -> tools/ensemble.py; vs the reference 0.408 -> 0.404
-  # (heading 0.56 -> 0.48 deg; every member alone 0.408-0.429)
-  MEM=""; i=0
-  for Y0 in 0.6 1.0 2.0; do for YS in 0.5 0.7 1.0; do
-    E=$W/ens_${Y0}_${YS}
-    $LOC $E.csv --vo $W/vo.npz $IMU $COMMON $P --yaw0_sd $Y0 --yaw_sigma $YS --debug ${E}_dbg.csv > $E.log 2>&1 &
-    MEM="$MEM $E.csv"; i=$((i + 1))
-    [ $((i % 3)) -eq 0 ] && wait     # at most 3 map-loading runs at a time (memory)
-  done; done
-  wait
-  python3 tools/ensemble.py "$OUT" $MEM
-  cp $W/ens_2.0_0.7_dbg.csv $W/debug.csv; cp $W/ens_2.0_0.7.log $W/localize.log   # the member with the default settings
 else
   $LOC "$OUT" --vo "$W/vo.npz" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1
 fi
