@@ -747,3 +747,21 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    1583, and A crept 0.8 m during the 40 s red-light stop (the same image measured hundreds of times; low-sharpness
    fixes are biased). -> run_online.sh T3 uses B (t3_online_b6.csv, public 0.51).
  * from-scratch tools/run_online.sh T3 == t3_online_b6.csv (byte-identical).
+
+## 10/23 T2 start (public 0.34)
+ * Error vs the reference (old pipeline, public 0.17) is concentrated in frames 0-330: standing ~8 s in a queue
+   (tour bus alongside on the left, cars ahead and parked right: markings hidden), heading -1.7..-1.85 deg from the
+   frame-0 search, position = GNSS (-0.20 / +0.22 m GNSS bias); first 10 %: 0.31 m / 1.53 deg (0.61 score-like), only
+   0.31 with a perfect heading. Steady state from frame 400: 0.150 m / 0.29 deg (0.208).
+ * Replay (recordings around the reference) is usable again now that the sticky near heading is off: v6 replay
+   0.151 m / 0.57 deg vs causal 0.172 / 0.56 (lateral optimistic: 0.073 vs 0.100; forward 0.113 vs 0.112, heading
+   0.28 vs 0.29 match). Replay grids: GNSS sigma, lane heading sigma, lat_q, heading floor -> flat (0.262-0.266, start
+   heading 1.6 deg dominates); forward parameters: best 0.258 (VO noise 0.15 instead of 0.08, forward floor 0.1).
+ * The wide heading search repeated on later standstill frames: frame 0 -20.67 deg, frames 30-180 -17.85..-17.95,
+   210 -18.15, 240 -18.35 (reference -18.8..-19.2): frame 0 was the outlier (vehicles around move, other markings
+   appear). --stand_search 30 (repeat the search every 30 frames while standing with heading sd > 0.5 deg, sigma
+   1.5 deg): start heading -1.9 -> +0.1 (frame 30) ... +1.0 (later searches biased +0.9) -> t2g 0.283 -> 0.255 vs the
+   reference, steady state unchanged; t2_online_v12 public 0.30 (submitted 12:08, after the user's 08:00 window - my
+   mistake). T1 (moving from the start) and T3 (heading certain at its stops) never trigger it.
+ * Standstill lateral: the lane lateral says -0.10..-0.23 m (right, the GNSS is +0.2 off) but peaks 0.16-0.19 < 0.2;
+   the lane forward there is biased (-0.5..-0.6 m) -> not used.
