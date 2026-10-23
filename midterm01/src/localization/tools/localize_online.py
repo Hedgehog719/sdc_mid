@@ -81,6 +81,13 @@ ap.add_argument('--stand_search_sigma', type=float, default=1.5, help='deg: nois
 ap.add_argument('--resp_ratio', type=float, default=0.0, help='>0: near-alignment marking response from the brightness ratio to '
                 'the local median (response starts at this ratio, full at +0.5), instead of the fixed 15..45 grey levels above '
                 'it: markings in tree shade keep their response')
+ap.add_argument('--pitch_track', action='store_true', help='track the camera pitch causally from the lane matches: every '
+                '--pitch_every lane-match frames also match at pitch +-pitch_step and move towards the higher peak (road slope '
+                'changes, braking dive: the right pitch raises the peak, e.g. 0.31 -> 0.45 at a braking frame)')
+ap.add_argument('--pitch_every', type=int, default=2)
+ap.add_argument('--pitch_step', type=float, default=0.5, help='deg')
+ap.add_argument('--pitch_gain', type=float, default=0.5)
+ap.add_argument('--pitch_max', type=float, default=2.0, help='deg')
 ap.add_argument('--still_freeze', action='store_true', help='no lane / near measurements while the IMU shows standstill '
                 '(--zupt): the same image measured again and again let the pose wander 0.5 m / 2 deg during a 40 s stop')
 ap.add_argument('--dyn_att', action='store_true', help='per-frame dynamic body attitude (causal) in the camera models: '
@@ -102,6 +109,8 @@ ap.add_argument('--gyro_bias', type=float, default=-0.23)
 ap.add_argument('--gyro_bias_sd', type=float, default=0.003, help='deg/s: the gyro bias is a sensor calibration constant')
 ap.add_argument('--gyro_bias_walk', type=float, default=0.0001)
 ap.add_argument('--gyro_noise', type=float, default=0.1)
+ap.add_argument('--gyro_scale_sd', type=float, default=0.0, help='relative gyro scale-factor uncertainty (heading variance grows with '
+                'the turned angle: after an 84 deg turn a 1 %% scale error is 0.84 deg, and the filter must accept lane headings)')
 ap.add_argument('--yaw_sigma', type=float, default=0.6)
 ap.add_argument('--max_window', type=float, default=6.0)
 ap.add_argument('--yaw_mount', type=float, default=-1.5)
@@ -453,6 +462,8 @@ if __name__ == '__main__':
         if a.accum_dist > 0:
             LS.setup_accum(n, accum_dist=a.accum_dist)
     heading, dvel = load_imu()
+    if a.pitch_track and DYN is None and REPLAY is None:
+        DYN = np.zeros((n, 2))
     if DYN is not None and REPLAY is None:
         LS.BM.BEV.dyn = DYN
         print(f'dynamic attitude: roll sd {DYN[:, 1].std():.2f} deg (max {np.abs(DYN[:, 1]).max():.1f}), pitch sd {DYN[:, 0].std():.2f} deg '
@@ -485,6 +496,7 @@ if __name__ == '__main__':
     out = np.zeros((n, 3))
     big_f, big_l = [], []
     drift_l = []
+    pitch_est = 0.0   # tracked camera pitch offset (--pitch_track), degrees
     vo_hist = []
     lo_ok = True      # weak lane matches allowed (--min_peak_lo); with --lo_peak_start only until the first regular lock
     travelled = 0.0
@@ -559,7 +571,7 @@ if __name__ == '__main__':
         Q = sa ** 2 * np.outer(Gv, Gv)
         Rr = np.array([[cm, -sm], [sm, cm]])
         Q[:2, :2] += Rr @ np.diag([1e-4 * dt, a.lat_q ** 2 * dt]) @ Rr.T
-        Q[2, 2] += qy * dt
+        Q[2, 2] += qy * dt + (a.gyro_scale_sd * dpsi) ** 2   # gyro scale-factor error grows the heading variance in turns
         Q[4, 4] += a.bias_walk ** 2 * dt
         Q[5, 5] += 1e-6 * dt
         Q[6, 6] += np.radians(a.gyro_bias_walk) ** 2 * dt
@@ -732,7 +744,27 @@ if __name__ == '__main__':
                     if a.accum_dist > 0:
                         LS.set_pose(k, mp)   # current prior of frame k (past frames hold their final poses)
                     frozen = a.still_freeze and bool(D.get('still'))
+                    if DYN is not None and a.pitch_track and not frozen:
+                        DYN[k, 0] = pitch_est   # camera pitch tracked from the lane matches (slope changes, braking dive)
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
+                    if a.pitch_track and not frozen and r is not None and mi % a.pitch_every == 0:
+                        pk = [None, r[5], None]
+                        for ii, dp in ((0, -a.pitch_step), (2, a.pitch_step)):
+                            DYN[k, 0] = pitch_est + dp
+                            try:
+                                rr = LS.match(k, mp)
+                            except (IndexError, ValueError):
+                                rr = None
+                            pk[ii] = rr[0] if rr is not None else None
+                        DYN[k, 0] = pitch_est
+                        if None not in pk and min(pk) > 0.1:
+                            den = pk[0] - 2 * pk[1] + pk[2]
+                            if den < 0:
+                                dp = float(np.clip(0.5 * (pk[0] - pk[2]) / den, -1, 1)) * a.pitch_step
+                            else:   # no interior maximum: step towards the higher side
+                                dp = a.pitch_step * (1 if pk[2] > pk[0] else -1)
+                            pitch_est = float(np.clip(pitch_est + a.pitch_gain * dp, -a.pitch_max, a.pitch_max))
+                        D['pitch'] = pitch_est
                     if r is not None:   # record as absolute pose + match quality
                         cm, sm = np.cos(mp[2]), np.sin(mp[2])
                         REC['lane'][k] = (mp[0] + cm * r[0] - sm * r[1], mp[1] + sm * r[0] + cm * r[1], mp[2] + r[2], r[3], r[4], r[5])

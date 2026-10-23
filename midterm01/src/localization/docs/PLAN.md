@@ -790,3 +790,12 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    Outputs (byte-identical to the validation runs): t1_online_v6c 0.411 vs the reference (v6 0.429),
    t2_online_v17 0.238 (v12 0.255), t3_online_frz. Stop-frame bands with frz: +0.3 / 0.0 / 0.0 m near, -0.3..-0.9 far
    (IPM stretch from slope / pitch at the stop, no map updates there), b6 +0.5 m throughout.
+ * Braking section T3 795-870: the lane forward fixes said +0.84..+1.55 m but peaks 0.18-0.20 < 0.2 (not used) until
+   834. Pitch scan (lane-match peak vs an added camera pitch at the final poses): braking frames best +0.5..+1.0 deg
+   (870: peak 0.31 -> 0.45), but constant-speed frames too (450: -1.0, 1200: +0.5, 2500: -1.0) -> slope changes
+   matter as much as the dive; a fixed k x acceleration model cannot follow.
+ * --pitch_track (every 2nd lane-match frame also match at pitch +-0.5 deg, move towards the higher peak): T3 total
+   map LL 1687 -> 1888 (pitch -1.6..+1.4 deg), but T1 0.411 -> 0.534 (steady lateral 0.16 -> 0.32) -> not used: the
+   tracker fits a parameter to the same matches, so their likelihood is no longer an independent quality score.
+ * Turn exit T3 2595-2673: lane headings +0.5..+1.7 deg accepted with heading sd 0.16 -> ~30 frames to catch up
+   (gyro scale error over the 84 deg turn) -> --gyro_scale_sd (heading variance grows with the turned angle).
