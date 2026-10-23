@@ -920,3 +920,36 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    peak over T3: 0.17-0.21 MAD 0.72 deg, 0.21-0.25 0.54, 0.25-0.30 0.59 (accepted), >0.30 0.32 -> the hard cut at 0.25
    is arbitrary. Consistent rejected low-peak headings also at 450-600 (+0.72), 2400-2700 (+0.68..+0.85), 150-300
    (-0.60). New --yaw_soft_peak P: peaks in [P, 0.25) used with sigma 0.7 x (0.25 / peak)^2; testing P 0.17 / 0.21.
+ * The map LL is NOT comparable between runs that accept different numbers of measurements: each accepted map
+   measurement adds -0.5 e^2/S - 0.5 log(2 pi S), and the log term is positive (+3.1 for a 1 deg heading sigma, +1 for
+   0.15 m). ys17 (soft heading gate, 570 instead of 360 headings) "gained" 575 LL that way; attA accepted fewer
+   (fwd / lat / yaw 290 / 995 / 293 vs 315 / 1074 / 360) and "lost". Fair check now (work/online/innov_cmp.py):
+   robust rms of the prediction innovations on frames where all runs have the measurement (lane lateral / forward,
+   near lateral, lane heading with peak >= 0.25, near heading) + t3_eval.py (heading - course over ground on straight
+   roads, which tracks the segment heading error on T1 / T2 within ~0.2 deg; median unused near-heading innovation).
+ * Stop pose check (terrain_ab.py at frames 960-2040, static calibration = no dynamic attitude at a standstill): at
+   the tpd pose the terrain lane matches say fwd +0.05 / lat +0.02 m (rms 0.05 / 0.07) -> the tpd stop pose is
+   consistent; attA's stop pose is +0.59 m ahead and the matches there say -0.6 m -> the 20 s high-passed AHRS pitch
+   (+0.5 deg error after the braking) pushes the forward position wrong.
+ * attC = --att_imu_map 1.5 --att_resid --att_pitch_only (dive model kept, plus the fast IMU - map pitch residual,
+   1.5 s causal high-pass: bumps / nose-up like 617): fair innovations vs tpd: lane lat 0.120 -> 0.109 m, lane fwd
+   0.086 -> 0.083, near lat 0.082 -> 0.066, lane heading 0.78 -> 0.52 deg, near heading 0.370 -> 0.330; more matches
+   pass the quality gates (fwd 315 -> 333, heading 360 -> 374) with the same poses at the stop (+0.05 m).
+ * Heading bias: straight-road heading - course over ground is -0.37 deg on tpd (T3 runs b6 / tp / attB -0.39..-0.42)
+   vs -0.05 / +0.01 on the T1 / T2 online runs and +0.03 / -0.00 on the references; the unused near-heading innovation
+   median is +0.19 deg on T3 vs 0.00 / +0.04 on T1 / T2 -> T3 heading ~0.3-0.4 deg clockwise (the user saw 450 cw and
+   630 ccw red dots). T1 and T2 already needed different front-right camera fixes (the rig moves between recording
+   days); the front fix and --lane_yaw_off 0.3 come from T1 / T2. Testing --lane_yaw_off 0 for T3.
+ * attC parameters (fair innovations, lane lat / lane fwd / near lat m, lane / near heading deg; counts fwd/lat/yaw):
+   tpd 0.121 / 0.109 / 0.082, 0.765 / 0.370 (315/1074/360); attC tau 1.5 0.110 / 0.100 / 0.066, 0.455 / 0.330
+   (333/1068/374); tau 0.8 0.125 / 0.108 / 0.074, 0.558 / 0.362; tau 3.0 0.108 / 0.103 / 0.065, 0.374 / 0.349 (stop
+   pose +0.10 m vs +0.05); attD (tau 1.5 + roll) 0.120 / 0.101 / 0.067, 0.536 / 0.353 -> attC (tau 1.5, pitch only).
+ * Soft heading gate with attC (C17): 0.119 / 0.101 / 0.071, 0.496 / 0.357 vs attC 0.110 / 0.100 / 0.066, 0.455 /
+   0.330 -> not adopted (frames 585-650 +0.24 deg towards the lane headings, but worse elsewhere).
+ * --lane_yaw_off 0 with attC (Co0) / + soft gate (C17o0): straight-road heading - course -0.30 -> -0.11 / +0.02,
+   near-heading median +0.18 -> +0.08 / +0.07 (both towards the T1 / T2 values), but lane lat 0.110 -> 0.130, near
+   lat 0.066 -> 0.089 / 0.097 and lane heading spread 0.46 -> 0.72 deg (median -0.10) -> conflicting; GNSS-free T1 / T2
+   runs (s1_v11 / s2_v11, s1_v6 / s2_v6): the per-segment heading - course tracks the true segment heading error
+   (±0.3), those errors average ~0 there and their near-heading medians are 0.00-0.02, while T3 is negative in all
+   six straight segments. Open; for the user's visual check.
+ * Runner T3 + attC (tools/run_online.sh, --att_imu_map 1.5 --att_resid --att_pitch_only) started 20:41.

@@ -41,7 +41,13 @@ case $TR in
       # repeat it every 30 frames while standing with an uncertain heading (later frames see other markings)
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
-         --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init" ;;
+         --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init
+         --att_imu_map 1.5 --att_resid --att_pitch_only" ;;
+      # --att_imu_map 1.5 --att_resid --att_pitch_only: fast body pitch on uneven road (a wheel over a bump, under-damped
+      # suspension; gyro: 0.9 deg nose-up at 617): IMU pitch minus the map road plane under the prior pose, minus the
+      # dive model, high-passed with a 1.5 s causal average (the AHRS pitch drifts 0.5 deg after braking -> slow part
+      # not used), added to the dive model; fair innovations near lateral 0.082 -> 0.066 m, lane heading 0.77 -> 0.46
+      # deg, same stop pose (roll from the IMU and longer / shorter averages were worse)
       # --vo_dr_init: until 5 VO pairs give the initial speed (frame 5), move by each pair's VO displacement (the position
       # stood still for 4 frames while the car drove ~1.1 m; the first frame intervals are irregular)
       # --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3: body pitch from the IMU longitudinal acceleration of the past

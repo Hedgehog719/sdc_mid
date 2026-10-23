@@ -102,6 +102,9 @@ ap.add_argument('--att_imu_map', type=float, default=0.0, help='>0: body attitud
                 'IMU roll / pitch minus the map road plane under the prior pose, minus the exponential average of that '
                 'difference over this many seconds (IMU mounting); replaces the --dyn_att values (roll in turns, dive, sway)')
 ap.add_argument('--att_roll_only', action='store_true', help='--att_imu_map: roll only (keep the --dyn_att pitch model)')
+ap.add_argument('--att_pitch_only', action='store_true', help='--att_imu_map: pitch only')
+ap.add_argument('--att_resid', action='store_true', help='--att_imu_map: high-pass the difference to the --dyn_att '
+                'values and add it to them (dive model + fast residual: bumps, sway) instead of replacing them')
 ap.add_argument('--dyn_att', action='store_true', help='per-frame dynamic body attitude (causal) in the camera models: '
                 'IMU roll high-passed + suspension pitch from the longitudinal acceleration (braking dive, roll in turns)')
 ap.add_argument('--pitch_per_accel', type=float, default=-0.8, help='deg of body pitch per m/s^2 of longitudinal acceleration')
@@ -752,15 +755,18 @@ if __name__ == '__main__':
                 if okp_.sum() >= 10:
                     pa_ = np.linalg.lstsq(np.stack([PL_U[okp_], PL_V[okp_], np.ones(okp_.sum())], 1), pz_[okp_], rcond=None)[0]
                     diff_ = np.array([ATT[1][ti] + np.degrees(np.arctan(pa_[0])), ATT[2][ti] - np.degrees(np.arctan(pa_[1]))])
+                    base_ = DYN[k].copy() if a.att_resid else np.zeros(2)   # --dyn_att values of this frame
+                    diff_ -= base_
                     if att_ema is None:
                         att_ema = diff_.copy()
                     else:
                         al_ = min((TS[k] - TS[k - 1]) * 1e-9 / a.att_imu_map, 1.0)
                         att_ema = att_ema + al_ * (diff_ - att_ema)
                     hp_ = diff_ - att_ema
-                    DYN[k, 1] = hp_[1]
+                    if not a.att_pitch_only:
+                        DYN[k, 1] = base_[1] + hp_[1]
                     if not a.att_roll_only:
-                        DYN[k, 0] = hp_[0]
+                        DYN[k, 0] = base_[0] + hp_[0]
                     D['att_p'], D['att_r'] = float(DYN[k, 0]), float(DYN[k, 1])
             if (a.stand_search > 0 and REPLAY is None and D.get('still') and k % a.stand_search == 0
                     and var('y') > np.radians(0.5) ** 2):
