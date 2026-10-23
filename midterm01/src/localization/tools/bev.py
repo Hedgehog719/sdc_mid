@@ -284,6 +284,7 @@ class ImageBEV:
                 h, p, r, y = self.calib
                 self.set_calib(h, p + self.dyn[i, 0], r + self.dyn[i, 1], y)
             maps = self.maps
+        self.last_maps = maps   # the projection of this frame (terrain or flat), reused by RoadProbBEV.render
         acc = np.zeros((H, W), np.float32)
         cnt = np.zeros((H, W), np.float32)
         for c in self.cams:
@@ -1061,7 +1062,7 @@ class RoadProbBEV:
                 ob = cv2.dilate((self.obj[c][i] > 100).astype(np.uint8), np.ones((5, 5), np.uint8))
                 bad |= cv2.resize(ob, (wq * 4, hq * 4), interpolation=cv2.INTER_NEAREST)
             bad |= b.ego_bad(c, bad.shape)
-            mx, my, v = b.maps[c]
+            mx, my, v = (getattr(b, 'last_maps', None) or b.maps)[c]   # the response's projection (terrain)
             g = cv2.remap(pr, mx / 4.0, my / 4.0, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
             if self.colour:
                 cpb = cv2.remap(self.colour_prob(i, c, None), mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)

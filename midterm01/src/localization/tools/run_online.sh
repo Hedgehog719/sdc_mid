@@ -46,7 +46,11 @@ case $TR in
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
          --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init
-         --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120" ;;
+         --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120 --terrain_lat" ;;
+      # --terrain_lat: the terrain BEV also follows the map road surface across the width (kerb-side lanes / gutters
+      # lower than the vehicle plane: at 705-735 the kerb-side lane line was 0.4 m off while the right line fitted):
+      # fair innovations lane lat 0.096 -> 0.026 m, near lat 0.064 -> 0.042, lane heading 0.40 -> 0.24 deg; the
+      # straight-road heading - course offset -0.26 -> -0.01 deg (the lateral road shape had skewed the BEV)
       # --roll_imu_map 120: static body roll relative to the road, estimated online as the running mean of IMU roll minus
       # the map road-plane roll over the frames so far (+0.32 deg at frame 100, +0.36..+0.42 after; the T1 / T2 camera
       # calibration assumes none): lane lat 0.106 -> 0.099 m, lane fwd 0.096 -> 0.085, near lat 0.066 -> 0.064, lane
