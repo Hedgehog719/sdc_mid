@@ -471,7 +471,6 @@ def initial_pose(G):
         if r is not None and r[0] > 0.08:
             yaw = yaw + r[4] - np.radians(a.lane_yaw_off)
     LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
-    LS.BM.A.seg_gate = a.seg_gate if (a.seg_gate_all or a.seg_gate_track) else 0.0
     if abs(np.degrees(yaw - y0)) < a.gross_yaw:   # init_guess heading is fine: keep it (the start map can be defective)
         yaw = y0
     elif a.init_pos and G is None:   # init_guess grossly off (heading > gross_yaw): its position is suspect as well ->
@@ -485,6 +484,8 @@ def initial_pose(G):
             x, y = x + c * r[2] - s * r[3], y + s * r[2] + c * r[3]
             print(f'frame-0 position correction: forward {r[2]:+.2f} m, lateral {r[3]:+.2f} m (peak {r[0]:.3f})', flush=True)
         LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
+    # gate for the tracking matches from here on (the frame-0 heading search and position match stay ungated)
+    LS.BM.A.seg_gate = a.seg_gate if (a.seg_gate_all or (a.seg_gate_track and a.seg_gate_from <= 0)) else 0.0
     return [x, y, yaw]
 
 

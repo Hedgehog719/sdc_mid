@@ -53,10 +53,12 @@ case $TR in
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
          --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init
-         --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120 --terrain_lat" ;;
-      # (not --seg_gate for T3: better innovations overall, but at 105-177 it dropped the right forward fixes of the start
-      # and took a wrong one -> 0.9 m behind for ~40 frames (the unused near-alignment forward said +0.4 m); public 0.35
-      # vs 0.24)
+         --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120 --terrain_lat --seg_gate 0.5 --seg_gate_track
+         --seg_gate_from 300" ;;
+      # --seg_gate 0.5 --seg_gate_track --seg_gate_from 300: road-surface gate as T2, but only from frame 300 - gated from
+      # the start it dropped the right forward fixes at 105-177 and took a wrong one (0.9 m behind for ~40 frames; public
+      # 0.35 vs 0.24); from 300 on: start identical, fair innovations lane fwd 0.089 -> 0.067 m, lane heading 0.227 ->
+      # 0.221, near heading 0.357 -> 0.345 deg
       # --terrain_lat: the terrain BEV also follows the map road surface across the width (kerb-side lanes / gutters
       # lower than the vehicle plane: at 705-735 the kerb-side lane line was 0.4 m off while the right line fitted):
       # fair innovations lane lat 0.096 -> 0.026 m, near lat 0.064 -> 0.042, lane heading 0.40 -> 0.24 deg; the

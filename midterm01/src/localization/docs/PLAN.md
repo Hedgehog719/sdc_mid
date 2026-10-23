@@ -1068,3 +1068,15 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
  * T2 more: --yaw_sigma 5.0 0.214 (= 2.5); GNSS bias state sd 0.15 / tau 30 s 0.242 (no); seg gate 0.3 / 0.7: 0.214 /
    0.211 (noise level). T1 dive model -0.3: 0.408 vs 0.411 (steady 0.345 vs 0.343, marginal). The T2 start forward
    error (-0.23..-0.30, GNSS-driven) equals the board-derived start shift of the reference - no compliant source.
+ * T1 more (vs the reference, 0.411 v6c): lane heading sigma 0.5 0.431, + dive 0.423; dive -0.5 0.416; GNSS sigma lat
+   0.3 0.425, fwd 0.6 0.455; terrain + terrain_lat 0.554 (warped T1 map) -> runner T1 + dive -0.3 = t1_online_v7
+   (0.408). SUBMITTED 03:54: public 0.46 (= v6c at two decimals). The T1 start heading (rms 1.26-1.41 deg in 0-300)
+   swings with GNSS lateral fixes while the heading is uncertain (no lane heading accepted before 300: peaks
+   0.08-0.20 on the warped start map) - no parameter fixes it. Gyro scale vs the references: T2 turns 1.000 (T1 only
+   gentle bends) -> no scale error.
+ * Gate bug: initial_pose switched the segmentation gate on BEFORE the T3 frame-0 position match (init_pos) -> that
+   match was gated too. Fixed (frame-0 heading search and position match ungated; the gate starts with tracking);
+   T2 (GNSS start, no init_pos match) reproduced byte-identically. Even so the gated tracking matches of the T3 start
+   drift back (100-200: -0.29 / -0.46 m) -> --seg_gate_from 300: start identical to tpl, then lane fwd 0.089 -> 0.067,
+   lane heading 0.227 -> 0.221, near heading 0.357 -> 0.345 deg (near lat 0.042 -> 0.045). Runner T3 with it started
+   04:17.
