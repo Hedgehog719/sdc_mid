@@ -1065,3 +1065,6 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    drifted to -0.98 vs the reference). GNSS sigma 0.25 / 0.10: 0.237 / 0.231 -> no.
  * Runner T2 + --yaw_sigma 2.5 -> t2_online_v19 (== variant; vs the reference 0.214, steady 0.163). SUBMITTED 02:56:
    public 0.26 (v18 0.27). T1 with yaw_sigma 1.0 / 1.5: 0.441 / 0.430 vs 0.411 -> no.
+ * T2 more: --yaw_sigma 5.0 0.214 (= 2.5); GNSS bias state sd 0.15 / tau 30 s 0.242 (no); seg gate 0.3 / 0.7: 0.214 /
+   0.211 (noise level). T1 dive model -0.3: 0.408 vs 0.411 (steady 0.345 vs 0.343, marginal). The T2 start forward
+   error (-0.23..-0.30, GNSS-driven) equals the board-derived start shift of the reference - no compliant source.
