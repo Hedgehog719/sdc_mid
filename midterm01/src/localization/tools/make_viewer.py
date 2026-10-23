@@ -44,6 +44,7 @@ def main():
                     'as localize_online --terrain) instead of the flat road plane')
     ap.add_argument('--marks', default='', help='marking_map.py npz (mask mode): red dots from the global marking map, '
                     'drawn at their 3D map height (poles too) instead of on a flat road')
+    ap.add_argument('--terrain_lat', action='store_true', help='--terrain with the lateral road shape (localize_online --terrain_lat)')
     ap.add_argument('--dyn_csv', default='', help='localize_online --debug csv with att_p / att_r: draw with the per-frame '
                     'dynamic body pitch / roll the filter used (dive model + fast IMU pitch) instead of the static rig')
     a = ap.parse_args()
@@ -65,6 +66,7 @@ def main():
         MK = MarkingMap(a.marks)
         if a.terrain:
             B.terrain = MK.height
+            B.TERRAIN_LAT = a.terrain_lat
     Rm0 = Rotation.from_euler('ZYX', [-1.5, 0, 0], degrees=True).as_matrix()
     DY = None
     if a.dyn_csv:   # per-frame dynamic attitude (deg) as used by the filter; frames without a value: 0

@@ -21,7 +21,7 @@ def setup(track_dir, marks_npz, max_shift=2.5, max_yaw=3.0, yaw_step=0.5, yaw_fi
         road_map='smooth', road_v3=False, road_seg='road', road_colour=False, curb_band=3.0, range_weight=0.0,
         map_marks=marks_npz, near_only=0.0, map_min_blob=0, pin_z=None, pin_frames='', hybrid_ratio=0.6,
         ground_mode='profile', color=False, percam=True, photonorm=False, accum=0, accum_step=4, accum_dist=0.0,
-        accum_ds=0.7, ground3d=False, dyn_attitude=False, dyn_roll_only=False, dyn_sign=1.0, pitch_per_accel=0.0)
+        accum_ds=0.7, ground3d=False, dyn_attitude=False, dyn_roll_only=False, dyn_sign=1.0, pitch_per_accel=0.0, seg_gate=0.0)
     BM.TS_ALL, _ = ply_frames(os.path.join(track_dir, 'raw_ply'))
     BM.MAP = BM.load_map(track_dir)
     BM.MARKS = MarkingMap(marks_npz)
@@ -30,6 +30,7 @@ def setup(track_dir, marks_npz, max_shift=2.5, max_yaw=3.0, yaw_step=0.5, yaw_fi
     _bev.GROUND_MODE = 'profile'
     _bev.HYBRID_RATIO = 0.6
     BM.ROADBEV = None
+    BM.SEGBEV = None
 
 
 def set_window(max_shift=None, max_yaw=None, yaw_step=None):

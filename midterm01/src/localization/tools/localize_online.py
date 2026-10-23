@@ -82,6 +82,12 @@ ap.add_argument('--drift_n', type=int, default=0, help='>0: this many consecutiv
                 'a 1.5 m wrong lock lasted 20 s while the rejected lane matches kept saying +0.5..+1.7 m)')
 ap.add_argument('--stand_search', type=int, default=0, help='>0: while standing still with an uncertain heading (sd > 0.5 deg) '
                 'repeat the frame-0 heading search every this many frames as a heading measurement (needs --zupt)')
+ap.add_argument('--seg_gate', type=float, default=0.0, help='>0: the frame-0 and standstill heading searches use only the '
+                'road surface the cameras see (road probability above this, BEV) for both the image response and the '
+                'map marks (Track02 start: map artefacts of the queued cars around the vehicle)')
+ap.add_argument('--seg_gate_all', action='store_true', help='--seg_gate for every lane match')
+ap.add_argument('--seg_gate_track', action='store_true', help='--seg_gate for the tracking lane matches only (not the '
+                'frame-0 / standstill heading searches)')
 ap.add_argument('--stand_search_sigma', type=float, default=1.5, help='deg: noise of one standstill heading search')
 ap.add_argument('--resp_ratio', type=float, default=0.0, help='>0: near-alignment marking response from the brightness ratio to '
                 'the local median (response starts at this ratio, full at +0.5), instead of the fixed 15..45 grey levels above '
@@ -98,6 +104,8 @@ ap.add_argument('--still_freeze', action='store_true', help='no lane / near meas
 ap.add_argument('--terrain', action='store_true', help='lane matching on the map road surface: the image BEV is projected '
                 'onto the marking-map ground heights around the prior pose (relative to the road plane under the vehicle) '
                 'instead of a flat plane (vertical curves / crowned roads stretch the far field by metres)')
+ap.add_argument('--terrain_lat', action='store_true', help='--terrain: also the lateral shape of the map road surface '
+                '(crown, gutters, kerb-side lanes) beside the lane strip (Track03 725: the kerb-side line 0.4 m off)')
 ap.add_argument('--att_imu_map', type=float, default=0.0, help='>0: body attitude relative to the road per frame (causal) = '
                 'IMU roll / pitch minus the map road plane under the prior pose, minus the exponential average of that '
                 'difference over this many seconds (IMU mounting); replaces the --dyn_att values (roll in turns, dive, sway)')
@@ -448,6 +456,7 @@ def initial_pose(G):
         if k >= 0 and (TS[0] - G[0][k]) * 1e-9 < 0.5:
             x, y = G[1][k], G[2][k]
     y0 = yaw
+    LS.BM.A.seg_gate = 0.0 if a.seg_gate_track else a.seg_gate
     for my, ms, ys in ((a.init_yaw, 1.0, 1.0), (3.0, 1.0, 0.5)):
         LS.set_window(max_shift=ms, max_yaw=my, yaw_step=ys)
         try:
@@ -457,6 +466,7 @@ def initial_pose(G):
         if r is not None and r[0] > 0.08:
             yaw = yaw + r[4] - np.radians(a.lane_yaw_off)
     LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
+    LS.BM.A.seg_gate = a.seg_gate if (a.seg_gate_all or a.seg_gate_track) else 0.0
     if abs(np.degrees(yaw - y0)) < a.gross_yaw:   # init_guess heading is fine: keep it (the start map can be defective)
         yaw = y0
     elif a.init_pos and G is None:   # init_guess grossly off (heading > gross_yaw): its position is suspect as well ->
@@ -495,6 +505,7 @@ if __name__ == '__main__':
     roll_mean, roll_n = 0.0, 0   # --roll_imu_map
     if a.terrain and REPLAY is None:
         LS.BM.BEV.terrain = MK.height
+        LS.BM.BEV.TERRAIN_LAT = a.terrain_lat
     if DYN is not None and REPLAY is None:
         LS.BM.BEV.dyn = DYN
         print(f'dynamic attitude: roll sd {DYN[:, 1].std():.2f} deg (max {np.abs(DYN[:, 1]).max():.1f}), pitch sd {DYN[:, 0].std():.2f} deg '
@@ -789,6 +800,7 @@ if __name__ == '__main__':
                 # markings appear; Track02: frame 0 -20.7 deg, frames 30-180 -17.9 deg, reference -18.8) as a heading
                 # measurement - the searches are averaged by the filter
                 yaw_s = yaw
+                LS.BM.A.seg_gate = 0.0 if a.seg_gate_track else a.seg_gate
                 for my, ms, ys in ((a.init_yaw, 1.0, 1.0), (3.0, 1.0, 0.5)):
                     LS.set_window(max_shift=ms, max_yaw=my, yaw_step=ys)
                     try:
@@ -798,6 +810,7 @@ if __name__ == '__main__':
                     if rs is not None and rs[0] > 0.08:
                         yaw_s = yaw_s + rs[4] - np.radians(a.lane_yaw_off)
                 LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
+                LS.BM.A.seg_gate = a.seg_gate if (a.seg_gate_all or a.seg_gate_track) else 0.0
                 D['ss_dy'] = np.degrees((yaw_s - yaw + np.pi) % (2 * np.pi) - np.pi)
                 D['ss_a'] = int(upd_yaw((yaw_s - yaw + np.pi) % (2 * np.pi) - np.pi, np.radians(a.stand_search_sigma), 25.0))
                 cnt['yaw'] += D['ss_a']

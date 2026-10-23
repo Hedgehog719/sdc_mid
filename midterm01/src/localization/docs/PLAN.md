@@ -1020,3 +1020,24 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
  * T3 720+ (user: left markings unused, red dots left): at 800 the left edge line by the parked cars IS in the
    near-alignment response (segmentation removes mostly the building facades). 2940 (user: left camera parallelogram,
    thicker markings): the lane match there asks +1.2 deg heading but peak 0.20-0.22 < 0.25 (rejected), braking dive.
+ * T3 725 (user: the left lane line's red dots run parallel LEFT of the white line): side-split BEV vs map lateral
+   offsets (work/online/side_shift.py): left part +0.4 m at 705-735 (+0.3..+0.5 at 500 / 600), right part ~0 -> the
+   image lane is narrower on the kerb side = the road there is LOWER than the vehicle plane (gutter / crown), which the
+   lane-strip profile (same dz across the width) ignores. New --terrain_lat (bev.ImageBEV.TERRAIN_LAT): map road
+   height on a 1 m x 0.5 m grid relative to plane + profile beside the strip (|v| >= 1 m), clipped +-0.3 m, median
+   along the road, bilinear onto the BEV -> left offsets 0..+0.1 m. Full T3 (CrM + --terrain_lat = CrMtl): fair
+   innovations lane lat 0.096 -> 0.026 m (!), near lat 0.064 -> 0.042, lane fwd 0.087 -> 0.081, lane heading 0.40 ->
+   0.24 deg; accepted fwd / lat / yaw 337/1101/392 -> 350/1108/416; straight-road heading - course -0.26 -> -0.01 deg
+   (the T3 heading bias was the lateral road shape skewing the BEV). Red-light stop pose vs CrM: fwd -0.02, heading
+   +0.41 deg; end stop fwd -0.43 m. Static matches WITH the lateral shape (terrain_ab.py TERRAIN_LAT=1; peaks 0.29-0.31
+   vs 0.21-0.24 with the strip profile) say both stop poses are ~0.3-0.4 m too far forward (red light -0.31..-0.40,
+   end -0.30 for CrMtl / -0.85 for CrM) -> testing measurements while standing (no --still_freeze, CrMtlnf).
+ * T2 'search only on the blue road' (user): --seg_gate THR (SegFormer road probability IPM, dilated 0.35 m).
+   Masking the MAP raster too at a wrong prior heading removes exactly the marks to be found (frame-0 search failed,
+   +18 deg) -> image side only. Image-side gate: searches only 0.251 (frame-0 heading -2.52 vs -1.89 deg); every match
+   0.236 (steady from 400: 0.197 -> 0.179, lateral 0.096 -> 0.070) -> --seg_gate_track (tracking matches only, searches
+   ungated) running.
+ * T2 --seg_gate 0.5 --seg_gate_track (tracking matches gated, searches not): vs the reference 0.238 -> 0.223 (steady
+   0.197 -> 0.180, lateral 0.096 -> 0.070), start unchanged; T1 with the same gate 0.411 -> 0.429 (forward 0.212 ->
+   0.240) -> T2 only. Runner T2 -> t2_online_v18 (== the variant run). SUBMITTED 00:48 (user: submit directly before
+   08:00): public 0.27 (v17 0.28).

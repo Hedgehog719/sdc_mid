@@ -36,7 +36,11 @@ case $TR in
       P="--gnss --gnss_sigma 1.0 0.2 --gyro_bias -0.220 --lane_k 0.005 0.005 --vo_noise 0.02 --acc_noise 0.05 --imu_causal" ;;
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.15 --acc_noise 0.05 --floor 0.1 0.1 0.15
-         --stand_search 30 --stand_search_sigma 2.5 --imu_causal" ;;
+         --stand_search 30 --stand_search_sigma 2.5 --imu_causal --seg_gate 0.5 --seg_gate_track" ;;
+      # --seg_gate 0.5 --seg_gate_track: the tracking lane matches use only image responses on the road surface the
+      # cameras see (SegFormer road probability > 0.5, IPM, dilated 0.35 m; parked cars, kerbs, facades, the bus beside
+      # the car drop out); the frame-0 / standstill heading searches stay ungated (gated, their heading got worse):
+      # vs the reference 0.238 -> 0.223 (steady state from 400: 0.197 -> 0.180, lateral 0.096 -> 0.070)
       # T2 starts standing in a queue (bus alongside, markings hidden): the frame-0 heading search is 1.8 deg off ->
       # repeat it every 30 frames while standing with an uncertain heading (later frames see other markings)
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS

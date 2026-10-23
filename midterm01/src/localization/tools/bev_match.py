@@ -130,6 +130,9 @@ def subpix(res, loc):
     return x + dx, y + dy
 
 
+SEGBEV = None   # RoadProbBEV for A.seg_gate
+
+
 def match_frame(i, prior):
     x, y, yaw = prior
     BEV.pose = (x, y, yaw)   # terrain IPM (ImageBEV.terrain): the map road surface around the prior pose
@@ -164,6 +167,14 @@ def match_frame(i, prior):
             small = small[small > 0]
             if len(small):
                 ref = np.where(np.isin(lab, small), 0, ref).astype(ref.dtype)
+    segm = None
+    if getattr(A, 'seg_gate', 0.0) > 0:   # only image responses on the road surface the cameras see (SegFormer
+        global SEGBEV                       # road probability, IPM): parked cars, kerbs, facades, the bus beside
+        if SEGBEV is None:                  # the car do not take part
+            SEGBEV = RoadProbBEV(BEV, 'road', 'road')
+        sp, sv = SEGBEV.render(i)
+        segm = cv2.dilate(((sp > A.seg_gate) & sv).astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
+        # (image side only: the map raster at a wrong prior heading would lose exactly the marks to be found)
     p = int(A.max_shift / RES)
     padded = cv2.copyMakeBorder(ref, p, p, p, p, cv2.BORDER_CONSTANT,
                                 value=float(ref.mean()) if A.feature == 'road' else 0).astype(np.float32)
@@ -184,6 +195,8 @@ def match_frame(i, prior):
         else:
             g, v = BEV.render_pose(i, *PRIOR_REL[i]) if A.ground3d else BEV.render(i)
             base = edge_response(g, v & road_d) if A.feature == 'curb' else lane_response(g, v & road_d)
+    if segm is not None:
+        base = base * segm
     if A.near_only > 0:  # keep only rows with x <= near_only (rows grow towards the vehicle / behind it)
         from bev import X_MAX as _XM
         r0 = int(max(0, (_XM - A.near_only) / RES))

@@ -141,6 +141,8 @@ class ImageBEV:
     terrain = None   # optional road-height function (wx, wy) -> (z, ok) (marking-map ground): render_resp then projects
                      # the BEV grid onto the map road surface around self.pose instead of the flat vehicle plane
     pose = None      # (x, y, yaw) of the frame being rendered (terrain mode; set by bev_match.match_frame)
+    TERRAIN_LAT = False  # also the lateral shape of the map road surface (crown, gutters, kerb-side lanes) beside the
+                         # lane strip, not only the strip's profile carried across the width
     TERRAIN_MAX = 0.45   # m: a profile bending further away from the vehicle plane within 25 m is a map warp (Track01
                          # start: the map ground dips ~1 m within 10 m on a flat street) -> flat plane
 
@@ -190,7 +192,26 @@ class ImageBEV:
         dzu = F(gx[:, 0]) @ coef
         if np.abs(dzu[(gx[:, 0] > 0) & (gx[:, 0] < 25)]).max() > self.TERRAIN_MAX:
             return None
-        return np.repeat(dzu[:, None], W, 1)
+        dz = np.repeat(dzu[:, None], W, 1)
+        if self.TERRAIN_LAT:   # map road height beside the strip relative to plane + profile (coarse 1 m x 0.5 m)
+            cu, cv = np.arange(X_MIN, X_MAX + 0.01, 1.0), np.arange(-Y_MAX, Y_MAX + 0.01, 0.5)
+            CU, CV = np.meshgrid(cu, cv, indexing='ij')
+            zc, okc = self.terrain(*world(CU.ravel(), CV.ravel()))
+            res = zc.reshape(CU.shape) - (pa[0] * CU + pa[1] * CV + pa[2]) - (F(cu) @ coef)[:, None]
+            res = np.where(okc.reshape(CU.shape) & np.isfinite(res), np.clip(res, -0.3, 0.3), 0.0)
+            res[:, np.abs(cv) < 1.0] = 0.0   # the strip itself is the profile
+            from scipy.ndimage import median_filter
+            res = median_filter(res, size=(3, 1), mode='nearest')   # along the road: map noise, not shape
+            # bilinear onto the BEV grid (rows: x descending from X_MAX; columns: y descending from Y_MAX)
+            gxa, gya = bev_grid()
+            fu = (gxa - X_MIN) / 1.0
+            fv = (gya + Y_MAX) / 0.5
+            iu = np.clip(np.floor(fu).astype(int), 0, len(cu) - 2)
+            iv = np.clip(np.floor(fv).astype(int), 0, len(cv) - 2)
+            tu, tv = np.clip(fu - iu, 0, 1), np.clip(fv - iv, 0, 1)
+            dz = dz + ((1 - tu) * (1 - tv) * res[iu, iv] + tu * (1 - tv) * res[iu + 1, iv]
+                       + (1 - tu) * tv * res[iu, iv + 1] + tu * tv * res[iu + 1, iv + 1])
+        return dz
 
     def terrain_maps(self, x, y, yaw, pitch_add=0.0, roll_add=0.0):
         """Remap tables sampling each camera at the map road surface (terrain_dz) instead of the flat plane."""
