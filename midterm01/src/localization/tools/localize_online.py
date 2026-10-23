@@ -89,6 +89,8 @@ ap.add_argument('--pitch_per_accel', type=float, default=-0.8, help='deg of body
 ap.add_argument('--roll_tau', type=float, default=2.0, help='s: time constant of the causal high-pass of the IMU roll / pitch')
 ap.add_argument('--dyn_pitch_imu', action='store_true', help='add the high-passed IMU pitch to the dynamic pitch')
 ap.add_argument('--dyn_roll_scale', type=float, default=1.0, help='factor on the high-passed IMU roll (0 = pitch model only)')
+ap.add_argument('--roll_per_lat', type=float, default=0.0, help='deg of body roll per m/s^2 of lateral acceleration (speed x yaw '
+                'rate), replaces the IMU roll term for that frame (use with --dyn_roll_scale 0)')
 ap.add_argument('--dyn_sign', type=float, default=1.0)
 ap.add_argument('--imu_causal', action='store_true', help='IMU integrals up to the last sample at or before the frame time '
                 '(default: linear interpolation at the frame time, which reads the next sample, < 10 ms later)')
@@ -342,10 +344,15 @@ def load_imu():
     yq = np.unwrap(q.as_euler('ZYX')[:, 0])
     along = np.cos(yq) * aw[:, 0] + np.sin(yq) * aw[:, 1]
     ca = np.concatenate([[0], np.cumsum(0.5 * (along[1:] + along[:-1]) * np.diff(t) * 1e-9)])
-    if a.imu_causal:   # integrals up to the last IMU sample at or before the query time (no sample after frame k)
+    if a.imu_causal:   # integrals at the query time from the last IMU sample at or before it, extrapolated with that
+        # sample's rate (no sample after frame k is read, and no lag of up to one IMU period in turns)
         last = lambda tq: max(int(np.searchsorted(t, tq, side='right')) - 1, 0)   # noqa: E731
-        heading = lambda t0, t1: float(yaw_g[last(t1)] - yaw_g[last(t0)])         # noqa: E731
-        dvel = lambda t0, t1: float(ca[last(t1)] - ca[last(t0)])                  # noqa: E731
+
+        def at(cum, rate, tq):
+            i = last(tq)
+            return float(cum[i] + rate[i] * max(tq - t[i], 0.0) * 1e-9)
+        heading = lambda t0, t1: at(yaw_g, wz, t1) - at(yaw_g, wz, t0)           # noqa: E731
+        dvel = lambda t0, t1: at(ca, along, t1) - at(ca, along, t0)              # noqa: E731
     else:
         heading = lambda t0, t1: float(np.interp(t1, t, yaw_g) - np.interp(t0, t, yaw_g))   # noqa: E731
         dvel = lambda t0, t1: float(np.interp(t1, t, ca) - np.interp(t0, t, ca))            # noqa: E731
@@ -632,6 +639,10 @@ if __name__ == '__main__':
                     Fy = np.array([[1.0, -dt], [0.0, 1.0]]) if heading else np.eye(2)
                     PY = Fy @ PY @ Fy.T + np.diag([qy * dt, np.radians(a.gyro_bias_walk) ** 2 * dt])
                 travelled += abs(d)
+                if DYN is not None and a.roll_per_lat != 0.0 and REPLAY is None:
+                    # suspension roll model: body roll proportional to the lateral (centripetal) acceleration speed x yaw
+                    # rate (the IMU's own roll in turns contains the centripetal pseudo-tilt)
+                    DYN[k, 1] = a.dyn_sign * a.roll_per_lat * v * dyaw_p / max(dt, 1e-3)
                 # standstill: IMU quiet for 1 s, no speed change over that second (a gentle start barely changes the
                 # accelerometer norm: T2 frames 200-220 at 0.3 m/s^2), slow, and the VO (when valid) agrees
                 vo_moving = VO is not None and (k - 1) in VO and VO[k - 1][2] > 0.5 and abs(VO[k - 1][0]) > 0.004
