@@ -36,7 +36,11 @@ case $TR in
       P="--gnss --gnss_sigma 1.0 0.2 --gyro_bias -0.220 --lane_k 0.005 0.005 --vo_noise 0.02 --acc_noise 0.05 --imu_causal" ;;
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.15 --acc_noise 0.05 --floor 0.1 0.1 0.15
-         --stand_search 30 --stand_search_sigma 2.5 --imu_causal --seg_gate 0.5 --seg_gate_track" ;;
+         --stand_search 30 --stand_search_sigma 2.5 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5" ;;
+      # --yaw_sigma 2.5 (COMMON 0.7): the T2 lane headings are biased in places (426-570: accepted innovations -0.5..-0.8
+      # deg, the heading drifted -1 deg); with GNSS the heading also follows the GNSS / lateral fixes through the joint
+      # EKF: vs the reference 1.0 -> 0.217, 1.5 -> 0.216, 2.5 -> 0.214 (steady 0.180 -> 0.163); T1 gets worse (0.411 ->
+      # 0.430-0.441), T3 has no GNSS
       # --seg_gate 0.5 --seg_gate_track: the tracking lane matches use only image responses on the road surface the
       # cameras see (SegFormer road probability > 0.5, IPM, dilated 0.35 m; parked cars, kerbs, facades, the bus beside
       # the car drop out); the frame-0 / standstill heading searches stay ungated (gated, their heading got worse):
@@ -47,6 +51,9 @@ case $TR in
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
          --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init
          --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120 --terrain_lat" ;;
+      # (not --seg_gate for T3: better innovations overall, but at 105-177 it dropped the right forward fixes of the start
+      # and took a wrong one -> 0.9 m behind for ~40 frames (the unused near-alignment forward said +0.4 m); public 0.35
+      # vs 0.24)
       # --terrain_lat: the terrain BEV also follows the map road surface across the width (kerb-side lanes / gutters
       # lower than the vehicle plane: at 705-735 the kerb-side lane line was 0.4 m off while the right line fitted):
       # fair innovations lane lat 0.096 -> 0.026 m, near lat 0.064 -> 0.042, lane heading 0.40 -> 0.24 deg; the

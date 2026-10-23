@@ -99,6 +99,9 @@ ap.add_argument('--pitch_every', type=int, default=2)
 ap.add_argument('--pitch_step', type=float, default=0.5, help='deg')
 ap.add_argument('--pitch_gain', type=float, default=0.5)
 ap.add_argument('--pitch_max', type=float, default=2.0, help='deg')
+ap.add_argument('--still_meas', type=int, default=0, help='--still_freeze: still take the map measurements on this many '
+                'measurement frames per standstill, 1 s apart from 1 s after the stop (the stop pose itself is measured; the '
+                'same scene measured hundreds of times is what made the pose wander)')
 ap.add_argument('--still_freeze', action='store_true', help='no lane / near measurements while the IMU shows standstill '
                 '(--zupt): the same image measured again and again let the pose wander 0.5 m / 2 deg during a 40 s stop')
 ap.add_argument('--terrain', action='store_true', help='lane matching on the map road surface: the image BEV is projected '
@@ -502,6 +505,7 @@ if __name__ == '__main__':
     if a.roll_add and DYN is not None:
         DYN[:, 1] += a.roll_add
     att_ema = None
+    still_k0, still_used = None, 0   # --still_meas: frame where the current standstill began
     roll_mean, roll_n = 0.0, 0   # --roll_imu_map
     if a.terrain and REPLAY is None:
         LS.BM.BEV.terrain = MK.height
@@ -763,6 +767,11 @@ if __name__ == '__main__':
                         D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
                         gi += 1
+            if D.get('still'):
+                if still_k0 is None:
+                    still_k0, still_used = k, 0
+            else:
+                still_k0 = None
             if ATT is not None and REPLAY is None:
                 # body attitude relative to the road (causal): IMU roll / pitch at the frame time minus the map road plane
                 # under the prior pose, minus the slow average of that difference (IMU mounting): body roll in turns,
@@ -828,6 +837,13 @@ if __name__ == '__main__':
                     if a.accum_dist > 0:
                         LS.set_pose(k, mp)   # current prior of frame k (past frames hold their final poses)
                     frozen = a.still_freeze and bool(D.get('still'))
+                    if frozen and a.still_meas > 0 and still_k0 is not None:   # a few measurements of the stop pose
+                        el = k - still_k0
+                        if el >= 28 and still_used < a.still_meas and el >= 28 * (still_used + 1):
+                            frozen = False
+                            still_used += 1
+                            D['still_m'] = 1
+                    frozen_k = frozen
                     if DYN is not None and a.pitch_track and not frozen:
                         DYN[k, 0] = pitch_est   # camera pitch tracked from the lane matches (slope changes, braking dive)
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
@@ -909,7 +925,7 @@ if __name__ == '__main__':
                 if REPLAY is None:
                     mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
                     yspan = float(np.clip(3 * np.degrees(np.sqrt(var('y'))), 1.0, 3.0)) if MP is None else 3.0
-                    rn = None if (a.still_freeze and bool(D.get('still'))) else \
+                    rn = None if (a.still_freeze and bool(D.get('still')) and not D.get('still_m')) else \
                         near_measure(k, mp, resp, float(np.clip(3 * np.sqrt(var('l')), 0.4, 1.0)) if MP is None else 1.0, yspan)
                     if rn is not None:
                         cm, sm = np.cos(mp[2]), np.sin(mp[2])

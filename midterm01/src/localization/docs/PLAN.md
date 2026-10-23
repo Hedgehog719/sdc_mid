@@ -1041,3 +1041,27 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    0.197 -> 0.180, lateral 0.096 -> 0.070), start unchanged; T1 with the same gate 0.411 -> 0.429 (forward 0.212 ->
    0.240) -> T2 only. Runner T2 -> t2_online_v18 (== the variant run). SUBMITTED 00:48 (user: submit directly before
    08:00): public 0.27 (v17 0.28).
+ * Runner T3 + --terrain_lat -> t3_online_tpl (hypothesis 0, 2 per-frame switches in 0-599; == CrMtl after them).
+   SUBMITTED 01:12: public 0.24 (tpr 0.25). Segmentation gate now projected like the response (ImageBEV.last_maps:
+   terrain maps for T3; T2 v18 reproduced byte-identically). T3 + --seg_gate 0.5 --seg_gate_track (CrMtlsg2): lane fwd
+   0.089 -> 0.067 m, lane heading 0.227 -> 0.221, near heading 0.357 -> 0.333 deg, near lat 0.042 -> 0.046; accepted
+   350/1108/416 -> 401/1133/493 -> T3 runner config (rerun after the T2 terrain tests).
+ * Runner T3 + --seg_gate 0.5 --seg_gate_track -> t3_online_tps (bank: -1.5 by 811 vs 808). SUBMITTED 01:55: public
+   0.35 (tpl 0.24). Cause: frames 105-177 - the gated matches rejected the start's right forward fixes (peaks lower)
+   and accepted a wrong one (-0.37 at 150) -> 0.9 m behind until 186 (the unused near-alignment forward said +0.35..
+   +0.45 there); hypothesis choice irrelevant (offset-0 run identical). Elsewhere within 0.07 m. -> T3 runner back to
+   the tpl configuration (no gate); T3 final candidate t3_online_tpl.
+ * T2 terrain (--terrain --terrain_lat, + dive / fast pitch): 0.241 / 0.453 vs v18 0.223 (T2 map warps; heading in
+   1700-2400 0.30 -> 0.13 deg but positions worse) -> no. T2 --min_sharp_f 0.005: 0.230 -> no. T2 forward error vs the
+   reference grows a little with speed (+0.03..+0.05, +0.08..+0.10 above 14 m/s; GNSS-driven where the lane forward
+   fixes have low sharpness) - not a timing lever.
+ * T3 --still_meas N (measure the stop pose on N measurement frames per standstill, 1 s apart, then freeze): red-light
+   stop moves back 0.11 (N 3) / 0.24 m (N 8), end stop forward +0.18 / +0.15. Static lateral-terrain BEV check (no
+   dynamic attitude) asks back 0.42 / 0.31 m at tpl's stops; the in-filter lane forward at the red light (with the
+   dynamic attitude, sharpness 0.10-0.12) says ~-0.05; the near-alignment forward (3D marks, unused) says +0.25 / +0.42.
+   Three answers -> not adopted; T3 stays tpl.
+ * T2 lane heading sigma (yaw_sigma, COMMON 0.7): 1.0 -> 0.217 (steady 0.171), 1.5 -> 0.216 (0.167) vs v18 0.223
+   (0.180): the T2 lane headings are biased in places (426-570 accepted innovations -0.5..-0.76 deg, the heading
+   drifted to -0.98 vs the reference). GNSS sigma 0.25 / 0.10: 0.237 / 0.231 -> no.
+ * Runner T2 + --yaw_sigma 2.5 -> t2_online_v19 (== variant; vs the reference 0.214, steady 0.163). SUBMITTED 02:56:
+   public 0.26 (v18 0.27). T1 with yaw_sigma 1.0 / 1.5: 0.441 / 0.430 vs 0.411 -> no.
