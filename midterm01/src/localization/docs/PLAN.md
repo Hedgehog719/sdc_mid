@@ -781,3 +781,12 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    lateral / heading, roll again). Shadow-robust ratio response (--resp_ratio): no visible difference on 255 / 450.
  * Leaderboard probing to find the error sources (user's idea after team 11 reached 0.11 on T2): not allowed (TA,
    10/20 + 10/22 rules), not done.
+ * Pitch-only / roll checks: T1 pitch model + roll model k = +0.5 0.431, -0.5 0.418 (pitch only 0.412): roll not used.
+   T2 pitch only 0.265 / + freeze 0.261 vs v13c 0.234 (worse); truncated causal IMU alone 0.240, extrapolated 0.238
+   (= v13c) -> the pitch model hurts T2. T1 pitch-only runs vary 0.412-0.425 with a tiny IMU change (run-to-run
+   chaos ~0.01-0.02) -> pitch model not adopted for T1/T2. T3: freeze 1687 vs b6 1583 total map LL (stop: heading
+   held instead of drifting 2.2 deg, wander 1.00 m -> 0.33 m), freeze + pitch 1561 (start 1 m off) -> T3 freeze only.
+ * Runner now: --imu_causal everywhere (extrapolated from the last IMU sample), T2 v13c parameters, T3 --still_freeze.
+   Outputs (byte-identical to the validation runs): t1_online_v6c 0.411 vs the reference (v6 0.429),
+   t2_online_v17 0.238 (v12 0.255), t3_online_frz. Stop-frame bands with frz: +0.3 / 0.0 / 0.0 m near, -0.3..-0.9 far
+   (IPM stretch from slope / pitch at the stop, no map updates there), b6 +0.5 m throughout.
