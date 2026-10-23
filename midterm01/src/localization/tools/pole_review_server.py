@@ -381,10 +381,10 @@ class H(BaseHTTPRequestHandler):
         m = re.fullmatch(r'/compare/(Track[12])/?', p)
         if m:
             return self._send(200, compare_page(m.group(1)))
-        m = re.fullmatch(r'/viewer/(Track[12](?:_[A-Za-z0-9._]+)?)/?', p)
+        m = re.fullmatch(r'/viewer/(Track[123](?:_[A-Za-z0-9._]+)?)/?', p)
         if m:
             return self._send(200, VIEWER_PAGE.replace('__TRACK__', m.group(1)))
-        m = re.fullmatch(r'/viewer/(Track[12](?:_[A-Za-z0-9._]+)?)/((?:kf|bev)_\d{5}\.jpg|frames\.json)', p)
+        m = re.fullmatch(r'/viewer/(Track[123](?:_[A-Za-z0-9._]+)?)/((?:kf|bev)_\d{5}\.jpg|frames\.json)', p)
         if m:
             f = os.path.join(VIEWER_DIR, m.group(1), m.group(2))
             if not os.path.exists(f):

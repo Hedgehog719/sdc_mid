@@ -53,7 +53,8 @@ def main():
     B = ImageBEV(a.track_dir, 1.5, 0, 0, -1.5)
     R = RoadProbBEV(B)
     C = Cameras(os.path.join(a.track_dir, f'{track}_images', 'camera_info'))
-    poles = np.load(os.path.join(a.track_dir, 'poles_curated.npy'))
+    fp = os.path.join(a.track_dir, 'poles_curated.npy')   # optional (hand-curated poles exist for Track1/2 only)
+    poles = np.load(fp) if os.path.exists(fp) else np.zeros((0, 3))
     MK = None
     if a.marks:
         from marking_map import MarkingMap, road_level, vehicle_frame

@@ -75,6 +75,9 @@ ap.add_argument('--lo_peak_sd', type=float, nargs=2, default=[0.5, 0.3], help='m
 ap.add_argument('--drift_n', type=int, default=0, help='>0: this many consecutive lane matches (any lateral sharpness) all '
                 'more than 2.5 sigma off to the same side -> the lateral state has drifted: inflate its variance (T1 rehearsal: '
                 'a 1.5 m wrong lock lasted 20 s while the rejected lane matches kept saying +0.5..+1.7 m)')
+ap.add_argument('--stand_search', type=int, default=0, help='>0: while standing still with an uncertain heading (sd > 0.5 deg) '
+                'repeat the frame-0 heading search every this many frames as a heading measurement (needs --zupt)')
+ap.add_argument('--stand_search_sigma', type=float, default=1.5, help='deg: noise of one standstill heading search')
 ap.add_argument('--lo_peak_start', action='store_true', help='weak lane matches (--min_peak_lo) only before the first regular forward fix '
                 '(the start); later they caused a 1 m wrong lateral lock in the T1 rehearsal')
 ap.add_argument('--init_pos', type=float, default=0.0, help='>0 (no GNSS): when the frame-0 heading search corrects init_guess by more '
@@ -627,6 +630,24 @@ if __name__ == '__main__':
                         D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
                         gi += 1
+            if (a.stand_search > 0 and REPLAY is None and D.get('still') and k % a.stand_search == 0
+                    and var('y') > np.radians(0.5) ** 2):
+                # standing with an uncertain heading: repeat the frame-0 heading search (vehicles around move, other
+                # markings appear; Track02: frame 0 -20.7 deg, frames 30-180 -17.9 deg, reference -18.8) as a heading
+                # measurement - the searches are averaged by the filter
+                yaw_s = yaw
+                for my, ms, ys in ((a.init_yaw, 1.0, 1.0), (3.0, 1.0, 0.5)):
+                    LS.set_window(max_shift=ms, max_yaw=my, yaw_step=ys)
+                    try:
+                        rs = LS.match(k, (x, y, yaw_s))
+                    except (IndexError, ValueError):
+                        rs = None
+                    if rs is not None and rs[0] > 0.08:
+                        yaw_s = yaw_s + rs[4] - np.radians(a.lane_yaw_off)
+                LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
+                D['ss_dy'] = np.degrees((yaw_s - yaw + np.pi) % (2 * np.pi) - np.pi)
+                D['ss_a'] = int(upd_yaw((yaw_s - yaw + np.pi) % (2 * np.pi) - np.pi, np.radians(a.stand_search_sigma), 25.0))
+                cnt['yaw'] += D['ss_a']
             if k in meas_frames[mi:mi + 1]:
                 mi += 1
                 win = float(np.clip(3 * np.sqrt(var('f')), 2.5, a.max_window))
