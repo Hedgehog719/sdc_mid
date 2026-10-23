@@ -61,6 +61,8 @@ ap.add_argument('--min_contrast', type=float, default=0.12)
 ap.add_argument('--acc_noise', type=float, default=0.05)
 ap.add_argument('--bias_walk', type=float, default=0.003)
 ap.add_argument('--v0_sd', type=float, default=0.3)
+ap.add_argument('--vo_dr_init', action='store_true', help='speed unknown at the start (--v0_sd large): until 5 VO pairs give '
+                'the median speed, move the position by each pair\'s VO displacement (otherwise it stays put for 4 frames)')
 ap.add_argument('--min_sharp_f', type=float, default=0.02)
 ap.add_argument('--min_sharp_f_lo', type=float, default=1.0, help='forward fixes with sharpness in (min_sharp_f_lo, '
                 'min_sharp_f] only while the forward sd exceeds --lo_sharp_sd (they are biased by -0.2..-0.5 m, but beat '
@@ -684,6 +686,15 @@ if __name__ == '__main__':
                             zm = float(np.median(vo_hist[-5:]))
                             D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0, 0, 0]), zm - kvo * v, (0.1 * max(zm, 1.0)) ** 2, 1e9))
                             cnt['vo'] += D['vo_a']
+                        elif a.vo_dr_init:   # until then the VO displacement of the pair (k-1, k) is the only motion
+                            # information: dead-reckon the position with it (the speed x the frame interval cannot:
+                            # the speed is unknown and the first intervals are irregular, Track03 11.7 / 48.3 / 23.7 ms
+                            # for a steady 0.25-0.28 m per pair)
+                            dd = zf / max(kvo, 1e-3) - d
+                            x, y = x + dd * np.cos(yaw), y + dd * np.sin(yaw)
+                            u = np.array([np.cos(yaw), np.sin(yaw)])
+                            PJ[:2, :2] += np.outer(u, u) * (0.1 * abs(zf)) ** 2
+                            D['vo_a'] = 1
                         Sv = -1.0
                     elif a.joint:
                         D['vo_a'] = int(jupd(np.array([0, 0, 0, kvo, 0, v, 0, 0, 0]), inn, rv, 16.0))

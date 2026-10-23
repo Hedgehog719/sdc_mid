@@ -41,7 +41,9 @@ case $TR in
       # repeat it every 30 frames while standing with an uncertain heading (later frames see other markings)
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
-         --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5" ;;
+         --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init" ;;
+      # --vo_dr_init: until 5 VO pairs give the initial speed (frame 5), move by each pair's VO displacement (the position
+      # stood still for 4 frames while the car drove ~1.1 m; the first frame intervals are irregular)
       # --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3: body pitch from the IMU longitudinal acceleration of the past
       # 0.5 s (braking dive / squat, 0.3 deg per m/s^2, a typical car value); on top of the terrain it raises the map
       # likelihood of the braking sections, and the frame-0 heading search sees the squat (the car accelerates at

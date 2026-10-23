@@ -879,3 +879,12 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    metric wraps, avoids the catastrophe if it does not (only frames straddling +-180 remain at risk).
  * Competition PDF: score = RMSE of ATE, translation (m) + rotation (deg) with k = 0.2; Track03 public = first 5-40 % of
    the trajectory, private = the rest (final ranking), private baseline 1.40; Track03 weight r = 0.4 (T1 / T2 0.3).
+ * SUBMITTED 18:03 (user: "都交"): t1_online_v6c public 0.46 (v6 0.48), t2_online_v17 0.28 (v12 0.30), t3_online_tp 0.37
+   (b6 0.51). (T1 slug is sdc-2026-midterm-01-track-01; T2 / T3 sdc-2026-localization-track-02 / -03.)
+ * User: the start may be a bit behind (straight roadside). tp debug: the unused near-alignment forward offsets are
+   +0.24..+0.35 m per 30 frames over 0-179 and the accepted lane forward fixes mostly positive (+0.87 / +0.39 / +0.24 /
+   +0.22), both ~0 after 180 -> the start section is ~0.2-0.3 m behind: init_guess ~0.9 m behind, the speed stays 0 for
+   frames 1-4 (median of 5 VO pairs at frame 5) while the car drives ~1.1 m, and the straight roadside gives few forward
+   fixes afterwards. --vo_dr_init (until the speed is initialised, move by each pair's VO displacement): frames 1-3
+   stay at -0.91 m instead of -1.19 / -1.44 / -1.69; frames 0-209 near / lane forward offsets +0.196 / +0.153 ->
+   +0.126 / +0.113, map LL over 300 frames 153.2 -> 160.2 -> T3 runner (T1 / T2 never enter the speed-unknown branch).

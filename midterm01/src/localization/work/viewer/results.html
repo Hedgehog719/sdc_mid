@@ -26,12 +26,13 @@
 <body>
 <main>
   <h1>SDC Midterm01 結果總覽</h1>
-  <div class="sub">2026-10-23 17:30 更新 · 10/22 新規則：只能用因果（線上）定位，第 k 幀只用第 1…k 幀，輸出不能回頭修改；助教會重跑程式。以下第一節是新規則下的正式流程，後面各節是 10/22 以前的紀錄。</div>
+  <div class="sub">2026-10-23 18:10 更新 · 10/22 新規則：只能用因果（線上）定位，第 k 幀只用第 1…k 幀，輸出不能回頭修改；助教會重跑程式。以下第一節是新規則下的正式流程，後面各節是 10/22 以前的紀錄。</div>
 
   <h2>10/23 下午：地形投影（目前候選）</h2>
   <div class="card">
     <table>
       <tr><th>Track</th><th>候選檔</th><th>本地比較</th><th>說明</th></tr>
+      <tr><th colspan="4">18:03 已提交：T1 <code>t1_online_v6c</code> public <b>0.46</b>（之前 0.48）、T2 <code>t2_online_v17</code> <b>0.28</b>（0.30）、T3 <code>t3_online_tp</code> <b>0.37</b>（0.51）</th></tr>
       <tr><td>T1</td><td><code>t1_online_v6c</code></td><td class="num">0.411（v6 0.429）</td><td>IMU 積分嚴格因果（外推最後一筆樣本）；和參考軌跡比較的分數式指標</td></tr>
       <tr><td>T2</td><td><code>t2_online_v17</code></td><td class="num">0.238（v12 0.255）</td><td>靜止時重做航向搜尋（σ 2.5°）、VO 雜訊 0.15、前後下限 0.1、因果 IMU</td></tr>
       <tr><td>T3</td><td><code>t3_online_tp</code></td><td class="num good">地圖似然 1687 → 1927</td><td>地形投影 + 剎車點頭／加速後蹲 + 第 0 幀位置修正 + 假設組最大後驗；停紅燈凍結</td></tr>
