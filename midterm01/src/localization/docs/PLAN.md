@@ -1080,3 +1080,19 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    drift back (100-200: -0.29 / -0.46 m) -> --seg_gate_from 300: start identical to tpl, then lane fwd 0.089 -> 0.067,
    lane heading 0.227 -> 0.221, near heading 0.357 -> 0.345 deg (near lat 0.042 -> 0.045). Runner T3 with it started
    04:17.
+ * Runner T3 + gate from 300 -> t3_online_tpg (hypothesis 0 as tpl, frames 0-300 identical, then 0.06-0.12 m).
+   SUBMITTED 04:37: public 0.24 (= tpl). Recommended T3 final: tpg (better tracking innovations after 300, where the
+   private part lies; start = tpl).
+ * T2 lane_k 0.01 0.005: identical (lateral sigma floor 0.1 binds); near_k 0.004: 0.212 (noise). T2 plateau ~0.21 vs
+   the reference (start map-limited).
+ * T1 initial heading sd (--yaw0_sd, default 2.0; the frame-0 search is +1.0 deg off and GNSS lateral fixes swing an
+   uncertain heading): 1.5 0.415, 1.0 0.409, 0.6 0.402 (steady 0.339) vs v7 0.408 - checking 0.8 / 0.4 / 0.3 for a
+   systematic trend before adopting.
+ * T1 --yaw0_sd full sweep: 2.0 0.408, 1.5 0.415, 1.0 0.409, 0.8 0.421, 0.6 0.402, 0.4 0.434, 0.3 0.440 -> no trend
+   (chaotic T1: +-0.02 between near-identical configs) -> not adopted. Frame-wise ENSEMBLE MEAN of causal runs (still
+   causal): T1 7 yaw0_sd members 0.402 (heading 0.56 -> 0.49 deg), 12 mixed members 0.398; T2 7 members 0.211 (vs
+   0.214). GNSS-pose / IMU AHRS yaw vs the references: not constant offsets (T1 -1.8..+1.4, T2 +3.7 at the start then
+   -1.4..+1.8; IMU drifts -1.4..-5.0) -> no absolute heading for the T2 standstill.
+ * T1 3x3 grid (initial heading sd 0.6 / 1.0 / 2.0 x lane heading sigma 0.5 / 0.7 / 1.0, all with the dive model):
+   members 0.408 (2.0 / 0.7 = v7) ... 0.429, frame-wise mean 0.404 (heading 0.48 deg; start heading 1.26 -> 0.90 but
+   start position 0.434 -> 0.467); 13 members 0.404. Runner T1 = 9-member ensemble (tools/ensemble.py), started 05:28.
