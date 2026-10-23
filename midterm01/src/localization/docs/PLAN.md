@@ -888,3 +888,10 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    fixes afterwards. --vo_dr_init (until the speed is initialised, move by each pair's VO displacement): frames 1-3
    stay at -0.91 m instead of -1.19 / -1.44 / -1.69; frames 0-209 near / lane forward offsets +0.196 / +0.153 ->
    +0.126 / +0.113, map LL over 300 frames 153.2 -> 160.2 -> T3 runner (T1 / T2 never enter the speed-unknown branch).
+ * Runner T3 with --vo_dr_init -> t3_online_tpd (not submitted): bank picks 0 with no switch (ll 591 / 577 / 575 / 225 /
+   289); vs the submitted tp: frames 0-6 +0.61 m forward, 6-30 +0.11 (and +0.41 deg: tp used -1.5 at 6-14), 30-314
+   within 0.1 m, after 314 0.014 m mean (private part unchanged); map LL 1927 -> 1944; output frames 0-209 near / lane
+   forward offsets +0.200 / +0.153 -> +0.126 / +0.113.
+ * Parked scooters are in the map (work/online/map_topdown.py, /t3 gallery: rows of 0.5-1.2 m blobs along both kerbs at
+   the start). The marking map keeps only points within -0.15..+0.20 m of the ground and the images mask scooters
+   (YOLO), so they remove features rather than bias the matches.
