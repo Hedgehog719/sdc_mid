@@ -895,3 +895,28 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
  * Parked scooters are in the map (work/online/map_topdown.py, /t3 gallery: rows of 0.5-1.2 m blobs along both kerbs at
    the start). The marking map keeps only points within -0.15..+0.20 m of the ground and the images mask scooters
    (YOLO), so they remove features rather than bias the matches.
+ * h265 check (user: the start looks like the h265 lacks its first frame / has repaired frames): the bag streams start
+   mid-GOP (first IRAP at message 14 front, 35 front-left, 3 front-right), so a raw decode shows grey concealment frames
+   before that (our data/Track3_dl/h265 files). The official JPGs are not affected: from the first IRAP on, official JPG
+   i equals decoded message i (mean abs difference 0.4-0.5 grey levels = JPEG noise; offsets +-1..3 give 9-19) -> no
+   index shift; before it the official frames are real consecutive images (frame-to-frame difference 12.5-13.6 as
+   everywhere, smooth growth of the difference to the IRAP frame) -> the TA had a complete decode. The start bias is not
+   an image problem (the first receive stamps are late: frame 0 31.7 ms vs 8 ms typical, see --vo_dr_init).
+ * Body attitude relative to the road (user: uneven road, a wheel lifting, under-damped sway; work/online/att_episodes.py,
+   gyro_events.py, att_plot.py): IMU at 100 Hz. IMU AHRS roll follows the map road-plane roll (+-4 x +-2 m under the
+   pose) within +-0.3 deg in 0-900 (offset +0.37); in the turn 2450-2600 the body rolls up to +1.5 deg more (left up),
+   at 2250-2330 the IMU roll leads the map plane by ~2 s (map plane or footprint wrong at the intersection; the user saw
+   a small truck blocking the view in 2250-2400). IMU - map pitch drifts slowly (+4.3..+5.6 deg: +0.5 after the braking
+   at 750-900, then decays 0.4 deg over 40 s while standing -> AHRS acceleration contamination / slow convergence, not
+   body pitch). Gyro fast motions (0.6 s excursion after detrending): pitch 0.92 deg at 617 (user: frame 630 nose up),
+   0.76 at 2626, 0.45 at 455; roll 0.67-0.71 at 2369 / 2622 / 2644 = the frames the user flagged (450, 630, 2625/2655).
+ * --att_imu_map 20 (IMU - map plane, minus its 20 s causal average, as the per-frame BEV pitch / roll): attA (pitch +
+   roll, replaces the dive model) total map LL 1944 -> 1711 (worse in 0-2250, stop pose moved 0.6 m); attB (roll only,
+   dive model kept) 1888: +0.04..+0.11 per frame in 150-1050 and 2400, but -0.72 per frame at 2250-2400 (the
+   intersection / truck section: rolls of -0.7..-1.1 deg) and -0.14 at 2850 -> not adopted (code kept, default off).
+ * Frame 630 (user: red dots rotated ccw): lane-match headings at 585-645 consistently +1..+3 deg (ccw; offset 0.30
+   included) and the near-alignment headings +0.3..+0.8 deg, but the lane peaks were 0.19-0.25 < --min_peak_yaw 0.25 ->
+   all rejected, the heading is held by the gyro (near headings are off in T3). Lane heading innovation scatter vs
+   peak over T3: 0.17-0.21 MAD 0.72 deg, 0.21-0.25 0.54, 0.25-0.30 0.59 (accepted), >0.30 0.32 -> the hard cut at 0.25
+   is arbitrary. Consistent rejected low-peak headings also at 450-600 (+0.72), 2400-2700 (+0.68..+0.85), 150-300
+   (-0.60). New --yaw_soft_peak P: peaks in [P, 0.25) used with sigma 0.7 x (0.25 / peak)^2; testing P 0.17 / 0.21.

@@ -71,6 +71,9 @@ ap.add_argument('--lo_sharp_sd', type=float, default=0.35)
 ap.add_argument('--floor', type=float, nargs=3, default=[0.3, 0.15, 0.3], help='sd floors: forward m, lateral m, heading deg')
 ap.add_argument('--min_peak', type=float, default=0.2)
 ap.add_argument('--min_peak_yaw', type=float, default=0.25)
+ap.add_argument('--yaw_soft_peak', type=float, default=0.0, help='>0: lane-match headings with a peak between this and '
+                '--min_peak_yaw are used too, with sigma --yaw_sigma x (min_peak_yaw / peak)^2 (Track03: the 0.21-0.25 '
+                'headings scatter like the 0.25-0.30 ones; a hard cut lost consistent +1 deg corrections at 585-645)')
 ap.add_argument('--min_sharp_l', type=float, default=0.1)
 ap.add_argument('--min_peak_lo', type=float, default=0.2, help='lane-match peak needed while the state is uncertain (see --lo_peak_sd)')
 ap.add_argument('--lo_peak_sd', type=float, nargs=2, default=[0.5, 0.3], help='m: forward / lateral sd above which --min_peak_lo applies')
@@ -95,6 +98,10 @@ ap.add_argument('--still_freeze', action='store_true', help='no lane / near meas
 ap.add_argument('--terrain', action='store_true', help='lane matching on the map road surface: the image BEV is projected '
                 'onto the marking-map ground heights around the prior pose (relative to the road plane under the vehicle) '
                 'instead of a flat plane (vertical curves / crowned roads stretch the far field by metres)')
+ap.add_argument('--att_imu_map', type=float, default=0.0, help='>0: body attitude relative to the road per frame (causal) = '
+                'IMU roll / pitch minus the map road plane under the prior pose, minus the exponential average of that '
+                'difference over this many seconds (IMU mounting); replaces the --dyn_att values (roll in turns, dive, sway)')
+ap.add_argument('--att_roll_only', action='store_true', help='--att_imu_map: roll only (keep the --dyn_att pitch model)')
 ap.add_argument('--dyn_att', action='store_true', help='per-frame dynamic body attitude (causal) in the camera models: '
                 'IMU roll high-passed + suspension pitch from the longitudinal acceleration (braking dive, roll in turns)')
 ap.add_argument('--pitch_per_accel', type=float, default=-0.8, help='deg of body pitch per m/s^2 of longitudinal acceleration')
@@ -370,8 +377,11 @@ def load_imu():
     else:
         heading = lambda t0, t1: float(np.interp(t1, t, yaw_g) - np.interp(t0, t, yaw_g))   # noqa: E731
         dvel = lambda t0, t1: float(np.interp(t1, t, ca) - np.interp(t0, t, ca))            # noqa: E731
-    global IMU_RAW, DYN
+    global IMU_RAW, DYN, ATT
     IMU_RAW = (t, wz, np.linalg.norm(im[['ax', 'ay', 'az']].values, axis=1), np.linalg.norm(im[['wx', 'wy', 'wz']].values, axis=1))
+    if a.att_imu_map > 0:
+        ea = q.as_euler('ZYX', degrees=True)
+        ATT = (t, ea[:, 1], ea[:, 2])   # IMU pitch (nose down +), roll (left side up +)
     if a.dyn_att:
         # dynamic body attitude per frame (causal): roll = IMU roll minus its exponential average over the past
         # roll_tau seconds (turns, bumps; the slow part is road tilt); pitch = suspension model pitch_per_accel x the
@@ -394,6 +404,8 @@ def load_imu():
 
 
 DYN = None   # (frames, 2) dynamic pitch, roll in degrees (--dyn_att)
+ATT = None   # (IMU times, pitch deg, roll deg) for --att_imu_map
+PL_U, PL_V = (g.ravel() for g in np.meshgrid(np.linspace(-4, 4, 9), np.linspace(-2, 2, 5)))   # road plane under the vehicle
 
 
 IMU_RAW = None
@@ -467,8 +479,9 @@ if __name__ == '__main__':
         if a.accum_dist > 0:
             LS.setup_accum(n, accum_dist=a.accum_dist)
     heading, dvel = load_imu()
-    if a.pitch_track and DYN is None and REPLAY is None:
+    if (a.pitch_track or a.att_imu_map > 0) and DYN is None and REPLAY is None:
         DYN = np.zeros((n, 2))
+    att_ema = None
     if a.terrain and REPLAY is None:
         LS.BM.BEV.terrain = MK.height
     if DYN is not None and REPLAY is None:
@@ -728,6 +741,27 @@ if __name__ == '__main__':
                         D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
                         gi += 1
+            if ATT is not None and REPLAY is None:
+                # body attitude relative to the road (causal): IMU roll / pitch at the frame time minus the map road plane
+                # under the prior pose, minus the slow average of that difference (IMU mounting): body roll in turns,
+                # braking dive / squat, sway on uneven roads (the road plane itself is the static tilt of the vehicle)
+                ti = max(int(np.searchsorted(ATT[0], TS[k], side='right')) - 1, 0)
+                c_, s_ = np.cos(yaw), np.sin(yaw)
+                pz_, okp_ = MK.height(x + c_ * PL_U - s_ * PL_V, y + s_ * PL_U + c_ * PL_V)
+                okp_ &= np.isfinite(pz_)
+                if okp_.sum() >= 10:
+                    pa_ = np.linalg.lstsq(np.stack([PL_U[okp_], PL_V[okp_], np.ones(okp_.sum())], 1), pz_[okp_], rcond=None)[0]
+                    diff_ = np.array([ATT[1][ti] + np.degrees(np.arctan(pa_[0])), ATT[2][ti] - np.degrees(np.arctan(pa_[1]))])
+                    if att_ema is None:
+                        att_ema = diff_.copy()
+                    else:
+                        al_ = min((TS[k] - TS[k - 1]) * 1e-9 / a.att_imu_map, 1.0)
+                        att_ema = att_ema + al_ * (diff_ - att_ema)
+                    hp_ = diff_ - att_ema
+                    DYN[k, 1] = hp_[1]
+                    if not a.att_roll_only:
+                        DYN[k, 0] = hp_[0]
+                    D['att_p'], D['att_r'] = float(DYN[k, 0]), float(DYN[k, 1])
             if (a.stand_search > 0 and REPLAY is None and D.get('still') and k % a.stand_search == 0
                     and var('y') > np.radians(0.5) ** 2):
                 # standing with an uncertain heading: repeat the frame-0 heading search (vehicles around move, other
@@ -831,8 +865,11 @@ if __name__ == '__main__':
                             big_l.clear()
                         D['ln_la'] = int(upd_lat(dl, sig, robust=True))
                         cnt['lat'] += D['ln_la']
-                    if y_ok:
-                        D['ln_ya'] = int(upd_yaw(dyaw - np.radians(a.lane_yaw_off), np.radians(a.yaw_sigma), robust=True))
+                    ys_ok = (not y_ok and a.yaw_soft_peak > 0 and travelled >= a.start_dist and peak >= a.yaw_soft_peak
+                             and abs(np.degrees(dyaw)) < 3.0 - 0.05)   # weak match: heading with a wider sigma
+                    if y_ok or ys_ok:
+                        sy = a.yaw_sigma * (1.0 if y_ok else (a.min_peak_yaw / peak) ** 2)
+                        D['ln_ya'] = int(upd_yaw(dyaw - np.radians(a.lane_yaw_off), np.radians(sy), robust=True))
                         cnt['yaw'] += D['ln_ya']
                 c0, s0 = np.cos(yaw), np.sin(yaw)
                 if REPLAY is None:
