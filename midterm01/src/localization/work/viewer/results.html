@@ -25,8 +25,31 @@
 </head>
 <body>
 <main>
-  <h1>SDC Midterm01 結果總覽（純流程）</h1>
-  <div class="sub">2026-10-21 · 最終計分只能用核心定位流程直接產生的結果（助教規定），以下全部是純流程輸出，沒有使用任何 leaderboard 擬合的數字。</div>
+  <h1>SDC Midterm01 結果總覽</h1>
+  <div class="sub">2026-10-23 更新 · 10/22 新規則：只能用因果（線上）定位，第 k 幀只用第 1…k 幀，輸出不能回頭修改；助教會重跑程式。以下第一節是新規則下的正式流程，後面各節是 10/22 以前的紀錄。</div>
+
+  <h2>10/23 因果版（正式流程 <code>tools/run_online.sh</code>）</h2>
+  <div class="card">
+    <table>
+      <tr><th>Track</th><th>提交檔</th><th>Public</th><th>說明</th></tr>
+      <tr><td>T1</td><td><code>t1_online_v6</code></td><td class="num">0.48</td><td>聯合 EKF：GNSS + IMU + 路面 VO + 車道／近距標線修正；舊的非因果版 0.40 不能選</td></tr>
+      <tr><td>T2</td><td><code>t2_online_v6</code></td><td class="num">0.34</td><td>同上；起步靜止段航向約偏 1°（靜止時沒有可靠的航向量測）；舊的非因果版 0.17 不能選</td></tr>
+      <tr><td>T3</td><td><code>t3_online_v6_standin</code></td><td class="num good">0.86（第 1）</td><td>不用 GNSS；左前相機前 35 幀是黑圖（官方檔當時還沒下載），無法由官方資料重現，不能當最終</td></tr>
+      <tr><td>T3</td><td><code>t3_online_bank</code></td><td class="num warn">1.26</td><td>官方影像 + 起點航向假設組（以採用次數選擇）：前 45 幀選到偏後 2–3 m 的假設；第 60 幀以後和上一版相差幾公分</td></tr>
+      <tr><td>T3</td><td><code>t3_online_bank_mle</code></td><td class="num good">0.51（第 1）</td><td>假設組改用最大似然選擇（第 12 幀起就是勝出者），起步前後方向接受弱比對；可由官方資料重現（逐位元相同）</td></tr>
+      <tr><td>T3</td><td><code>t3_online_b6</code></td><td class="num good">0.51</td><td><b>目前的最終候選</b>：低銳利度前後修正只在不確定時用；40 秒紅燈停車時不會漂移，兩版不同的路段地圖似然都比較高</td></tr>
+    </table>
+    <div class="m" style="margin-top:6px">排行榜（06:00）：T3 我們 0.51 第 1，第 11 隊 0.77，第 6 隊 0.99；T2 第 11 隊 0.15；T1 第 11 隊 0.40。最終要在 Kaggle 勾選：T1 <code>t1_online_v6</code>、T2 <code>t2_online_v6</code>、T3 <code>t3_online_b6</code>。</div>
+    <ul>
+      <li>Public 只算軌跡前段（推估約前 10%），起點前 60 幀主宰 public 分數；private（其餘部分）各版本幾乎相同。</li>
+      <li><b>擾動測試</b>：把參考軌跡偏移已知量再做量測。近距對齊的航向只修回約 10%（等於一直回傳先驗），所以不用；車道比對航向、近距橫向、車道橫向／前後都能完整修回。</li>
+      <li><b>T3 起點</b>：init_guess 航向偏約 17°、位置偏約 1.5 m；第 0 幀的車道比對在 159–167° 幾乎一樣好，差 1° 起步可能鎖不住 → 起點航向假設組（0、±1.5°、±3°），每幀依地圖量測的對數似然因果選擇。</li>
+      <li><b>T3 初速</b>：一開始就以約 8 m/s 行駛，第一對 VO 量錯成 23.9 m/s → 改用最初 5 對 VO 的中位數初始化。</li>
+      <li>T3 影像：Kaggle API 被限流，改從 bag 的 h265 解碼（和官方 JPG 逐位元相同）；之後用使用者下載的 Track3.zip 確認並補齊。</li>
+      <li>不採用（本地驗證變差）：GNSS 偏差狀態模型、因果累積車道比對（發散）。</li>
+    </ul>
+    <a href="/t3">Track03 影像與疊圖</a>
+  </div>
 
   <h2>排行榜（09:11 快照）</h2>
   <div class="card">

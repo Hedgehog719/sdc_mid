@@ -799,3 +799,34 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    tracker fits a parameter to the same matches, so their likelihood is no longer an independent quality score.
  * Turn exit T3 2595-2673: lane headings +0.5..+1.7 deg accepted with heading sd 0.16 -> ~30 frames to catch up
    (gyro scale error over the 84 deg turn) -> --gyro_scale_sd (heading variance grows with the turned angle).
+
+## 10/23 afternoon: terrain-aware lane matching
+ * --pitch_track on T2: 0.255 vs v17 0.238 (worse, as on T1) -> rejected. --gyro_scale_sd 0.01: T1 0.427 vs v6c 0.411,
+   T3 total map LL 1690 vs 1687 (turn segment 1.06 vs 1.09) -> rejected.
+ * Terrain ahead (work/online/terrain_check.py, marking-map ground heights along t3_online_frz): relative to the road
+   plane under the vehicle the surface ahead is +-0.1..0.2 m off at 15-20 m (stop 895-2205: +0.07 / +0.12 / +0.18 m at
+   15 / 20 / 25 m; 450: -0.10 / -0.14; 2900-3142: +0.2..+0.3). A flat-ground IPM puts a point at d with height dz at
+   d * h / (h - dz): rms 0.42 / 1.08 / 2.01 m at 10 / 15 / 20 m over T3. The sign matches the pitch scan at all four
+   checked places (dz > 0 <-> best added pitch > 0, i.e. markings mapped too far: braking 795-870, stop 1200; dz < 0
+   at 450 and 2400-2500 <-> best pitch -1.0) -> most of the 'pitch' errors are terrain, which a constant / acceleration
+   pitch model cannot follow.
+ * --terrain (ImageBEV.terrain_dz / terrain_maps): the image BEV is sampled at the map road surface around the prior
+   pose: vehicle plane = least squares over +-4 x +-2 m (as marking_map.vehicle_frame, used by the near alignment and
+   the viewer's camera overlay), road surface = robust polynomial (1, u, v, u^2, uv, v^2, u^3) of the ground heights over
+   -5..30 m x +-8 m; dz = surface - plane at every BEV cell, grid point z = -h + dz. Default off (outputs unchanged).
+ * First version (robust 2D polynomial over +-8 m) was pulled by walls / pavements beside the road (T1 2400: a 4 m wall
+   at 8 m left gave -0.14 m at the vehicle) -> road profile along the lane strip |v| <= 2 m (median of 5 lateral samples
+   per metre, crossfall of the vehicle plane removed, robust cubic dz(u) with dz(0) = 0, same dz across the BEV);
+   a profile bending > 0.45 m away from the vehicle plane within 25 m is a map warp -> flat plane (T1 frames 0-300 and
+   1860-1920, T2 0-300 / 1500 / 2100: forward slopes up to 12 deg, 4.5 m at 29 m).
+ * A/B at trajectory poses (work/online/terrain_ab.py, lane-match peak / corrections, flat vs terrain):
+   T3 (t3_online_frz poses, every 15th frame): mean peak 0.2457 -> 0.2692, higher in 75 % of frames; rms corrections
+   fwd 0.82 -> 0.65 m, heading 0.78 -> 0.59 deg; where dz20 > 0.08 m (135 frames, stop included) peak +0.034, better in
+   81 %, |fwd| 0.57 -> 0.29 m; 450: fwd +2.27 -> -0.19 m, heading +1.0 (window edge) -> +0.25 deg; 795-855 the
+   terrain matches agree on +1.4..+1.5 m (frz pose behind there, as the user saw) where the flat ones flip sign.
+   T1 (reference poses): 0.2937 -> 0.2834, better in 30 % (worse where dz20 < -0.08: -0.033); T2: 0.2448 -> 0.2441
+   (neutral) -> the T1/T2 map road profiles are not reliable (warps beyond the guarded start areas) -> T3 only.
+ * T3 full filter (winner hypothesis only, t3_var.sh terr = frz + --terrain): total map LL 1687 -> 1786, higher in
+   9 of 11 segments (900-1200: 0.07 -> 0.18, 2100: 0.75 -> 0.84), more accepted lane fixes (fwd 270 -> 302, heading
+   324 -> 341); stop pose 0.09 m / -0.45 deg from frz (the terrain matches at the frz stop pose say about -0.5 deg).
+   Viewer: /viewer/Track3_frzT = frz poses with the terrain BEV (compare /viewer/Track3_frz).

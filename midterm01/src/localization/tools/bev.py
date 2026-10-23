@@ -117,13 +117,17 @@ class ImageBEV:
         return m.astype(np.uint8)
 
     def set_calib(self, cam_height, pitch_deg, roll_deg, yaw_deg):
-        from scipy.spatial.transform import Rotation
         x, y = bev_grid()
         pts = np.stack([x.ravel(), y.ravel(), np.full(x.size, -cam_height)], 1)
+        self.maps = self._project_maps(pts, yaw_deg, pitch_deg, roll_deg)
+
+    def _project_maps(self, pts, yaw_deg, pitch_deg, roll_deg):
+        """Per-camera remap tables of BEV grid points pts (H * W, 3; vehicle frame, camera reference at the origin)."""
+        from scipy.spatial.transform import Rotation
         # small mounting rotation of the camera rig w.r.t. the road-aligned frame
         Rm = Rotation.from_euler('ZYX', [yaw_deg, pitch_deg, roll_deg], degrees=True).as_matrix()
         pts = pts @ Rm  # = Rm^T p
-        self.maps = {}
+        maps = {}
         for c in self.cams:
             uv, valid = self.C.project(c, pts)
             mx = uv[:, 0].reshape(H, W).astype(np.float32)
@@ -131,7 +135,72 @@ class ImageBEV:
             v = valid.reshape(H, W)
             mx[~v] = -1
             my[~v] = -1
-            self.maps[c] = (mx, my, v)
+            maps[c] = (mx, my, v)
+        return maps
+
+    terrain = None   # optional road-height function (wx, wy) -> (z, ok) (marking-map ground): render_resp then projects
+                     # the BEV grid onto the map road surface around self.pose instead of the flat vehicle plane
+    pose = None      # (x, y, yaw) of the frame being rendered (terrain mode; set by bev_match.match_frame)
+    TERRAIN_MAX = 0.45   # m: a profile bending further away from the vehicle plane within 25 m is a map warp (Track01
+                         # start: the map ground dips ~1 m within 10 m on a flat street) -> flat plane
+
+    def terrain_dz(self, x, y, yaw):
+        """Height of the map road surface above the road plane under the vehicle on the BEV grid (H, W), or None.
+
+        A flat-ground IPM puts a road point at distance d that lies dz above the vehicle plane at d * h / (h - dz):
+        on Track03 dz reaches +-0.1..0.2 m at 15-20 m (vertical curves), i.e. 1-2 m of stretch in the far field.
+        Vehicle plane: least squares over +-4 m x +-2 m around the pose (as marking_map.vehicle_frame, which the near
+        alignment uses). Road profile: along the lane strip |v| <= 2 m, median of 5 lateral samples per metre with the
+        crossfall of the vehicle plane removed, robust cubic dz(u) = a u + b u^2 + c u^3 (dz(0) = 0) started from the
+        samples near the plane (parked cars, kerbs and walls beside the strip are never sampled). The same dz(u) is
+        used across the BEV width (the crossfall tilts with the vehicle)."""
+        c, s = np.cos(yaw), np.sin(yaw)
+
+        def world(u, v):
+            return x + c * u - s * v, y + s * u + c * v
+        ou, ov = (g.ravel() for g in np.meshgrid(np.linspace(-4, 4, 9), np.linspace(-2, 2, 5)))
+        pz, ok = self.terrain(*world(ou, ov))
+        ok &= np.isfinite(pz)
+        if ok.sum() < 10:
+            return None
+        pa = np.linalg.lstsq(np.stack([ou[ok], ov[ok], np.ones(ok.sum())], 1), pz[ok], rcond=None)[0]
+        su = np.arange(X_MIN, X_MAX + 0.1, 1.0)
+        U, V = np.meshgrid(su, np.arange(-2.0, 2.1, 1.0))
+        z, okz = self.terrain(*world(U.ravel(), V.ravel()))
+        z = np.where(okz & np.isfinite(z), z - pa[1] * V.ravel(), np.nan).reshape(U.shape)
+        cnt = np.isfinite(z).sum(0)
+        prof = np.array([np.median(col[np.isfinite(col)]) if n else np.nan for col, n in zip(z.T, cnt)])
+        okp = np.isfinite(prof)
+        if okp.sum() < 15:
+            return None
+        uu = su[okp]
+        d = prof[okp] - (pa[0] * uu + pa[2])
+
+        def F(u):
+            u = np.asarray(u, float) / 10.0
+            return np.stack([u, u * u, u ** 3], 1)
+        keep = np.abs(d) < 0.12 + 0.015 * np.abs(uu)
+        if keep.sum() < 12:
+            return None
+        for _ in range(5):
+            coef = np.linalg.lstsq(F(uu[keep]), d[keep], rcond=None)[0]
+            r = d - F(uu) @ coef
+            keep = np.abs(r) < max(3 * 1.4826 * np.median(np.abs(r[keep])), 0.03)
+        gx, _ = bev_grid()
+        dzu = F(gx[:, 0]) @ coef
+        if np.abs(dzu[(gx[:, 0] > 0) & (gx[:, 0] < 25)]).max() > self.TERRAIN_MAX:
+            return None
+        return np.repeat(dzu[:, None], W, 1)
+
+    def terrain_maps(self, x, y, yaw, pitch_add=0.0, roll_add=0.0):
+        """Remap tables sampling each camera at the map road surface (terrain_dz) instead of the flat plane."""
+        dz = self.terrain_dz(x, y, yaw)
+        if dz is None:
+            return None
+        h, p, r, yw = self.calib
+        gx, gy = bev_grid()
+        pts = np.stack([gx.ravel(), gy.ravel(), -h + dz.ravel()], 1)
+        return self._project_maps(pts, yw, p + pitch_add, r + roll_add)
 
     def render_resp_color(self, i, fn):
         """Like render_resp, but the marking response is the max over luminance, yellowness ((R+G)/2-B) and
@@ -185,9 +254,15 @@ class ImageBEV:
         """Per-camera feature response fn(gray_c, valid_c) blended afterwards (average where valid): exposure and
         white-balance differences between cameras cannot create seam edges, since each response is computed
         inside one camera's image only."""
-        if self.dyn is not None:
-            h, p, r, y = self.calib
-            self.set_calib(h, p + self.dyn[i, 0], r + self.dyn[i, 1], y)
+        maps = None
+        if self.terrain is not None and self.pose is not None:   # IPM onto the map road surface (terrain_dz)
+            dp, dr = (float(self.dyn[i, 0]), float(self.dyn[i, 1])) if self.dyn is not None else (0.0, 0.0)
+            maps = self.terrain_maps(*self.pose, dp, dr)
+        if maps is None:
+            if self.dyn is not None:
+                h, p, r, y = self.calib
+                self.set_calib(h, p + self.dyn[i, 0], r + self.dyn[i, 1], y)
+            maps = self.maps
         acc = np.zeros((H, W), np.float32)
         cnt = np.zeros((H, W), np.float32)
         for c in self.cams:
@@ -200,7 +275,7 @@ class ImageBEV:
                 m = np.unpackbits(self.masks[c][i], axis=1)[:, :img.shape[1] // 2]
                 bad |= cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
             bad |= self.ego_bad(c, img.shape)
-            mx, my, v = self.maps[c]
+            mx, my, v = maps[c]
             g = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(np.float32)
             b = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
             ok = v & (b == 0)

@@ -132,6 +132,7 @@ def subpix(res, loc):
 
 def match_frame(i, prior):
     x, y, yaw = prior
+    BEV.pose = (x, y, yaw)   # terrain IPM (ImageBEV.terrain): the map road surface around the prior pose
     if A.pin_frames:  # map ground corrupted here: assume the road level with the trusted road further on
         import bev as _bev
         lo, hi = [int(v) for v in A.pin_frames.split(':')]

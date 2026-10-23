@@ -27,6 +27,7 @@ N=$(basename "$TD")
 # sigma 0.7 deg with its calibrated +0.30 deg offset, forward sigma 0.05/sqrt(sharpness), Huber weights;
 # --imu_causal: IMU integrals from the last sample at or before the frame time (extrapolated with its rate)
 # --still_freeze (T3): no map measurements while standing (40 s red light: pose wandered 0.55 m / 2.2 deg)
+# --terrain (T3): the image BEV is projected onto the map road surface instead of a flat plane
 COMMON="--step 3 --joint --zupt --near_yaw_sigma 0 --yaw_sigma 0.7 --lane_yaw_off 0.3 --near_yaw_off 0
   --lane_fc 0.05 --min_sharp_f 0.02 --min_sharp_f_lo 0.005 --lo_sharp_sd 0.35 --huber 2.5
   --gyro_bias_sd 0.01 --gyro_bias_walk 0.0005 --floor 0.2 0.1 0.15 --start_dist 0 --near_k 0.006"
@@ -40,7 +41,10 @@ case $TR in
       # repeat it every 30 frames while standing with an uncertain heading (later frames see other markings)
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
-         --still_freeze --imu_causal" ;;
+         --still_freeze --imu_causal --terrain" ;;
+      # --terrain: lane matching on the map road surface (vertical curves ahead of +-0.1..0.2 m at 15-20 m stretch a
+      # flat-ground BEV by 1-2 m); the Track03 map road profile is smooth (slopes < 2 deg), unlike the Track01/02 maps
+      # (start areas warped by up to 12 deg), where it lowers the lane-match peaks -> T3 only
       # (taking every low-sharpness forward fix, --min_sharp_f 0.005, let the position creep 0.8 m during a 40 s red-light
       # stop - the same image measured hundreds of times - and had the lower map likelihood where the two versions differ)
       # T3 starts moving (~8 m/s at frame 0): unknown initial speed (median of the first VO pairs); while the position is

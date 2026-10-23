@@ -40,6 +40,8 @@ def main():
                     help='yellow outline: smooth = map road used by the kerb matcher; scan = old row-scan heuristic')
     ap.add_argument('--ground_mode', default='plane', help='map road mask: plane | local | smooth | hybrid')
     ap.add_argument('--range', default='', help='lo:hi frames to (re)render; frames.json keeps all rendered frames')
+    ap.add_argument('--terrain', action='store_true', help='BEV panel projected onto the map road surface (needs --marks; '
+                    'as localize_online --terrain) instead of the flat road plane')
     ap.add_argument('--marks', default='', help='marking_map.py npz (mask mode): red dots from the global marking map, '
                     'drawn at their 3D map height (poles too) instead of on a flat road')
     a = ap.parse_args()
@@ -59,6 +61,8 @@ def main():
     if a.marks:
         from marking_map import MarkingMap, road_level, vehicle_frame
         MK = MarkingMap(a.marks)
+        if a.terrain:
+            B.terrain = MK.height
     Rm = Rotation.from_euler('ZYX', [-1.5, 0, 0], degrees=True).as_matrix()
     cams = ['fl', 'f', 'fr']
     imgdir = {c: os.path.join(a.track_dir, f'{track}_images', f'{track}_{c}_images') for c in cams}
@@ -119,6 +123,7 @@ def main():
             strip.append(cv2.resize(img, (720, 464)))
         cv2.imwrite(os.path.join(out, f'kf_{i:05d}.jpg'), np.concatenate(strip, 1), [cv2.IMWRITE_JPEG_QUALITY, 80])
         # BEV panel
+        B.pose = (x, y, yaw)
         resp, v = B.render_resp(i, lane_response)
         rp, rv = R.render(i)
         g = np.clip(resp / 2.0 * 255, 0, 255).astype(np.uint8)

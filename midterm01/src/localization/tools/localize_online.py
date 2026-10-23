@@ -90,6 +90,9 @@ ap.add_argument('--pitch_gain', type=float, default=0.5)
 ap.add_argument('--pitch_max', type=float, default=2.0, help='deg')
 ap.add_argument('--still_freeze', action='store_true', help='no lane / near measurements while the IMU shows standstill '
                 '(--zupt): the same image measured again and again let the pose wander 0.5 m / 2 deg during a 40 s stop')
+ap.add_argument('--terrain', action='store_true', help='lane matching on the map road surface: the image BEV is projected '
+                'onto the marking-map ground heights around the prior pose (relative to the road plane under the vehicle) '
+                'instead of a flat plane (vertical curves / crowned roads stretch the far field by metres)')
 ap.add_argument('--dyn_att', action='store_true', help='per-frame dynamic body attitude (causal) in the camera models: '
                 'IMU roll high-passed + suspension pitch from the longitudinal acceleration (braking dive, roll in turns)')
 ap.add_argument('--pitch_per_accel', type=float, default=-0.8, help='deg of body pitch per m/s^2 of longitudinal acceleration')
@@ -464,6 +467,8 @@ if __name__ == '__main__':
     heading, dvel = load_imu()
     if a.pitch_track and DYN is None and REPLAY is None:
         DYN = np.zeros((n, 2))
+    if a.terrain and REPLAY is None:
+        LS.BM.BEV.terrain = MK.height
     if DYN is not None and REPLAY is None:
         LS.BM.BEV.dyn = DYN
         print(f'dynamic attitude: roll sd {DYN[:, 1].std():.2f} deg (max {np.abs(DYN[:, 1]).max():.1f}), pitch sd {DYN[:, 0].std():.2f} deg '
