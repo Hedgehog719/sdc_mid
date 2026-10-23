@@ -78,6 +78,20 @@ ap.add_argument('--drift_n', type=int, default=0, help='>0: this many consecutiv
 ap.add_argument('--stand_search', type=int, default=0, help='>0: while standing still with an uncertain heading (sd > 0.5 deg) '
                 'repeat the frame-0 heading search every this many frames as a heading measurement (needs --zupt)')
 ap.add_argument('--stand_search_sigma', type=float, default=1.5, help='deg: noise of one standstill heading search')
+ap.add_argument('--resp_ratio', type=float, default=0.0, help='>0: near-alignment marking response from the brightness ratio to '
+                'the local median (response starts at this ratio, full at +0.5), instead of the fixed 15..45 grey levels above '
+                'it: markings in tree shade keep their response')
+ap.add_argument('--still_freeze', action='store_true', help='no lane / near measurements while the IMU shows standstill '
+                '(--zupt): the same image measured again and again let the pose wander 0.5 m / 2 deg during a 40 s stop')
+ap.add_argument('--dyn_att', action='store_true', help='per-frame dynamic body attitude (causal) in the camera models: '
+                'IMU roll high-passed + suspension pitch from the longitudinal acceleration (braking dive, roll in turns)')
+ap.add_argument('--pitch_per_accel', type=float, default=-0.8, help='deg of body pitch per m/s^2 of longitudinal acceleration')
+ap.add_argument('--roll_tau', type=float, default=2.0, help='s: time constant of the causal high-pass of the IMU roll / pitch')
+ap.add_argument('--dyn_pitch_imu', action='store_true', help='add the high-passed IMU pitch to the dynamic pitch')
+ap.add_argument('--dyn_roll_scale', type=float, default=1.0, help='factor on the high-passed IMU roll (0 = pitch model only)')
+ap.add_argument('--dyn_sign', type=float, default=1.0)
+ap.add_argument('--imu_causal', action='store_true', help='IMU integrals up to the last sample at or before the frame time '
+                '(default: linear interpolation at the frame time, which reads the next sample, < 10 ms later)')
 ap.add_argument('--lo_peak_start', action='store_true', help='weak lane matches (--min_peak_lo) only before the first regular forward fix '
                 '(the start); later they caused a 1 m wrong lateral lock in the T1 rehearsal')
 ap.add_argument('--init_pos', type=float, default=0.0, help='>0 (no GNSS): when the frame-0 heading search corrects init_guess by more '
@@ -147,7 +161,10 @@ def response(cam, j):
     img = cv2.imread(os.path.join(a.track_dir, f'{T}_images', f'{T}_{cam}_images', B.names[cam][j]), cv2.IMREAD_GRAYSCALE)
     small = cv2.resize(img, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
     med = cv2.resize(cv2.medianBlur(small, 15), (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR).astype(np.float32)
-    r = np.clip((img.astype(np.float32) - med - 15.0) / 30.0, 0, 1)
+    if a.resp_ratio > 0:   # brightness ratio to the local median: the same response in tree shade and in sunlight
+        r = np.clip((img.astype(np.float32) / np.maximum(med, 8.0) - a.resp_ratio) / 0.5, 0, 1)
+    else:
+        r = np.clip((img.astype(np.float32) - med - 15.0) / 30.0, 0, 1)
     rp = cv2.resize(RD[cam][j].astype(np.float32) / 255.0, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR)
     r *= np.clip(rp * 1.5, 0, 1)
     bad = B.ego_bad(cam, img.shape).copy()
@@ -162,10 +179,20 @@ def responses(j):   # image preprocessing of frame j (parallel prefetch; the est
     return j, {c: response(c, j) for c in CAMS}
 
 
+R_CUR = None   # camera-rig rotation of the frame being measured (yaw mount x dynamic pitch / roll, --dyn_att)
+
+
+def rig_rotation(j):
+    if DYN is None:
+        return Rm
+    return Rotation.from_euler('ZYX', [a.yaw_mount, DYN[j, 0], DYN[j, 1]], degrees=True).as_matrix()
+
+
 def score(q, resp):
     vals = []
+    Rr = Rm if R_CUR is None else R_CUR
     for c in CAMS:
-        uv, ok = C.project(c, q @ Rm)
+        uv, ok = C.project(c, q @ Rr)
         h, w = resp[c].shape
         u, v = uv[:, 0], uv[:, 1]
         ins = ok & (u >= 0) & (u < w - 1) & (v >= 0) & (v < h - 1)
@@ -178,6 +205,8 @@ def score(q, resp):
 
 def near_measure(j, pose, resp, span_l, yaw_span=1.0):
     """Near-range image alignment of frame j: (dlat, dyaw, sharp_l, lateral ok, heading ok) or None."""
+    global R_CUR
+    R_CUR = rig_rotation(j)
     x, y, yaw = pose
     P = MK.points(x, y, a.rmax + 6)
     if len(P) < 60:
@@ -313,11 +342,37 @@ def load_imu():
     yq = np.unwrap(q.as_euler('ZYX')[:, 0])
     along = np.cos(yq) * aw[:, 0] + np.sin(yq) * aw[:, 1]
     ca = np.concatenate([[0], np.cumsum(0.5 * (along[1:] + along[:-1]) * np.diff(t) * 1e-9)])
-    heading = lambda t0, t1: float(np.interp(t1, t, yaw_g) - np.interp(t0, t, yaw_g))   # noqa: E731
-    dvel = lambda t0, t1: float(np.interp(t1, t, ca) - np.interp(t0, t, ca))            # noqa: E731
-    global IMU_RAW
+    if a.imu_causal:   # integrals up to the last IMU sample at or before the query time (no sample after frame k)
+        last = lambda tq: max(int(np.searchsorted(t, tq, side='right')) - 1, 0)   # noqa: E731
+        heading = lambda t0, t1: float(yaw_g[last(t1)] - yaw_g[last(t0)])         # noqa: E731
+        dvel = lambda t0, t1: float(ca[last(t1)] - ca[last(t0)])                  # noqa: E731
+    else:
+        heading = lambda t0, t1: float(np.interp(t1, t, yaw_g) - np.interp(t0, t, yaw_g))   # noqa: E731
+        dvel = lambda t0, t1: float(np.interp(t1, t, ca) - np.interp(t0, t, ca))            # noqa: E731
+    global IMU_RAW, DYN
     IMU_RAW = (t, wz, np.linalg.norm(im[['ax', 'ay', 'az']].values, axis=1), np.linalg.norm(im[['wx', 'wy', 'wz']].values, axis=1))
+    if a.dyn_att:
+        # dynamic body attitude per frame (causal): roll = IMU roll minus its exponential average over the past
+        # roll_tau seconds (turns, bumps; the slow part is road tilt); pitch = suspension model pitch_per_accel x the
+        # longitudinal acceleration over the past 0.5 s (nose dive when braking, squat when accelerating) [+ the
+        # high-passed IMU pitch with --dyn_pitch_imu]
+        e = q.as_euler('ZYX', degrees=True)
+        idx = np.clip(np.searchsorted(t, TS.astype(np.float64), side='right') - 1, 0, len(t) - 1)
+        roll, pitch = e[idx, 2], e[idx, 1]
+        i0 = np.clip(np.searchsorted(t, TS.astype(np.float64) - 0.5e9, side='right') - 1, 0, len(t) - 1)
+        acc = (ca[idx] - ca[i0]) / np.maximum((t[idx] - t[i0]) * 1e-9, 1e-3)
+        DYN = np.zeros((len(TS), 2))
+        br, bp = roll[0], pitch[0]
+        for k in range(len(TS)):
+            if k > 0:
+                al = min((TS[k] - TS[k - 1]) * 1e-9 / a.roll_tau, 1.0)
+                br, bp = br + al * (roll[k] - br), bp + al * (pitch[k] - bp)
+            DYN[k] = (a.pitch_per_accel * acc[k] + (pitch[k] - bp if a.dyn_pitch_imu else 0.0), a.dyn_roll_scale * (roll[k] - br))
+        DYN *= a.dyn_sign
     return heading, dvel
+
+
+DYN = None   # (frames, 2) dynamic pitch, roll in degrees (--dyn_att)
 
 
 IMU_RAW = None
@@ -391,6 +446,10 @@ if __name__ == '__main__':
         if a.accum_dist > 0:
             LS.setup_accum(n, accum_dist=a.accum_dist)
     heading, dvel = load_imu()
+    if DYN is not None and REPLAY is None:
+        LS.BM.BEV.dyn = DYN
+        print(f'dynamic attitude: roll sd {DYN[:, 1].std():.2f} deg (max {np.abs(DYN[:, 1]).max():.1f}), pitch sd {DYN[:, 0].std():.2f} deg '
+              f'(max {np.abs(DYN[:, 0]).max():.1f})', flush=True)
     G = load_gnss()
     VO = None
     if a.vo:
@@ -661,7 +720,8 @@ if __name__ == '__main__':
                     mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
                     if a.accum_dist > 0:
                         LS.set_pose(k, mp)   # current prior of frame k (past frames hold their final poses)
-                    r = lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
+                    frozen = a.still_freeze and bool(D.get('still'))
+                    r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if r is not None:   # record as absolute pose + match quality
                         cm, sm = np.cos(mp[2]), np.sin(mp[2])
                         REC['lane'][k] = (mp[0] + cm * r[0] - sm * r[1], mp[1] + sm * r[0] + cm * r[1], mp[2] + r[2], r[3], r[4], r[5])
@@ -719,7 +779,8 @@ if __name__ == '__main__':
                 if REPLAY is None:
                     mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
                     yspan = float(np.clip(3 * np.degrees(np.sqrt(var('y'))), 1.0, 3.0)) if MP is None else 3.0
-                    rn = near_measure(k, mp, resp, float(np.clip(3 * np.sqrt(var('l')), 0.4, 1.0)) if MP is None else 1.0, yspan)
+                    rn = None if (a.still_freeze and bool(D.get('still'))) else \
+                        near_measure(k, mp, resp, float(np.clip(3 * np.sqrt(var('l')), 0.4, 1.0)) if MP is None else 1.0, yspan)
                     if rn is not None:
                         cm, sm = np.cos(mp[2]), np.sin(mp[2])
                         REC['near'][k] = (mp[0] - sm * rn[0], mp[1] + cm * rn[0], mp[2] + rn[1], rn[2], rn[3], rn[4],

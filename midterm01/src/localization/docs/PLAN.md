@@ -765,3 +765,19 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    mistake). T1 (moving from the start) and T3 (heading certain at its stops) never trigger it.
  * Standstill lateral: the lane lateral says -0.10..-0.23 m (right, the GNSS is +0.2 off) but peaks 0.16-0.19 < 0.2;
    the lane forward there is biased (-0.5..-0.6 m) -> not used.
+ * T2 more: v13a (re-search sigma 2.5, repeated searches of one scene are correlated) 0.247; v13c (+ VO noise 0.15,
+   forward floor 0.1 from the replay grid) 0.234 vs the reference (steady 0.197).
+ * User's T3 visual review (viewer /viewer/Track3): frame 0 rotated clockwise + forward (0-offset hypothesis, init
+   position); 255 left, 450 heading cw (left side in tree shade), 795-870 off near a scooter box / stop line /
+   crosswalk, 895-2205 red light: pose wanders though the car stands (measured: forward 0.55 m, heading 2.2 deg),
+   2565 left camera projection tilted into the ground in the turn (body roll), 2625 vs 2655 rotated ccw, end:
+   braking nose dive (BEV markings 'fly'). Map-vs-image forward offset by speed: stopped +0.40 m, moving 0.00
+   (not a time lag; the stop pose).
+ * New options: --still_freeze (no lane / near measurements while standing), --dyn_att (causal: IMU roll high-passed
+   with a 2 s EMA, suspension pitch -0.8 deg per m/s^2 of the IMU longitudinal acceleration over the past 0.5 s,
+   applied to the BEV and the near projection), --imu_causal (IMU integrals up to the last sample <= frame time).
+   T1: both 0.442, pitch only 0.412 (best; steady 0.347), roll only 0.449 (heading worse) vs v6 0.429 -> the IMU roll
+   hurts (AHRS roll in turns includes the centripetal pseudo-tilt, or the sign). T2: v13c + all three 0.268 (worse:
+   lateral / heading, roll again). Shadow-robust ratio response (--resp_ratio): no visible difference on 255 / 450.
+ * Leaderboard probing to find the error sources (user's idea after team 11 reached 0.11 on T2): not allowed (TA,
+   10/20 + 10/22 rules), not done.
