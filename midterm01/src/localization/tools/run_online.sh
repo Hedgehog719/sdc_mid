@@ -33,7 +33,10 @@ COMMON="--step 3 --joint --zupt --near_yaw_sigma 0 --yaw_sigma 0.7 --lane_yaw_of
   --gyro_bias_sd 0.01 --gyro_bias_walk 0.0005 --floor 0.2 0.1 0.15 --start_dist 0 --near_k 0.006"
 case $TR in
   T1) export SDC_ROT_FIX=calib/cam_fix_v10t1.json
-      P="--gnss --gnss_sigma 1.0 0.2 --gyro_bias -0.220 --lane_k 0.005 0.005 --vo_noise 0.02 --acc_noise 0.05 --imu_causal" ;;
+      P="--gnss --gnss_sigma 1.0 0.2 --gyro_bias -0.220 --lane_k 0.005 0.005 --vo_noise 0.02 --acc_noise 0.05 --imu_causal
+         --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3" ;;
+      # --dyn_att ... -0.3 (braking dive / squat as T3, flat ground): vs the reference 0.411 -> 0.408 (-0.5: 0.416; lane
+      # heading sigma 0.5 / 1.0 / 1.5, GNSS sigma 0.6 fwd / 0.3 lat, terrain, segmentation gate: all worse)
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.15 --acc_noise 0.05 --floor 0.1 0.1 0.15
          --stand_search 30 --stand_search_sigma 2.5 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5" ;;

@@ -86,6 +86,8 @@ ap.add_argument('--seg_gate', type=float, default=0.0, help='>0: the frame-0 and
                 'road surface the cameras see (road probability above this, BEV) for both the image response and the '
                 'map marks (Track02 start: map artefacts of the queued cars around the vehicle)')
 ap.add_argument('--seg_gate_all', action='store_true', help='--seg_gate for every lane match')
+ap.add_argument('--seg_gate_from', type=int, default=0, help='--seg_gate_track: only from this frame on (Track03: the gated '
+                'matches of the start dropped the right forward fixes while the position was settling)')
 ap.add_argument('--seg_gate_track', action='store_true', help='--seg_gate for the tracking lane matches only (not the '
                 'frame-0 / standstill heading searches)')
 ap.add_argument('--stand_search_sigma', type=float, default=1.5, help='deg: noise of one standstill heading search')
@@ -846,6 +848,8 @@ if __name__ == '__main__':
                     frozen_k = frozen
                     if DYN is not None and a.pitch_track and not frozen:
                         DYN[k, 0] = pitch_est   # camera pitch tracked from the lane matches (slope changes, braking dive)
+                    if a.seg_gate_track and a.seg_gate_from > 0:
+                        LS.BM.A.seg_gate = a.seg_gate if k >= a.seg_gate_from else 0.0
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if a.pitch_track and not frozen and r is not None and mi % a.pitch_every == 0:
                         pk = [None, r[5], None]
