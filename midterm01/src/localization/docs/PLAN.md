@@ -830,3 +830,17 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    9 of 11 segments (900-1200: 0.07 -> 0.18, 2100: 0.75 -> 0.84), more accepted lane fixes (fwd 270 -> 302, heading
    324 -> 341); stop pose 0.09 m / -0.45 deg from frz (the terrain matches at the frz stop pose say about -0.5 deg).
    Viewer: /viewer/Track3_frzT = frz poses with the terrain BEV (compare /viewer/Track3_frz).
+ * Runner T3 with --terrain (tools/run_online.sh): the frame-0 search gives 165.43 deg (flat 165.06); the bank picks
+   -1.5 from frame 3 with no switch (flat: 0 at frames 6-11, back to -1.5 at 12), ll at 600: -126 / 586 / -43 / 211 /
+   -128; output == winner-only terr run from frame 3 (frames 0-2 from the 0-offset hypothesis) ->
+   submissions/online/t3_online_terr.csv (candidate, not submitted). vs t3_online_frz: 3-12 0.93 m apart, 30-60 0.44,
+   stop 0.10 m / +0.45 deg, 2900-3142 0.48 m. Viewer /viewer/Track3_terr.
+ * Frame-0 heading (analysis): the gyro back-propagated heading of the converged track (from frames 60-400) is
+   162.0-162.7 (frz) / 162.1-163.0 (terr) -> the frame-0 output (0-offset hypothesis, 165.06 / 165.43) is ~2.8-3.1 deg off,
+   the -1.5 hypothesis 1.3 deg; the frame-0 lane match is flat there, no causal frame-0 source found.
+ * IMU orientation yaw is an absolute heading (within +-5 deg of the map) but its offset differs per track (map - IMU:
+   T1 +1.5..+5.4, T2 +4.0..-0.2, T3 about -5 at frame 0) -> useless for the T3 start (7 deg off with a T1/T2 offset).
+ * Left camera roll scan (work/online/roll_scan.py, near marks 1-14 m, lateral search per roll): best added roll
+   within +-1 deg everywhere, 2565 +0.5 (0.324 vs 0.305 at 0) -> no roll / calibration error at 2565.
+ * T3 braking is moderate (-1.0..-1.8 m/s^2 before the red light, -0.5..-1.0 at the end); IMU pitch minus the map
+   slope suggests ~0.3 deg per m/s^2 of dive (the -0.8 default came from flat-IPM tests with terrain confounded).
