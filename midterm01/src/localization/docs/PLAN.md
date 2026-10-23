@@ -992,3 +992,31 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    0-314), the fast IMU pitch and the online static body roll. Final T3 selection candidates: t3_online_tpr (wrapped yaw).
  * Reproducibility after the new options (all default off): T1 / T2 runners rerun 21:44-21:58 -> byte-identical to
    t1_online_v6c / t2_online_v17; T3 runner -> t3_online_tpr.
+
+## 10/23 night: user review of the suspect sections, MapAnything at the T2 start
+ * Frame-by-frame viewers of the suspect sections: /viewer/Track3_focus (1498 frames: 0-270, 560-680, 720-960,
+   1000/1500/2000, 2160-2440, 2480-3060) and /viewer/Track2_focus (851 frames vs the reference: 0-330, 640-700,
+   1730-1810, 2030-2260, 2300-2345, 2560-2660); list with reasons at the top of /results (work/online/focus_render.sh,
+   rebuild_frames.py: parallel --range renders race on frames.json).
+ * Leaderboard 23:00 (best public per team, any method): T3 us 0.25 (next 0.65); T2 team 11 0.11, us 0.17 (offline
+   reference, not causal), 0.24, 0.25, 0.28 (our causal v17 = 4th-5th); T1 team 11 0.36, us 0.40 (offline; causal v6c 0.46).
+ * MapAnything (Track02 3cameras_ply: ~300k RGB points per frame, model-predicted front-camera FLU frame, the three
+   cameras fused WITHOUT the calibrated extrinsics; Track03 has none). Ground of the cloud at -1.89 m -> metric scale off.
+   4-DOF ICP (structure points vs map_nonground, trimmed, multi-start) at T2 frames 0-300 (work/online/ma_icp*.py,
+   ma_view.py, ma_corr.py): the cloud scale couples to heading and position. Normalised to a 1.65 m camera: heading
+   median ~0 vs the reference but positions slide ~2 m sideways; normalised to 1.45 m: positions match the reference
+   (fwd / lat within ~0.3 m) but heading +1.07 deg (= -17.8 deg), the same as our lane-match standstill search
+   (-17.9). Gyro check: the reference heading at frame 400 (moving, reliable lane matches; v17 agrees within 0.1 deg)
+   propagated back with the gyro gives -19.0 deg at the standstill (reference -18.8..-18.9) and the gyro shows no turn
+   while standing -> the start-area map itself is rotated ~1 deg (SLAM drift while the mapping car stood there): every
+   map-based standstill heading (lane search, MapAnything) carries it. Frame-0 search -20.67 (other bias). 2D
+   correlation (ma_corr.py) flat and biased. Cleaned map (map_clean, clean_map.py = stationary mapping scans removed
+   by point order) for the T2 marking maps: the frame-0 search fails (start markings removed too), heading +18 deg
+   until 700 -> no. Conclusion: no causal heading source at the T2 standstill; MapAnything does not change that.
+ * T3 per-camera rotation vs the map (filter camera model: terrain + dynamic attitude, work/online/per_cam_rot.py):
+   f -0.25, fl -0.25, fr -0.50 deg (sd 0.7-1.2) -> the cameras agree; all say the heading is ~0.25 deg clockwise
+   (as heading - course and the near-heading median). Flat-IPM per_cam_shift.py had suggested a 1.25 deg fr mismatch:
+   an artefact of the flat ground.
+ * T3 720+ (user: left markings unused, red dots left): at 800 the left edge line by the parked cars IS in the
+   near-alignment response (segmentation removes mostly the building facades). 2940 (user: left camera parallelogram,
+   thicker markings): the lane match there asks +1.2 deg heading but peak 0.20-0.22 < 0.25 (rejected), braking dive.
