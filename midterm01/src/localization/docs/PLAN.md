@@ -964,3 +964,31 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    (the lane-vs-near lateral disagreement +0.10 / -0.10 there); heading - course -0.30 -> -0.27 (the heading bias is
    something else). Causal version --roll_imu_map 120 (running mean of the roll difference over the frames so far)
    and controls -0.37 / +0.6 running.
+ * Roll variants on attC (fair innovations lane lat / lane fwd / near lat m, lane / near heading deg; counts):
+   attC 0.106 / 0.096 / 0.066, 0.428 / 0.330 (333/1068/374); +0.37 constant 0.091 / 0.087 / 0.069, 0.331 / 0.366
+   (342/1100/386); CAUSAL running mean (--roll_imu_map 120: 0.00 at frame 0, +0.32 at 100, +0.36..+0.42 after)
+   0.099 / 0.085 / 0.064, 0.369 / 0.358 (337/1101/392); -0.37 (wrong sign) 0.116 / 0.121 / 0.073, 0.464 / 0.349
+   (350/1021/333); +0.6 0.083 / 0.090 / 0.068, 0.350 / 0.397 (near heading worse) -> runner T3 + --roll_imu_map 120
+   (the measured value, causal; not tuned beyond it). Stop pose vs tpd: fwd -0.00, lat -0.06 m, heading +0.31 deg;
+   heading - course before / after the stop -0.11 / -0.82 (attC) -> -0.04 / -0.36. Runner started 21:22; variants
+   with --lane_yaw_off 0 / 0.15 on top queued.
+ * Runner T3 + attC + --roll_imu_map 120 (21:22-21:42): bank scores at 600 0 673 / -1.5 677 / +1.5 301 / -3 658 / +3
+   252 -> -1.5 continues (near tie; frames 0-599 per-frame MAP choice with 3 switches) -> t3_online_tpr.csv (yaw in
+   (-pi, pi]); differs from the offset-0 run CrM by up to 0.38 m / 0.56 deg, fair innovations equal or better (lane lat
+   0.089, lane fwd 0.088, near lat 0.063, lane heading 0.41, near heading 0.38). vs tpa: mean |dpos| 0.04 (0-157), 0.09
+   (public 157-1257), 0.08 (stop), 0.17 m (2205+), heading +0.07 / +0.28 / +0.20 deg.
+ * --lane_yaw_off 0 / 0.15 on top of the roll (CrMo0 / CrMo15): heading - course -0.26 -> -0.04 / -0.13, near-heading
+   median +0.18 -> +0.11 / +0.15, but lane lat 0.095 -> 0.103 / 0.100 and near lat 0.064 -> 0.075 / 0.073 m (and the
+   heading innovation spread larger) -> keep 0.30 (the T1 / T2 ground-truth calibration; the lateral measurements are the
+   most direct check). The heading - course offset in T3 stays unexplained (not a sideslip on the crossfall: that sign
+   would be positive).
+ * Slot check mistake: the queued variants started when the runner's hypothesis runs had not forked their workers yet
+   (process count <= 8), so up to 4 map-loading runs overlapped for a few minutes (no crash). Count main processes, not
+   all processes, next time.
+ * Frame 630 region with tpr: lane peaks 585-650 0.219 -> 0.242, accepted lane headings 2 -> 8, lane heading
+   innovations +0.9..+2.5 -> +0.0..+0.6 deg, heading +0.12..+0.24 deg (towards the user's 'red dots ccw'); 2600-2700
+   peaks 0.347 -> 0.362, heading +0.16 deg.
+ * SUBMITTED 21:46 (user: "交"): t3_online_tpr public 0.25 (tp 0.37, b6 0.51). Includes --vo_dr_init (tpd, frames
+   0-314), the fast IMU pitch and the online static body roll. Final T3 selection candidates: t3_online_tpr (wrapped yaw).
+ * Reproducibility after the new options (all default off): T1 / T2 runners rerun 21:44-21:58 -> byte-identical to
+   t1_online_v6c / t2_online_v17; T3 runner -> t3_online_tpr.

@@ -26,7 +26,7 @@
 <body>
 <main>
   <h1>SDC Midterm01 結果總覽</h1>
-  <div class="sub">2026-10-23 21:10 更新 · 10/22 新規則：只能用因果（線上）定位，第 k 幀只用第 1…k 幀，輸出不能回頭修改；助教會重跑程式。以下第一節是新規則下的正式流程，後面各節是 10/22 以前的紀錄。</div>
+  <div class="sub">2026-10-23 21:50 更新 · 10/22 新規則：只能用因果（線上）定位，第 k 幀只用第 1…k 幀，輸出不能回頭修改；助教會重跑程式。以下第一節是新規則下的正式流程，後面各節是 10/22 以前的紀錄。</div>
 
   <h2>10/23 晚上：路面不平的車身姿態（IMU）</h2>
   <div class="card">
@@ -35,15 +35,17 @@
       <tr><td><code>t3_online_tpd</code></td><td>上一版（地形 + 點頭模型 + 起點）</td><td class="num">0.120 m</td><td class="num">0.082 m</td><td class="num">0.77°</td><td>靜態比對：前 +0.05 m</td></tr>
       <tr><td><code>t3_online_tpa</code></td><td class="good">+ IMU 快速俯仰（1.5 s 高通，疊在點頭模型上）</td><td class="num">0.110</td><td class="num">0.066</td><td class="num">0.46°</td><td>同上（差 0.05 m）</td></tr>
       <tr><td>attA</td><td>IMU 俯仰慢速部分也用</td><td class="num">0.107</td><td class="num">0.085</td><td class="num">0.36°</td><td class="warn">往前 0.6 m（錯）</td></tr>
-      <tr><td>測試中</td><td>+ 車身相對路面的固定側傾 +0.37°（IMU − 地圖路面，全程穩定）</td><td class="num">0.091</td><td class="num">0.069</td><td class="num">0.38°</td><td>線上估計版本測試中</td></tr>
+      <tr><th colspan="6">21:46 已提交 <code>t3_online_tpr</code>：public <b class="good">0.25</b>（tp 0.37、b6 0.51）</th></tr>
+      <tr><td><code>t3_online_tpr</code></td><td class="good">+ 車身相對路面的固定側傾（IMU − 地圖路面，線上累積平均 ≈ +0.37°）（目前候選，已提交）</td><td class="num">0.089</td><td class="num">0.063</td><td class="num">0.41°</td><td>前後同、橫 −0.06 m、航向 +0.3°</td></tr>
+      <tr><td>對照</td><td>側傾 −0.37°（反方向）</td><td class="num">0.116</td><td class="num">0.073</td><td class="num">0.46°</td><td>每項都變差 → 方向確認</td></tr>
     </table>
     <ul>
       <li>數字是「所有版本都有量測的幀」上的預測誤差（穩健均方根）。地圖對數似然不能直接比：收進越多量測，分數自然越高（每個量測多 +1～+3）。</li>
       <li>你的影片觀察（地面不平、單邊翹起、懸吊晃動）和 IMU 一致：陀螺儀 0.6 s 內的俯仰晃動最大在第 617 幀（0.9°），其次 2626、455；側傾 2622、2644。</li>
       <li>IMU 姿態解算的慢速俯仰不可靠：剎車後飄 0.5°，停車時才慢慢回來，所以只取 1.5 s 內的快速部分。</li>
       <li>h265：bag 的影像串流從中途開始（第一個關鍵幀在前鏡頭第 14 幀），我們抽出的 h265 開頭解不出來；官方 JPG 完整，關鍵幀之後和解碼結果逐像素相同，沒有錯位。</li>
-      <li>航向：T3 直線段的「航向 − 行進方向」平均 −0.3°（T1／T2 約 0），近距航向中位數 +0.19°（T1／T2 約 0）；第 630 幀車道比對要再逆時針約 1°，但峰值低於門檻被丟掉。改校正值會讓橫向一致性變差，還沒定案。</li>
-      <li>檢視：<a href="/viewer/Track3_att">Track3_att</a>（紅點和鳥瞰圖用濾波器當幀的車身俯仰畫）。</li>
+      <li>航向：T3 直線段的「航向 − 行進方向」平均 −0.3°（T1／T2 約 0），近距航向中位數 +0.19°（T1／T2 約 0）；第 630 幀車道比對要再逆時針約 1°，但峰值低於門檻被丟掉。車道航向校正值改成 0 或 0.15 會讓橫向一致性明顯變差，所以維持 0.3（T1／T2 用真值校的）。</li>
+      <li>檢視：<a href="/viewer/Track3_tpr">Track3_tpr（目前候選）</a>、<a href="/viewer/Track3_att">Track3_att</a>（紅點和鳥瞰圖用濾波器當幀的車身姿態畫）。</li>
     </ul>
   </div>
 
