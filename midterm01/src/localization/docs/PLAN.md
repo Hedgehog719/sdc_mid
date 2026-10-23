@@ -844,3 +844,30 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
    within +-1 deg everywhere, 2565 +0.5 (0.324 vs 0.305 at 0) -> no roll / calibration error at 2565.
  * T3 braking is moderate (-1.0..-1.8 m/s^2 before the red light, -0.5..-1.0 at the end); IMU pitch minus the map
    slope suggests ~0.3 deg per m/s^2 of dive (the -0.8 default came from flat-IPM tests with terrain confounded).
+ * Reproducibility with the terrain code (default off): fresh tools/run_online.sh T1 / T2 == t1_online_v6c /
+   t2_online_v17 (byte-identical).
+ * Terrain without the standstill freeze (t3_var terrnf): during the 47 s stop 0.03-0.05 m / <= 0.06 deg from terr
+   (freeze), map LL rate at the stop +2.0 per frame (the measurements agree with the pose) -> with the terrain IPM the
+   stop no longer creeps (the flat b6 crept 1.0 m / 2.2 deg: the creep came from the terrain bias); freeze kept (same
+   result, robust).
+ * Terrain + dive / squat model, pitch only, -0.3 deg per m/s^2 (physical; t3_var terrp3): total map LL 1786 -> 1937,
+   600-900 (braking 780-885 at -1.0..-1.8 m/s^2) 0.82 -> 1.13, 900 0.18 -> 0.24, 2100 0.84 -> 0.94; 300 / 2700 / 3000
+   -0.02 / -0.02 / -0.03. The car accelerates at +0.9 m/s^2 at frame 0 (squat): the frame-0 heading search gives 163.44
+   instead of 165.43 (back-propagated truth ~162.0-162.3). T1 with the same model: 0.408 vs v6c 0.411 (steady 0.345 vs
+   0.343: neutral).
+ * Start analysis (work/online/start_truth.py: pose back-propagated from a converged frame with VO distances and the
+   gyro): frames 0-3 output 1.0-1.8 m behind, growing ~0.27 m per frame: the speed stays 0 until 5 VO pairs give the
+   median at frame 5. The first frame timestamps are irregular (intervals 11.7 / 48.3 / 23.7 ms, then ~36 ms; the VO
+   displacement is a steady 0.25-0.28 m per pair -> frames 0 and 2 are stamped ~25 / 12 ms late): the "23.9 m/s alias"
+   of the first pair is a timestamp artefact. --init_pos 2.5 (frame-0 position from the lane match at the searched
+   heading): +0.20 m forward, -0.59 m lateral (proxy: frame-0 error -1.04 / +0.44 -> -0.83 / -0.15 m).
+ * T2 with the -0.3 dive model: 0.251 vs v17 0.238 (steady 0.206 vs 0.197; heading rms worse in 7 of 11 segments) ->
+   not for T2 (no terrain there: the dive correction sits on top of unmodelled terrain errors); T1 neutral.
+ * Runner T3 = terrain + dive model (-0.3) + --init_pos 2.5 (t3_online_tp): frame-0 search 163.44 deg, position
+   correction +0.20 / -0.59 m; four hypotheses lock (ll at 600: 0 582, -1.5 577, +1.5 578, -3 280, +3 556; before only
+   -1.5 locked) -> 0 kept. vs t3_online_terr: total map LL 1786 -> 1927 (600-900 0.82 -> 1.11). Start (proxy from frame
+   30): frames 0-2 fwd/lat/yaw -0.91..-1.44 / -0.03 / +0.8 (terr -1.12..-1.65 / +0.56 / +2.8).
+ * Hypothesis selection: plain ML took +3 deg at frame 6 on a near-tie (ll +3 -1.5, -1.5 -1.6, 0 -2.0) -> yaw +3.8 deg;
+   now maximum a posteriori with a Gaussian prior (sd 2 deg, the flatness of the frame-0 heading peak) on the offset
+   around the frame-0 search: frames 6-14 -1.5 (yaw -0.7), winners at 600 unchanged for all three banks
+   (frz: 0 until 12 then -1.5; terr: -1.5 from 6). t3_online_tp.csv = runner output recombined with the MAP selection.
