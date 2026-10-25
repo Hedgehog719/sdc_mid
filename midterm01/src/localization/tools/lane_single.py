@@ -46,6 +46,10 @@ def match(i, pose):
     return BM.match_frame(i, tuple(pose))
 
 
+def set_motion_frame(i, speed):
+    BM.BEV.set_motion_frame(i, speed)
+
+
 # ---- causal accumulation (online): past frames only, warped by the filter's own past poses -------------------------
 _CACHE = {}
 

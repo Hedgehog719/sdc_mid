@@ -523,6 +523,8 @@ if __name__ == '__main__':
         zv = np.load(a.vo)
         VO = {int(j): (f, d, r) for j, f, d, r in zip(zv['j'], zv['fwd'], zv['dt'], zv['resp'])}   # pair (j, j + 1)
     print(f'{T}: {n} frames, IMU {"yes" if heading else "no"}, GNSS {"yes" if G is not None else "no"}, VO {"yes" if VO else "no"}', flush=True)
+    if REPLAY is None:
+        LS.set_motion_frame(0, 0.0)
     x, y, yaw = REPLAY['init'] if REPLAY is not None else initial_pose(G)
     yaw += np.radians(a.init_offset)
     REC['init'] = (x, y, yaw)
@@ -813,6 +815,7 @@ if __name__ == '__main__':
                 # measurement - the searches are averaged by the filter
                 yaw_s = yaw
                 LS.BM.A.seg_gate = 0.0 if a.seg_gate_track else a.seg_gate
+                LS.set_motion_frame(k, v)
                 for my, ms, ys in ((a.init_yaw, 1.0, 1.0), (3.0, 1.0, 0.5)):
                     LS.set_window(max_shift=ms, max_yaw=my, yaw_step=ys)
                     try:
@@ -851,6 +854,7 @@ if __name__ == '__main__':
                         DYN[k, 0] = pitch_est   # camera pitch tracked from the lane matches (slope changes, braking dive)
                     if a.seg_gate_track and a.seg_gate_from > 0:
                         LS.BM.A.seg_gate = a.seg_gate if k >= a.seg_gate_from else 0.0
+                    LS.set_motion_frame(k, v)
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if a.pitch_track and not frozen and r is not None and mi % a.pitch_every == 0:
                         pk = [None, r[5], None]

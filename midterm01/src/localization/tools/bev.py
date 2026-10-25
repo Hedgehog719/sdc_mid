@@ -78,6 +78,8 @@ class ImageBEV:
         self.C = Cameras(os.path.join(track_dir, f'{track}_images', 'camera_info'))
         self.cams = cams
         self.names = {c: sorted(os.listdir(os.path.join(track_dir, f'{track}_images', f'{track}_{c}_images'))) for c in cams}
+        self.capture_dt = camera_time_offsets(track_dir, cams) if CAM_SYNC else None
+        self.motion_frame, self.motion_speed = None, 0.0
         hood = cv2.imread(os.path.join(track_dir, f'{track}_images', 'camera_info', 'gige_100_f_hdr_mask.png'), cv2.IMREAD_UNCHANGED)
         self.hood = None
         if hood is not None:
@@ -266,10 +268,18 @@ class ImageBEV:
         dts = camera_time_offsets(self.track_dir, self.cams)
         self.tshift = {c: np.asarray(speed, float)[:len(dts[c])] * dts[c][:len(speed)] for c in self.cams}
 
+    def set_motion_frame(self, i, speed):
+        """Set the causal speed used to compensate camera offsets for one online frame."""
+        self.motion_frame, self.motion_speed = int(i), float(speed)
+
     def _sync(self, c, i, arr, interp=cv2.INTER_LINEAR):
-        if self.tshift is None or c not in self.tshift or i >= len(self.tshift[c]):
+        if self.tshift is not None and c in self.tshift and i < len(self.tshift[c]):
+            d_m = float(self.tshift[c][i])
+        elif self.capture_dt is not None and c in self.capture_dt and i < len(self.capture_dt[c]) and i == self.motion_frame:
+            d_m = self.motion_speed * float(self.capture_dt[c][i])
+        else:
             return arr
-        return shift_rows(arr, float(self.tshift[c][i]), interp)
+        return shift_rows(arr, d_m, interp)
 
     def render_resp(self, i, fn):
         """Per-camera feature response fn(gray_c, valid_c) blended afterwards (average where valid): exposure and
@@ -305,9 +315,8 @@ class ImageBEV:
                 continue
             r_ = fn(g, ok)
             okr = cv2.erode(ok.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0  # this camera's interior only
-            if self.tshift is not None:
-                r_ = self._sync(c, i, r_.astype(np.float32))
-                okr = self._sync(c, i, okr.astype(np.uint8), cv2.INTER_NEAREST) > 0
+            r_ = self._sync(c, i, r_.astype(np.float32))
+            okr = self._sync(c, i, okr.astype(np.uint8), cv2.INTER_NEAREST) > 0
             acc[okr] += r_[okr]
             cnt[okr] += 1
         valid = cnt > 0
@@ -1069,9 +1078,8 @@ class RoadProbBEV:
                 g = 0.5 * (g + cpb)
             bm = cv2.remap(bad, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1)
             ok = v & (bm == 0)
-            if b.tshift is not None:
-                g = b._sync(c, i, g.astype(np.float32))
-                ok = b._sync(c, i, ok.astype(np.uint8), cv2.INTER_NEAREST) > 0
+            g = b._sync(c, i, g.astype(np.float32))
+            ok = b._sync(c, i, ok.astype(np.uint8), cv2.INTER_NEAREST) > 0
             acc[ok] += g[ok]
             cnt[ok] += 1
         valid = cnt > 0
