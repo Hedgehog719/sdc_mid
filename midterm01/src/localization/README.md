@@ -342,6 +342,8 @@ phase0 每組 43 個留出，phase1 T1 43／T2 44 個。總計已完成八組初
 
 **T1 全長與實際提交更新**：`t1_online_bias_causal.csv` 已完成全部 GNSS 的 3011 幀 live matching，與獨立 600 幀輸出前綴一致，CSV／核心版本檢查通過；實際 Kaggle public **0.59**（ref 57677630），明顯差於原 v7 的 0.46，**不採用、不替換 `submissions/final/result_1.csv`**。完整參數／環境／SHA-256 見同名 JSON。本地兩拆分較好並不能保證真實定位更好：相鄰 GNSS 高度相關、map／camera 偏差可能被當成 GNSS bias 吸收，起步局部指標也無法代表整段 public 評估。此失敗不作隱藏真值回推，不按分數擬合位置偏移；後續需更獨立的幾何／可觀測性驗證。T1 本日已用 1 次、剩 14 次；T2 仍未提交、保留 15 次。
 
+失敗後只作模型診斷：相對原 v7（不是 ground truth），bias 候選前 0–299／300–599 幀的橫向差 RMS 約 0.403／0.766 m，600 幀後兩段約 0.070／0.068 m；前 300 幀 lane-yaw／VO accepted 都為 0。增加 GNSS bias 狀態可能讓初始航向與側向偏差在低可觀測區間互相吸收，即使相鄰留出 GNSS 較接近，也可能沿著錯誤模型解漂移。此分析不產生逐段修正量；後續若處理，應以因果的可觀測性與感測器品質控制模型自由度，不按 public 分數決定某幀後手動切換。
+
 ### 6.6 Autonomous Batch Results
 
 Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks before guarded upload. Scores below are Kaggle public scores, not local residuals.
