@@ -173,6 +173,7 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 | `tests/test_camera_sync.py` | 平移相容、旋轉方向、遮罩、拍攝座標逆運算、當前幀限制 |
 | `tests/test_hyp_select.py` | 權重、±π 航向、數值穩定、因果前綴 |
 | `tests/test_submit_guarded.py` | 時區、07:58／08:00 拒絕、無效 CSV |
+| `tests/test_localize_options.py` | 停車額度跨偵測抖動保留、GNSS 子集隔離、起點位置依航向求解 |
 | `submissions/online/t3_online_*.csv` | 保留實際提交的產物，不用手工修正軌跡 |
 
 Docker：`sdc_midterm01`，工作目錄 `/root/midterm/src/localization`。執行 `python3 -m unittest discover -s tests -v`；同步候選完整 3142 幀，檢查欄位、連續索引、有限數值及 yaw ∈ [−π, π]。近距候選前 600 幀與完整執行前綴一致（1e−12 容忍度）。編輯器 diagnostics 與 Pylance 語法檢查亦已檢查；這些不是隱藏真值的正確性保證。
@@ -184,6 +185,10 @@ Docker：`sdc_midterm01`，工作目錄 `/root/midterm/src/localization`。執�
 提交額度按競賽獨立管理，T1／T2 的額度不代表 T3 也有相同剩餘次數。2026-10-27 01:20 台北時間，T3 CLI 最近回報還有 9 次；每次上傳前查當日提交與剩餘額度，保留最後確認用額度。T3 的同步／品質模型可先在 T1／T2 Docker 本地套用，比較共同幀及因果 GNSS 留出表現，不為替 T3 探參數而耗用兩軌提交次數。
 
 已確認 T1／T2 本日尚無提交，各保留 15 次額度；正確競賽 ID 為 T1 `sdc-2026-midterm-01-track-01`、T2 `sdc-2026-localization-track-02`。T1 不是 `sdc-2026-localization-track-01`，後者查詢會得到 403。
+
+`submit_guarded.py` 會先查該競賽 CSV 歷史，以 **UTC 日期** 計算每日已用次數（不能因台北午夜而假設額度重置），包含 pending 提交。預設上限 15 次；`--reserve 2` 保留兩次確認額度，查詢錯誤或無法解析時拒絕上傳。2026-10-27 01:40 台北時間，實際只讀檢查結果為 T3=9、T1=15、T2=15。
+
+VO 因果性補查：T1／T2／T3 共 3010／3298／3141 個相鄰影像對，速度預測插值使用的右側 IMU 樣本晚於配對終點的次數均為 0。插值可以使用 `(k−1,k)` 內已收到的 IMU，但不能越過 k；本資料檢查通過，不做無依據修改。
 
 ```bash
 python3 midterm01/src/localization/tools/submit_guarded.py \

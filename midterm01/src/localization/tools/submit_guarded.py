@@ -34,6 +34,25 @@ def validate_csv(path, expected_rows=3142):
         raise ValueError(f'expected {expected_rows} poses, got {count}')
 
 
+def check_quota(submissions_csv, now, maximum=15, reserve=0):
+    if maximum < 1 or not 0 <= reserve < maximum:
+        raise ValueError('invalid daily submission limit or reserve')
+    lines = submissions_csv.splitlines()
+    start = next((index for index, line in enumerate(lines) if line.startswith('ref,fileName,date,')), None)
+    if start is None:
+        raise ValueError('cannot verify submission quota: CSV header missing')
+    used = 0
+    for row in csv.DictReader(lines[start:]):
+        submitted = datetime.fromisoformat(row['date'].replace('Z', '+00:00'))
+        if submitted.utcoffset() is None:
+            submitted = submitted.replace(tzinfo=timezone.utc)
+        used += submitted.astimezone(timezone.utc).date() == now.astimezone(timezone.utc).date()
+    remaining = maximum - used
+    if remaining <= reserve:
+        raise ValueError(f'submission quota exhausted or reserved: remaining {remaining}, reserve {reserve}')
+    return remaining
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('csv_file', type=Path)
@@ -42,14 +61,19 @@ def main():
     parser.add_argument('--deadline', type=datetime.fromisoformat, required=True)
     parser.add_argument('--buffer-seconds', type=int, default=120)
     parser.add_argument('--rows', type=int, default=3142)
+    parser.add_argument('--max-per-day', type=int, default=15)
+    parser.add_argument('--reserve', type=int, default=0, help='leave this many daily submissions unused')
     arguments = parser.parse_args()
     try:
         check_deadline(datetime.now(timezone.utc), arguments.deadline, arguments.buffer_seconds)
         validate_csv(arguments.csv_file, arguments.rows)
+        history = subprocess.run(['kaggle', 'competitions', 'submissions', '-c', arguments.competition, '--csv'],
+                     check=True, capture_output=True, text=True)
+        remaining = check_quota(history.stdout, datetime.now(timezone.utc), arguments.max_per_day, arguments.reserve)
         check_deadline(datetime.now(timezone.utc), arguments.deadline, arguments.buffer_seconds)
     except (ValueError, OSError) as error:
         parser.exit(2, f'{error}\n')
-    print(f'Validated {arguments.csv_file}; upload deadline {arguments.deadline.isoformat()}', flush=True)
+    print(f'Validated {arguments.csv_file}; remaining today {remaining}; upload deadline {arguments.deadline.isoformat()}', flush=True)
     subprocess.run(['kaggle', 'competitions', 'submit', '-c', arguments.competition,
                     '-f', str(arguments.csv_file), '-m', arguments.message], check=True)
 
