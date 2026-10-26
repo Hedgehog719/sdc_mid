@@ -1,0 +1,12 @@
+{
+  "profile": "soft_heading",
+  "extra": "--yaw_soft_peak 0.2",
+  "revision": "910e059e92bbfdc100e85b939f6545c89a52d130",
+  "core_sha256": "66e267af2bb24fe71c39ee9ecf1731822333e7c4a7574b26c9953a0fc27eba91",
+  "deadline": "2026-10-27T08:00:00+08:00",
+  "winner_offset": "0",
+  "sha256": "ef5d8e693b3fb6618f5db217856c3e87e1de990fdfb6114cb267b51fa5d9821b",
+  "status": "validated",
+  "score": "",
+  "ref": ""
+}
