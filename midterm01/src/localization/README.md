@@ -260,6 +260,14 @@ python3 tools/validate_cross_track.py --frames 600 --phase 0 \
 
 新航向模型在 25/43 個共同時刻的距離較小，四個連續 GNSS 子區段 RMSE 均略降；平均成對距離差 −0.00613 m。幅度很小，受 GNSS 時間相關偏差影響，不能當作統計顯著或 Kaggle 改善。T2 對照、反相留出及全長驗證尚待完成，尚未消耗兩軌提交額度。
 
+**GNSS 航向的待驗證缺口**：提供且允許使用的 `/localizer_node/gnss_pose` 已有有效、會變動的 yaw 四元數，但目前濾波器只讀 x／y。T1／T2 相對既有因果輸出航向的差值分別約 mean −0.359／+0.904°、std 1.859／1.461°；不是精確真值，也不是單純逐對 GPS 位移角度，不能直接覆蓋濾波器航向。競賽說明允許 T1／T2 GNSS pose sensor fusion，T3 不提供 GNSS，不能套用此資料。
+
+T2 起點前 5 秒的提供航向固定 −15.2055°，現有 frame0 為 −20.6901°；但第一筆 GNSS 在 frame0 之後才到，**不能讀第一筆之後的訊息倒回改 frame0**。可考慮在第一筆真正到達時做一次弱航向先驗，或明確建模重複／時間相關量測，不能把停車時同一個持續不變航向反覆當獨立樣本。T1 frame0 前最近 GNSS 約 14.4 ms，起點 5 秒 GNSS yaw std 1.77°；兩軌需各自驗證。此項尚未實作，待核心凍結批次結束後處理。
+
+**已否定的起點側傾捷徑**：T3 frame0 IMU roll 減地圖道路 roll，在錯誤粗航向下為 0.637°，在匹配後航向下只剩 0.065°。不能因初值看起來有側傾就直接初始化；這會把錯誤航向造成的地圖平面旋轉誤認成車身姿態。本輪不採用。
+
+**預先定義的 T3 ensemble 對照**：待所有成員完成，使用既有 `tools/ensemble.py` 對原 SE(2)、soft-heading、gyro-heading 三個因果模型逐幀等權平均（各 1/3，yaw 用圓周平均）。不按分數擬合權重、不依路段挑成員、沒有未來幀參與某一幀輸出；這與三模型在線平行跑再即時平均等價。此計畫在後兩個成員評分前宣告，仍需 CSV／因果一致性驗證與額度防護，不能保證更好。過去 T1 ensemble 曾退步，不能把平均當作必然改善。
+
 ### 6.6 Autonomous Batch Results
 
 Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks before guarded upload. Scores below are Kaggle public scores, not local residuals.
