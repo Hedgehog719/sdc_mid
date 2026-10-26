@@ -10,7 +10,9 @@
 
 ## T3 改善進度（2026-10-27）
 
-本輪從 commit 歷史與既有 Kaggle 提交建立對照，在 Docker 內測試：前向門檻改為 opt-in、因果 SE(2) 相機同步、近距拍攝時刻投影、起點假設後驗平均，以及停車量測額度重置修正。截至 01:50 已確認的新提交分數為 0.23／0.23／0.27／0.23，尚未達 `<0.23`；0.27 的近距同步不採用，預設關閉。後續固定批次會獨立測試起點位置／航向耦合、弱峰值航向與正確的陀螺儀航向導數，逐組保存實際 Kaggle 回報。
+**已達目標：T3 Kaggle public 0.22，提交 ID `57675838`。** 最佳檔為 [`t3_batch_soft_heading.csv`](midterm01/src/localization/submissions/online/t3_batch_soft_heading.csv)，對應 [`JSON 紀錄`](midterm01/src/localization/submissions/online/t3_batch_soft_heading.json)。這是完整因果五假設／EKF 的輸出：SE(2) 同步加 `--yaw_soft_peak 0.2`，弱峰值航向用較大噪聲融合，沒有離線軌跡修正；尚無 private 分數可宣稱。
+
+本輪已測試前向門檻隔離、因果 SE(2) 同步、近距同步、後驗平均、停車額度與起點位置／航向耦合。近距同步 0.27、起點耦合 0.24，不取代最佳檔；固定批次仍在完成其餘預先宣告的模型對照，所有實際分數逐組記錄。T1／T2 已完成八組本地 GNSS 留出對照，尚未消耗兩軌提交額度。
 
 分析依據、逐檔改動、驗證方法、實際提交 ID、失敗實驗、後續 T3 改進與 **T1／T2 合法提升方向** 均記錄在 [定位 README 第 6 節](midterm01/src/localization/README.md#6-t3-同步實驗2026-10-26)。所有更新提交到目前分支 `copilot/research-kaggle-competition`。
 

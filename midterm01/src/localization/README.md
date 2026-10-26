@@ -136,6 +136,8 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 
 ## 6. T3 同步實驗（2026-10-26）
 
+**最新確認最佳：Kaggle public 0.22，達成 `<0.23`，提交 ID 57675838。** 檔案 `submissions/online/t3_batch_soft_heading.csv`，完整設定／核心雜湊／SHA-256／來源 revision 見同名 JSON。模型為原 SE(2) 因果流程加 `--yaw_soft_peak 0.2`：峰值 0.20–0.25 的航向採用較大的量測噪聲，不是硬丟棄，也不放寬所有位置修正。完整五假設與全長 live matching、600 幀前綴一致、3142 幀 CSV、截止及額度防護皆通過；以下較早「尚未達標」敘述是當時實驗進展，非目前最佳狀態。private 分數未知。
+
 先依感測器時間戳與本地幾何／innovation 驗證決定修改，再提交檢查；不對提交軌跡做離線修正。
 
 | 版本 | 修改 | Kaggle public | 提交 ID |
