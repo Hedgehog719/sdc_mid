@@ -38,6 +38,16 @@ class CameraSyncTest(unittest.TestCase):
         warped = bev.sync_motion(self.image.astype(np.uint8), -0.15, 0.02, cv2.INTER_NEAREST)
         self.assertTrue(np.isin(warped, [0, 1]).all())
 
+    def test_map_projection_inverts_image_motion(self):
+        points = np.array([[10.0, 1.0, -1.5], [2.0, -3.0, 0.2]])
+        for distance, angle in [(-0.15, -0.02), (0.15, 0.02), (0.15, 0.0), (0.0, 0.0)]:
+            captured = bev.points_at_capture(points, distance, angle)
+            cosine, sine = np.cos(angle), np.sin(angle)
+            rotation = np.array([[cosine, -sine], [sine, cosine]])
+            recovered = captured[:, :2] @ rotation.T + bev.motion_displacement(distance, angle)
+            np.testing.assert_allclose(recovered, points[:, :2], atol=1e-12)
+            np.testing.assert_array_equal(captured[:, 2], points[:, 2])
+
     def test_current_frame_only(self):
         camera = bev.ImageBEV.__new__(bev.ImageBEV)
         camera.tshift = None
@@ -48,6 +58,11 @@ class CameraSyncTest(unittest.TestCase):
         with patch.object(bev, 'CAM_SYNC_YAW', True):
             np.testing.assert_array_equal(camera._sync('fr', 1, self.image),
                                           bev.sync_motion(self.image, -0.112, -0.0028))
+            points = np.array([[10.0, 1.0, -1.5]])
+            np.testing.assert_array_equal(camera.points_at_capture('fr', 1, points),
+                                          bev.points_at_capture(points, -0.112, -0.0028))
+            self.assertIs(camera.points_at_capture('fr', 0, points), points)
+            self.assertIs(camera.points_at_capture('fr', None, points), points)
         with patch.object(bev, 'CAM_SYNC_YAW', False):
             np.testing.assert_array_equal(camera._sync('fr', 1, self.image), bev.shift_rows(self.image, -0.112))
 

@@ -72,12 +72,26 @@ def shift_rows(img, d_m, interp=cv2.INTER_LINEAR):
     return cv2.warpAffine(img, M, (img.shape[1], img.shape[0]), flags=interp, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
 
 
+def motion_displacement(distance, angle):
+    if abs(angle) < 1e-9:
+        return distance, 0.0
+    return distance * np.sin(angle) / angle, distance * 2 * np.sin(angle / 2) ** 2 / angle
+
+
+def points_at_capture(points, distance, angle):
+    """Inverse of the BEV motion warp for projecting reference-frame map points into a camera."""
+    forward, lateral = motion_displacement(distance, angle)
+    shifted = np.asarray(points, float) - [forward, lateral, 0.0]
+    cosine, sine = np.cos(angle), np.sin(angle)
+    return np.column_stack((cosine * shifted[:, 0] + sine * shifted[:, 1],
+                            -sine * shifted[:, 0] + cosine * shifted[:, 1], shifted[:, 2]))
+
+
 def sync_motion(img, distance, angle, interp=cv2.INTER_LINEAR):
     """Warp capture-time BEV points into the reference frame using constant planar body velocity."""
     if abs(angle) < 1e-9:
         return shift_rows(img, distance, interp)
-    forward = distance * np.sin(angle) / angle
-    lateral = distance * 2 * np.sin(angle / 2) ** 2 / angle
+    forward, lateral = motion_displacement(distance, angle)
     centre = (Y_MAX / RES - 0.5, X_MAX / RES - 0.5)
     transform = cv2.getRotationMatrix2D(centre, np.degrees(angle), 1.0)
     transform[0, 2] -= lateral / RES
@@ -288,6 +302,14 @@ class ImageBEV:
         """Set causal body velocity (m/s, rad/s) for capture-time compensation of one online frame."""
         self.motion_frame, self.motion_speed = int(i), float(speed)
         self.motion_yaw_rate = float(yaw_rate)
+
+    def points_at_capture(self, c, i, points):
+        if self.capture_dt is None or c not in self.capture_dt or i is None or i != self.motion_frame:
+            return points
+        if not 0 <= i < len(self.capture_dt[c]):
+            return points
+        delta = float(self.capture_dt[c][i])
+        return points_at_capture(points, self.motion_speed * delta, self.motion_yaw_rate * delta if CAM_SYNC_YAW else 0.0)
 
     def _sync(self, c, i, arr, interp=cv2.INTER_LINEAR):
         if self.tshift is not None and c in self.tshift and i < len(self.tshift[c]):

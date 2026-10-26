@@ -48,6 +48,7 @@ bash tools/run_online.sh /root/data/Track3 T3    # -> work/runs/T3/T3_online.csv
 可選的 `SDC_CAM_SYNC=1` 會用當前幀的因果速度估計，補償側相機相對前相機的拍攝時間差；改跑前請先清除或更換 `work/runs/<T>/` 中的舊中間產物，避免跳過重算。
 
 搭配 `SDC_CAM_SYNC_YAW=1` 可實驗完整平面運動補償：用當前幀之前的陀螺儀積分估計角速度，補償時間差內的旋轉與轉彎弧線位移。預設關閉，與只有平移的同步分開驗證。
+`localize_online.py --near_sync` 則把近距對齊的地圖點轉到各相機拍攝時刻，與鳥瞰圖使用同一套運動模型；同樣需要 `SDC_CAM_SYNC=1`。
 同步回歸測試：`python3 -m unittest discover -s tests -p 'test_camera_sync.py' -v`（容器內執行）。
 
 前向量測的實驗規則不再寫死在共用濾波器：`--relaxed_sharp_f 0.012 --relaxed_sharp_from 600` 可啟用後段較弱的匹配，`--fwd_jump_gate 0.7 0.25` 可啟用鎖定時的大位移弱峰值拒絕；兩者預設關閉，便於分別比較。
@@ -120,3 +121,14 @@ bash tools/run_online.sh /root/data/Track3 T3    # -> work/runs/T3/T3_online.csv
 | `calib/` | 相機校正、車身遮罩 |
 | `docs/PLAN.md` | 完整實驗紀錄 |
 | `legacy/` | 規則變更前的程式與提交（不屬於最終流程） |
+
+## 6. T3 同步實驗（2026-10-26）
+
+先依感測器時間戳與本地幾何／innovation 驗證決定修改，再提交檢查；不對提交軌跡做離線修正。
+
+| 版本 | 修改 | Kaggle public | 提交 ID |
+|---|---|---|---|
+| `T3_sync.csv`（既有） | 側相機平移同步 | 0.23 | 57636864 |
+| `t3_online_se2.csv` | 因果平移＋旋轉同步，恢復原前向門檻，完整 MAP 航向假設 | 0.23 | 57672334 |
+
+旋轉同步的單一 0° 假設對照：轉彎區段（2260–2699）前向 innovation RMS 0.230 → 0.175 m，近距航向 innovation RMS 0.351 → 0.327°，但完整假設選擇後 Kaggle 仍為 0.23，尚未達到 `<0.23`。近距影像投影的時間差補償另由 `--near_sync` 控制，需獨立驗證。

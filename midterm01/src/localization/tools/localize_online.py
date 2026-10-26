@@ -55,6 +55,8 @@ ap.add_argument('--init_yaw', type=float, default=25.0, help='deg: heading windo
 ap.add_argument('--init_offset', type=float, default=0.0, help='deg added to the frame-0 heading (heading hypotheses, '
                 'tools/hyp_select.py: the frame-0 match can be flat over several degrees)')
 ap.add_argument('--rmax', type=float, default=14.0)
+ap.add_argument('--near_sync', action='store_true', help='with SDC_CAM_SYNC=1: project near-alignment map points at '
+                'each camera capture time instead of the front-camera timestamp')
 ap.add_argument('--lat', type=float, default=6.0)
 ap.add_argument('--bg_weight', type=float, default=1.0)
 ap.add_argument('--min_contrast', type=float, default=0.12)
@@ -241,7 +243,8 @@ def score(q, resp):
     vals = []
     Rr = Rm if R_CUR is None else R_CUR
     for c in CAMS:
-        uv, ok = C.project(c, q @ Rr)
+        camera_points = B.points_at_capture(c, B.motion_frame, q) if a.near_sync else q
+        uv, ok = C.project(c, camera_points @ Rr)
         h, w = resp[c].shape
         u, v = uv[:, 0], uv[:, 1]
         ins = ok & (u >= 0) & (u < w - 1) & (v >= 0) & (v < h - 1)
@@ -942,6 +945,7 @@ if __name__ == '__main__':
                 if REPLAY is None:
                     mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
                     yspan = float(np.clip(3 * np.degrees(np.sqrt(var('y'))), 1.0, 3.0)) if MP is None else 3.0
+                    B.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
                     rn = None if (a.still_freeze and bool(D.get('still')) and not D.get('still_m')) else \
                         near_measure(k, mp, resp, float(np.clip(3 * np.sqrt(var('l')), 0.4, 1.0)) if MP is None else 1.0, yspan)
                     if rn is not None:
