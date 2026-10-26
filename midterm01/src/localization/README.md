@@ -183,6 +183,8 @@ Docker：`sdc_midterm01`，工作目錄 `/root/midterm/src/localization`。執�
 
 提交額度按競賽獨立管理，T1／T2 的額度不代表 T3 也有相同剩餘次數。2026-10-27 01:20 台北時間，T3 CLI 最近回報還有 9 次；每次上傳前查當日提交與剩餘額度，保留最後確認用額度。T3 的同步／品質模型可先在 T1／T2 Docker 本地套用，比較共同幀及因果 GNSS 留出表現，不為替 T3 探參數而耗用兩軌提交次數。
 
+已確認 T1／T2 本日尚無提交，各保留 15 次額度；正確競賽 ID 為 T1 `sdc-2026-midterm-01-track-01`、T2 `sdc-2026-localization-track-02`。T1 不是 `sdc-2026-localization-track-01`，後者查詢會得到 403。
+
 ```bash
 python3 midterm01/src/localization/tools/submit_guarded.py \
    midterm01/src/localization/work/runs/T3_ab/submission_still3.csv \
@@ -209,3 +211,5 @@ python3 midterm01/src/localization/tools/submit_guarded.py \
 **T2**：目前歷史候選為 v19（記錄 public 0.26）。優先改善起點靜止車陣中的航向可觀測性：保留靜止時的因果寬範圍重搜、品質加權及動態車輛遮罩，不用後續行駛方向倒推起點。保留已驗證有效的 road gate 與較寬 lane-heading noise（2.5°），用共同幀與 GNSS 留出檢查是否需要品質相關噪聲；不要把 T3 的 0.7° 直接套回。相機時間同步可獨立比較，但先核對左右相機偏差、近距一致性；以 T3 失敗實驗為警惕，物理模型更完整不代表目前校正下必然更準。
 
 T1／T2 以上是有既有程式與歷史依據的待驗證方向，**本輪尚未重跑或重新提交兩軌，不能宣稱它們分數已改善**。最終可用設定以各軌獨立 Docker 重跑、因果檢查和實際提交回報為準。
+
+留出測試設定：`SDC_LOC_EXTRA="--gnss_stride 2 --gnss_phase 0 --frames 600"` 只把偶數編號 GNSS 輸入濾波器，奇數編號保留在檔案供評估；反相驗證則用 `--gnss_phase 1`。預設 stride=1／phase=0 維持全部 GNSS。已用 Track1 的 440 筆樣本驗證預設逐值不變、兩子集無交集、無效參數拒絕。部分幀留出輸出不是正式提交檔，不能以其分數冒充 Kaggle 成績；GNSS 時間相關誤差仍使此指標不等於 ground truth。

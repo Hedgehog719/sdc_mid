@@ -43,6 +43,9 @@ ap.add_argument('lane_marks', help='soft marking map (marking_map.py ALL ... --m
 ap.add_argument('out')
 ap.add_argument('--vo', default='', help='bev_vo.py npz (road-surface odometry)')
 ap.add_argument('--gnss', action='store_true', help='use sensors/gnss.csv (Track01/02)')
+ap.add_argument('--gnss_stride', type=int, default=1, help='validation only: consume every Nth GNSS sample; '
+                'other samples remain held out from the filter')
+ap.add_argument('--gnss_phase', type=int, default=0, help='validation only: first GNSS sample index for --gnss_stride')
 ap.add_argument('--gnss_sigma', type=float, nargs=2, default=[0.3, 0.3], help='m: along / across-track GNSS noise (white part '
                 'when --gnss_bias_sd > 0)')
 ap.add_argument('--gnss_bias_sd', type=float, default=0.0, help='m (joint EKF): GNSS error modelled as a first-order Gauss-Markov bias '
@@ -454,7 +457,10 @@ def load_gnss():
     f = os.path.join(a.track_dir, 'sensors', 'gnss.csv')
     if not a.gnss or not os.path.exists(f):
         return None
+    if a.gnss_stride < 1 or not 0 <= a.gnss_phase < a.gnss_stride:
+        raise ValueError('--gnss_stride must be positive and 0 <= --gnss_phase < --gnss_stride')
     g = pd.read_csv(f)
+    g = g.iloc[a.gnss_phase::a.gnss_stride]
     return g.t.values.astype(np.int64), g.x.values, g.y.values
 
 
