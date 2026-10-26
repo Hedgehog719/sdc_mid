@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -15,11 +16,12 @@ from submit_guarded import check_deadline, check_quota, validate_csv
 
 
 PROFILES = {
-    'conditioned_init': '--init_pos_per_hyp',
+    'conditioned_init': '--init_pos_per_hyp --yaw_soft_peak 0',
     'soft_heading': '--yaw_soft_peak 0.2',
     'conditioned_soft': '--init_pos_per_hyp --yaw_soft_peak 0.2',
     'stop_soft': '--still_meas 3 --yaw_soft_peak 0.2',
-    'gyro_heading': '--gyro_heading --gyro_bias -0.266065785',
+    'gyro_heading': '--gyro_heading --gyro_bias -0.266065785 --yaw_soft_peak 0',
+    'capture_header': '--yaw_soft_peak 0.2',
 }
 OFFSETS = ('0', '-1.5', '1.5', '-3', '3')
 COMPETITION = 'sdc-2026-localization-track-03'
@@ -38,7 +40,8 @@ def snapshot_runner(package, directory):
 
 def core_digest(package):
     digest = hashlib.sha256()
-    for name in ('localize_online.py', 'bev.py', 'bev_match.py', 'lane_single.py', 'marking_map.py', 'camera_model.py'):
+    for name in ('localize_online.py', 'bev.py', 'bev_match.py', 'lane_single.py', 'marking_map.py', 'camera_model.py',
+                 'camera_timing.py', 'gnss_heading.py'):
         digest.update((Path(package) / 'tools' / name).read_bytes())
     return digest.hexdigest()
 
@@ -139,6 +142,7 @@ def main():
         print(f'START {profile}; quota {remaining}; revision {revision}', flush=True)
         command = ['docker', 'exec', '-w', '/root/midterm/src/localization', '-e', 'SDC_CAM_SYNC=1',
                    '-e', 'SDC_CAM_SYNC_YAW=1', '-e', 'SDC_HYP_WORKERS=1', '-e', f'SDC_RUN_DIR={relative}',
+                   '-e', f'SDC_CAM_CAPTURE={int(profile == "capture_header")}',
                    '-e', 'SDC_PACKAGE_DIR=/root/midterm/src/localization',
                    '-e', f'SDC_LOC_EXTRA={PROFILES[profile]}', arguments.container,
                    'bash', f'/root/midterm/src/localization/{runner.relative_to(package)}', '/root/data/Track3', 'T3']
@@ -153,6 +157,11 @@ def main():
         shutil.copyfile(output, candidate)
         report = {'profile': profile, 'extra': PROFILES[profile], 'revision': revision,
                   'core_sha256': source_digest,
+                  'capture_time_sync': profile == 'capture_header',
+                  'arguments': shlex.split((directory / 'args.txt').read_text()),
+                  'environment': dict(line.split('=', 1) for line in (directory / 'environment.txt').read_text().splitlines() if line),
+                  'validation': {'output_rows': 3142, 'causal_prefix_frames': 600,
+                                 'prefix_abs_tolerance': 1e-10, 'live_matching': True},
                   'deadline': arguments.deadline.isoformat(), 'winner_offset': winner,
                   'sha256': hashlib.sha256(candidate.read_bytes()).hexdigest(),
                   'status': 'validated', 'score': '', 'ref': ''}

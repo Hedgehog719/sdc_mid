@@ -3,11 +3,13 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
 from camera_timing import capture_arrays, capture_offsets, read_capture_times
+from bev import camera_time_offsets
 
 
 class CameraTimingTest(unittest.TestCase):
@@ -56,6 +58,17 @@ class CameraTimingTest(unittest.TestCase):
             result = capture_offsets(self.make_track(directory), cameras=('fr',))
             self.assertEqual(set(result), {'fr'})
             np.testing.assert_allclose(result['fr'], [-13e-9, -13e-9], rtol=1e-12, atol=0)
+
+    def test_synchronizer_capture_mode_is_opt_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_track(directory)
+            with patch.dict(os.environ, {'SDC_CAM_CAPTURE': '0'}):
+                previous = camera_time_offsets(str(root))
+                np.testing.assert_array_equal(previous['fr'], [0, 0])
+            with patch.dict(os.environ, {'SDC_CAM_CAPTURE': '1'}):
+                actual = camera_time_offsets(str(root))
+                np.testing.assert_allclose(actual['fr'], [-13e-9, -13e-9], rtol=1e-12, atol=0)
+                np.testing.assert_array_equal(actual['f'], [0, 0])
 
     def test_different_camera_lengths_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -35,6 +35,7 @@ from bev import ImageBEV  # noqa: E402
 from common import ply_frames  # noqa: E402
 from marking_map import MarkingMap, road_level, vehicle_frame  # noqa: E402
 import lane_single as LS  # noqa: E402
+from gnss_heading import HeadingPrior, quaternion_headings  # noqa: E402
 
 def gyro_heading_rate(orientation, body_rates):
     """Yaw derivative of the body-forward direction, not angular velocity projected on world z."""
@@ -55,6 +56,8 @@ ap.add_argument('--gnss', action='store_true', help='use sensors/gnss.csv (Track
 ap.add_argument('--gnss_stride', type=int, default=1, help='validation only: consume every Nth GNSS sample; '
                 'other samples remain held out from the filter')
 ap.add_argument('--gnss_phase', type=int, default=0, help='validation only: first GNSS sample index for --gnss_stride')
+ap.add_argument('--gnss_yaw_sigma', type=float, default=0.0, help='deg: optional weak GNSS orientation prior; 0 disables')
+ap.add_argument('--gnss_yaw_once', action='store_true', help='use only the first valid GNSS heading when it arrives')
 ap.add_argument('--gnss_sigma', type=float, nargs=2, default=[0.3, 0.3], help='m: along / across-track GNSS noise (white part '
                 'when --gnss_bias_sd > 0)')
 ap.add_argument('--gnss_bias_sd', type=float, default=0.0, help='m (joint EKF): GNSS error modelled as a first-order Gauss-Markov bias '
@@ -465,7 +468,12 @@ def standstill(t1):
     return m1 - m0 > 50 and an[m0:m1].std() < a.zupt_acc and wn[m0:m1].max() < np.radians(a.zupt_gyro)
 
 
+GNSS_YAW = None
+
+
 def load_gnss():
+    global GNSS_YAW
+    GNSS_YAW = None
     f = os.path.join(a.track_dir, 'sensors', 'gnss.csv')
     if not a.gnss or not os.path.exists(f):
         return None
@@ -473,6 +481,10 @@ def load_gnss():
         raise ValueError('--gnss_stride must be positive and 0 <= --gnss_phase < --gnss_stride')
     g = pd.read_csv(f)
     g = g.iloc[a.gnss_phase::a.gnss_stride]
+    if a.gnss_yaw_sigma < 0:
+        raise ValueError('--gnss_yaw_sigma must be nonnegative')
+    if a.gnss_yaw_sigma > 0:
+        GNSS_YAW = quaternion_headings(g[['qx', 'qy', 'qz', 'qw']].values)
     return g.t.values.astype(np.int64), g.x.values, g.y.values
 
 
@@ -705,6 +717,26 @@ if __name__ == '__main__':
         PY = PY - np.outer(K, PY[0, :])
         return True
 
+    gnss_prior = HeadingPrior(once=a.gnss_yaw_once) if GNSS_YAW is not None else None
+    cnt['gnss_yaw'] = 0
+
+    def update_gnss_heading(index, frame_time):
+        if gnss_prior is None:
+            return False
+        measured = gnss_prior.consume(G[0][index], frame_time, GNSS_YAW[index])
+        if measured is None:
+            return False
+        if heading:
+            measured += heading(G[0][index], frame_time) - bg * ((frame_time - G[0][index]) * 1e-9)
+        residual = np.arctan2(np.sin(measured - yaw), np.cos(measured - yaw))
+        return upd_yaw(residual, np.radians(a.gnss_yaw_sigma), robust=True)
+
+    initial_gnss_yaw = False
+    if gnss_prior is not None and G is not None:
+        previous = int(np.searchsorted(G[0], TS[0], side='right')) - 1
+        if previous >= 0:
+            initial_gnss_yaw = update_gnss_heading(previous, TS[0])
+            cnt['gnss_yaw'] += int(initial_gnss_yaw)
     meas_frames = list(range(a.step, n, a.step))
     block = 4 * a.workers
     mi = 0
@@ -713,6 +745,8 @@ if __name__ == '__main__':
         resp_cache = {}
         for k in range(n):
             D = {'k': k}
+            if k == 0 and initial_gnss_yaw:
+                D['g_ya'] = 1
             if k > 0:
                 t0, t1 = TS[k - 1] * 1.0, TS[k] * 1.0
                 dt = (t1 - t0) * 1e-9
@@ -800,6 +834,9 @@ if __name__ == '__main__':
                             ok2 = upd_lat(el, a.gnss_sigma[1], 25.0)
                         D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
+                        if gnss_prior is not None:
+                            D['g_ya'] = int(update_gnss_heading(gi, TS[k]))
+                            cnt['gnss_yaw'] += D['g_ya']
                         gi += 1
             if D.get('still'):
                 if still_k0 is None:

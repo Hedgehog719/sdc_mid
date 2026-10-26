@@ -49,6 +49,9 @@ CAM_SYNC_YAW = os.environ.get('SDC_CAM_SYNC_YAW', '0') == '1'
 def camera_time_offsets(track_dir, cams=('f', 'fl', 'fr')):
     """Per camera, per frame capture-time offset (s) w.r.t. the front camera (frame) timestamp, from the image file
     names (<idx>_ts_<ns>.jpg). Track2: fl -9.8 ms, fr +13.3 ms; Track1: fl -1.9 ms, fr +12.3 ms."""
+    if os.environ.get('SDC_CAM_CAPTURE', '0') == '1':
+        from camera_timing import capture_offsets
+        return capture_offsets(track_dir, cameras=cams)
     track = os.path.basename(os.path.normpath(track_dir))
     def ts(c):
         d = os.path.join(track_dir, f'{track}_images', f'{track}_{c}_images')

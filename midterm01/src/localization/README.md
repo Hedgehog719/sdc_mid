@@ -113,6 +113,8 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 15. （試過、未採用）**Track01 多濾波器逐幀平均（`tools/ensemble.py`）**：Track01 的濾波器在標線稀疏處很敏感（設定只差一點分數就差 ±0.02），試過 9 個濾波器（初始航向不確定度 × 車道航向雜訊）逐幀平均：對參考軌跡 0.408 → 0.404（航向 0.56° → 0.48°），但起點位置變差，Kaggle public 0.46 → 0.47，所以正式流程仍用單一濾波器。
 16. **輸出**：該幀的後驗位姿，寫出後不再修改。
 
+**2026-10-27 正式預設更新**：T3 的 `run_online.sh` 現預設 `SDC_CAM_SYNC=1`、`SDC_CAM_SYNC_YAW=1` 與 `--yaw_soft_peak 0.2`，對應已確認 public 0.22 的 `t3_batch_soft_heading.csv`；T1／T2 預設不變。可顯式設同步環境變數為 0 停用，或用 `SDC_LOC_EXTRA="--yaw_soft_peak 0"` 重現舊 T3 門檻。下段 `t3_online_tpg.csv` 與早期版本清單保留作歷史對照，不是最新 T3 推薦版本。
+
 可重現性：用 `tools/run_online.sh` 從頭執行，T1、T2、T3 的輸出和 `submissions/online/` 的候選檔逐位元相同（目前版本：`t1_online_v7.csv`、`t2_online_v19.csv`、`t3_online_tpg.csv`；`t1_online_v6c.csv` 是 T1 加剎車點頭模型之前、`t3_online_tpl.csv` 是 T3 加路面遮罩之前的版本；`t2_online_v18.csv` 是 T2 放大車道航向雜訊之前、`t2_online_v17.csv` 是加第 14 點之前、`t3_online_tpr.csv` 是加第 13 點之前的版本；`t3_online_tpa.csv` 是加固定側傾（第 12 點）之前、`t3_online_tpd.csv` 是加快速俯仰（第 11 點）之前的版本，已提交的 `t3_online_tp.csv` 再早一版（沒有 `--vo_dr_init`）；較早提交的 `t1_online_v6`、`t2_online_v6`、`t3_online_b6` 是之前的流程設定）。GPU 推論的微小差異可能讓分割結果有極小不同。
 
 量測品質用「擾動測試」檢查：把參考軌跡偏移已知的量（航向 +1°、橫向 +0.3 m、前後 +1 m），在偏移後的位姿做量測，看量測能修回多少。近距對齊的航向只修回約 10%，等於一直把航向拉回先驗，所以最終流程不使用它。車道比對的航向能完整修回。
@@ -341,6 +343,22 @@ T2 這一階段不支持直接採用上述修改；T1 小幅改善也不能外�
 phase0 每組 43 個留出，phase1 T1 43／T2 44 個。總計已完成八組初始對照、四組 bias 控制、四組 baseline／gyro 反相及一組 T1 bias 反相，共 17 組。T1 bias-only 的橫向平均殘差改變符號（phase0 −0.263 → +0.284 m），總誤差下降不代表每個偏差消失；全長仍須檢查。正在以全部合法 GNSS 跑 T1 600 幀／3011 幀兩次，確認前綴一致後才考慮單次 Kaggle 評分。T1／T2 本輪尚未提交，額度各保留 15 次。
 
 **T1 全長與實際提交更新**：`t1_online_bias_causal.csv` 已完成全部 GNSS 的 3011 幀 live matching，與獨立 600 幀輸出前綴一致，CSV／核心版本檢查通過；實際 Kaggle public **0.59**（ref 57677630），明顯差於原 v7 的 0.46，**不採用、不替換 `submissions/final/result_1.csv`**。完整參數／環境／SHA-256 見同名 JSON。本地兩拆分較好並不能保證真實定位更好：相鄰 GNSS 高度相關、map／camera 偏差可能被當成 GNSS bias 吸收，起步局部指標也無法代表整段 public 評估。此失敗不作隱藏真值回推，不按分數擬合位置偏移；後續需更獨立的幾何／可觀測性驗證。T1 本日已用 1 次、剩 14 次；T2 仍未提交、保留 15 次。
+
+**04:30 整合更新**：五個固定 T3 模型已完成，gyro-heading public 0.24（57677706），stop-soft 0.22（57677040），仍採用較簡單的 soft-heading 0.22；T3 剩 3 次額度。核心凍結釋放後，以下先前「待整合」項目已完成，但尚未有新全長評分：
+
+- `SDC_CAM_CAPTURE=1`：在 `camera_time_offsets()` 使用精確 header 曝光偏移；runner 先抽取／驗證 metadata，並保存此環境設定。預設 0，因此不改已有 0.22 輸出；新增 `capture_header` 單一全流程對照，仍必須通過完整五假設、3142 幀與前綴檢查才提交。沒有改變 Kaggle 輸出幀的時間定義。
+- `--gnss_yaw_sigma 3 --gnss_yaw_once`：預設關閉的 T1／T2 弱航向先驗；與位置使用同一留出子集，過期／未到達／無效／重複資料拒絕。只在 sample time ≤ frame time 時融合，使用當時可得陀螺儀傳播到當幀；不回改已輸出幀。真實 T2 30 幀測試：frame0 逐值不變，第一筆先驗於 frame1 才生效。
+- 預設相容性：真實 T3 原最佳設定與 T2 原設定的前 30 幀，整合前後容忍 1e−10 一致；runner 命令行替身測試確認 T3 新預設、T2 未被同步設定污染。這是短程相容性證據，不冒充全長重跑。
+- 本地 `validate_cross_track.py --variants gnss_yaw_once capture_header` 可比較兩個獨立因子，無上傳功能。核心雜湊加入 `camera_timing.py`、`gnss_heading.py` 兩個新增數值依賴；舊 JSON 雜湊使用當時的六個核心檔，不直接跨定義比較。
+
+重現新單一 T3 header 實驗（主機執行，會使用一個額度但保留至少兩次，若截止／額度／驗證不通過就不提交）：
+
+```bash
+python3 midterm01/src/localization/tools/overnight_experiments.py \
+   --profiles capture_header --deadline 2026-10-27T08:00:00+08:00 --reserve 2
+```
+
+同時保留舊 `conditioned_init`／`gyro_heading` 的定義：批次參數明確傳入 `--yaw_soft_peak 0`，不因正式 runner 新預設而暗中改變歷史實驗。
 
 失敗後只作模型診斷：相對原 v7（不是 ground truth），bias 候選前 0–299／300–599 幀的橫向差 RMS 約 0.403／0.766 m，600 幀後兩段約 0.070／0.068 m；前 300 幀 lane-yaw／VO accepted 都為 0。增加 GNSS bias 狀態可能讓初始航向與側向偏差在低可觀測區間互相吸收，即使相鄰留出 GNSS 較接近，也可能沿著錯誤模型解漂移。此分析不產生逐段修正量；後續若處理，應以因果的可觀測性與感測器品質控制模型自由度，不按 public 分數決定某幀後手動切換。
 

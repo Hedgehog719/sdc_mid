@@ -54,10 +54,12 @@ case $TR in
       # T2 starts standing in a queue (bus alongside, markings hidden): the frame-0 heading search is 1.8 deg off ->
       # repeat it every 30 frames while standing with an uncertain heading (later frames see other markings)
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS
+      export SDC_CAM_SYNC=${SDC_CAM_SYNC:-1}
+      export SDC_CAM_SYNC_YAW=${SDC_CAM_SYNC_YAW:-1}
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
          --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init
          --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120 --terrain_lat --seg_gate 0.5 --seg_gate_track
-         --seg_gate_from 300" ;;
+         --seg_gate_from 300 --yaw_soft_peak 0.2" ;;
       # --seg_gate 0.5 --seg_gate_track --seg_gate_from 300: road-surface gate as T2, but only from frame 300 - gated from
       # the start it dropped the right forward fixes at 105-177 and took a wrong one (0.9 m behind for ~40 frames; public
       # 0.35 vs 0.24); from 300 on: start identical, fair innovations lane fwd 0.089 -> 0.067 m, lane heading 0.227 ->
@@ -99,10 +101,13 @@ case ${SDC_HYP_ESTIMATOR:-map} in
 esac
 P="$P ${SDC_LOC_EXTRA:-}"
 printf '%s\n' "$COMMON $P" > "$W/args.txt"
-printf 'SDC_CAM_SYNC=%s\nSDC_CAM_SYNC_YAW=%s\nSDC_ROT_FIX=%s\nSDC_HYP_ESTIMATOR=%s\nSDC_HYP_WORKERS=%s\n' \
-  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" "${SDC_HYP_ESTIMATOR:-map}" "$HYP_WORKERS" > "$W/environment.txt"
+printf 'SDC_CAM_SYNC=%s\nSDC_CAM_SYNC_YAW=%s\nSDC_ROT_FIX=%s\nSDC_HYP_ESTIMATOR=%s\nSDC_HYP_WORKERS=%s\nSDC_CAM_CAPTURE=%s\n' \
+  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" "${SDC_HYP_ESTIMATOR:-map}" "$HYP_WORKERS" "${SDC_CAM_CAPTURE:-0}" > "$W/environment.txt"
 
 echo "[$(date +%H:%M:%S)] 1. map and sensor data"
+if [[ ${SDC_CAM_CAPTURE:-0} == 1 ]]; then
+  python3 tools/camera_timing.py "$TD"
+fi
 [ -f "$TD/map.npy" ] || python3 tools/map_to_npy.py "$TD/map.pcd" "$TD/map.npy"
 if [ ! -s "$TD/sensors/imu.csv" ] && ls "$TD"/*.db3 > /dev/null 2>&1; then
   python3 tools/extract_bag.py "$TD" "$TD/sensors" || echo "bag extraction failed: running without IMU"

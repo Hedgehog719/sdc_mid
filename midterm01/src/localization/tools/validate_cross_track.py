@@ -14,18 +14,21 @@ from overnight_experiments import core_digest, snapshot_runner
 from submit_guarded import check_deadline
 
 
-VARIANTS = ['baseline', 'translation', 'se2', 'gyro_heading', 'gnss_bias', 'gnss_bias_heading']
+VARIANTS = ['baseline', 'translation', 'se2', 'gyro_heading', 'gnss_bias', 'gnss_bias_heading',
+            'gnss_yaw_once', 'capture_header']
 
 
 def variant_options(track, variant):
-    sync = variant not in ('baseline', 'gnss_bias')
-    yaw = variant in ('se2', 'gyro_heading', 'gnss_bias_heading')
+    sync = variant in ('translation', 'se2', 'gyro_heading', 'gnss_bias_heading', 'capture_header')
+    yaw = variant in ('se2', 'gyro_heading', 'gnss_bias_heading', 'capture_header')
     extra = ''
     if variant in ('gyro_heading', 'gnss_bias_heading'):
         bias = '-0.263836007' if track == 'T1' else '-0.293533891'
         extra += f' --gyro_heading --gyro_bias {bias}'
     if variant in ('gnss_bias', 'gnss_bias_heading'):
         extra += ' --gnss_bias_sd 0.25 --gnss_bias_tau 3'
+    if variant == 'gnss_yaw_once':
+        extra += ' --gnss_yaw_sigma 3 --gnss_yaw_once'
     return sync, yaw, extra
 
 
@@ -80,7 +83,8 @@ def main():
             extra += model_options
             environment = os.environ.copy()
             environment.update(SDC_RUN_DIR=str(relative), SDC_PACKAGE_DIR=str(package), SDC_LOC_EXTRA=extra,
-                               SDC_CAM_SYNC='1' if sync else '0', SDC_CAM_SYNC_YAW='1' if yaw else '0')
+                               SDC_CAM_SYNC='1' if sync else '0', SDC_CAM_SYNC_YAW='1' if yaw else '0',
+                               SDC_CAM_CAPTURE='1' if variant == 'capture_header' else '0')
             print(f'START {track} {variant} phase {arguments.phase}', flush=True)
             with (relative / 'run.log').open('w') as log:
                 subprocess.run(['bash', str(snapshot), '/root/data/' + folder, track], env=environment,

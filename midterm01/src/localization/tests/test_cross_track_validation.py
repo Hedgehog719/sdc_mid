@@ -21,6 +21,11 @@ class HoldoutEvaluationTest(unittest.TestCase):
         self.assertTrue(sync and yaw)
         self.assertIn('--gyro_bias -0.293533891', extra)
         self.assertIn('--gnss_bias_tau 3', extra)
+        sync, yaw, extra = variant_options('T2', 'gnss_yaw_once')
+        self.assertFalse(sync or yaw)
+        self.assertIn('--gnss_yaw_sigma 3 --gnss_yaw_once', extra)
+        self.assertNotIn('--gnss_bias_sd', extra)
+        self.assertEqual(variant_options('T1', 'capture_header'), (True, True, ''))
 
     def test_causal_extrapolation_uses_only_previous_pose(self):
         times = np.array([0, 1_000_000_000, 2_000_000_000])

@@ -1,4 +1,5 @@
 import ast
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -7,6 +8,8 @@ from unittest.mock import Mock
 import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from gnss_heading import quaternion_headings
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'tools' / 'localize_online.py'
@@ -70,11 +73,12 @@ class GyroHeadingTest(unittest.TestCase):
 class GnssSubsetTest(unittest.TestCase):
     def setUp(self):
         self.samples = pd.DataFrame({'t': [10, 20, 30, 40], 'x': [1.0, 2.0, 3.0, 4.0], 'y': [0.0] * 4})
-        self.arguments = SimpleNamespace(track_dir='track', gnss=True, gnss_stride=1, gnss_phase=0)
-        environment = {'a': self.arguments, 'np': np,
+        self.arguments = SimpleNamespace(track_dir='track', gnss=True, gnss_stride=1, gnss_phase=0, gnss_yaw_sigma=0.0)
+        environment = {'a': self.arguments, 'np': np, 'quaternion_headings': quaternion_headings,
                        'os': SimpleNamespace(path=SimpleNamespace(join=lambda *parts: '/'.join(parts), exists=lambda path: True)),
                        'pd': SimpleNamespace(read_csv=lambda path: self.samples.copy())}
         self.load = load_function('load_gnss', environment)
+        self.environment = environment
 
     def test_default_is_unchanged(self):
         times, positions, _ = self.load()
@@ -95,6 +99,16 @@ class GnssSubsetTest(unittest.TestCase):
             self.arguments.gnss_stride, self.arguments.gnss_phase = stride, phase
             with self.assertRaises(ValueError):
                 self.load()
+
+    def test_heading_uses_the_same_subset_and_default_does_not_load_it(self):
+        self.load()
+        self.assertIsNone(self.environment['GNSS_YAW'])
+        quaternions = Rotation.from_euler('z', [0.0, 0.1, 0.2, 0.3]).as_quat()
+        self.samples[['qx', 'qy', 'qz', 'qw']] = quaternions
+        self.arguments.gnss_yaw_sigma = 3.0
+        self.arguments.gnss_stride, self.arguments.gnss_phase = 2, 1
+        np.testing.assert_array_equal(self.load()[0], [20, 40])
+        np.testing.assert_allclose(self.environment['GNSS_YAW'], [0.1, 0.3], atol=1e-12)
 
 
 class InitialPositionTest(unittest.TestCase):
