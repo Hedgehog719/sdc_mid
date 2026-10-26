@@ -30,11 +30,21 @@ def capture_arrays(track_dir, cameras=CAMERAS, metadata=None):
     output = {}
     for camera in cameras:
         names = sorted((root / f'{track}_images' / f'{track}_{camera}_images').iterdir())
-        received = [int(name.name.split('_ts_')[1].split('.')[0]) for name in names]
-        try:
-            captured = np.array([timestamps[camera][timestamp] for timestamp in received], dtype=np.int64)
-        except KeyError as error:
-            raise ValueError(f'missing exact capture timestamp for {camera}: {error}') from error
+        filename_times = [int(name.name.split('_ts_')[1].split('.')[0]) for name in names]
+        if not filename_times:
+            raise ValueError(f'no images for {camera}')
+        mapping = timestamps[camera]
+        receive_match = all(timestamp in mapping for timestamp in filename_times)
+        capture_values = set(mapping.values())
+        capture_match = all(timestamp in capture_values for timestamp in filename_times)
+        if receive_match and capture_match and any(mapping[timestamp] != timestamp for timestamp in filename_times):
+            raise ValueError(f'ambiguous filename timestamp convention for {camera}')
+        if receive_match:
+            captured = np.array([mapping[timestamp] for timestamp in filename_times], dtype=np.int64)
+        elif capture_match:
+            captured = np.array(filename_times, dtype=np.int64)
+        else:
+            raise ValueError(f'missing exact timestamp convention for {camera}; no interpolation allowed')
         if np.any(np.diff(captured) <= 0):
             raise ValueError('capture timestamps must increase in frame order')
         output[camera] = captured

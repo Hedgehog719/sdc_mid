@@ -39,6 +39,34 @@ class CameraTimingTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 capture_arrays(root)
 
+    def test_capture_named_side_images_and_receive_named_front(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_track(directory)
+            mapping = read_capture_times(root / 'sensors' / 'camera_timing.csv')
+            for camera in ['fl', 'fr']:
+                for image in (root / 'Track_images' / f'Track_{camera}_images').iterdir():
+                    prefix, timestamp = image.stem.split('_ts_')
+                    image.rename(image.with_name(f'{prefix}_ts_{mapping[camera][int(timestamp)]}.jpg'))
+            arrays = capture_arrays(root)
+            np.testing.assert_array_equal(arrays['fl'] - arrays['f'], [2, 2])
+            np.testing.assert_array_equal(arrays['fr'] - arrays['f'], [-13, -13])
+
+    def test_empty_camera_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_track(directory)
+            for image in (root / 'Track_images' / 'Track_fr_images').iterdir():
+                image.unlink()
+            with self.assertRaises(ValueError):
+                capture_arrays(root)
+
+    def test_ambiguous_timestamp_convention_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_track(directory)
+            metadata = root / 'sensors' / 'camera_timing.csv'
+            metadata.write_text('camera,receive_ns,capture_ns\nf,200,100\nf,300,200\nf,400,300\n')
+            with self.assertRaises(ValueError):
+                capture_arrays(root)
+
     def test_invalid_receive_capture_order_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'times.csv'
