@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract image header capture times and match them exactly to receive-time image filenames."""
+"""Extract image header capture times and match each camera's filename convention exactly."""
 import argparse
 import csv
 from pathlib import Path
@@ -49,6 +49,14 @@ def capture_arrays(track_dir, cameras=CAMERAS, metadata=None):
             raise ValueError('capture timestamps must increase in frame order')
         output[camera] = captured
     return output
+
+
+def capture_offsets(track_dir, cameras=CAMERAS):
+    requested = tuple(dict.fromkeys(('f',) + tuple(cameras)))
+    captured = capture_arrays(track_dir, cameras=requested)
+    if any(len(values) != len(captured['f']) for values in captured.values()):
+        raise ValueError('all camera frames must align by index')
+    return {camera: (captured[camera] - captured['f']) * 1e-9 for camera in cameras}
 
 
 def extract(track_dir, output):

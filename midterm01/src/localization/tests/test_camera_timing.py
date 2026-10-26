@@ -7,7 +7,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
-from camera_timing import capture_arrays, read_capture_times
+from camera_timing import capture_arrays, capture_offsets, read_capture_times
 
 
 class CameraTimingTest(unittest.TestCase):
@@ -50,6 +50,19 @@ class CameraTimingTest(unittest.TestCase):
             arrays = capture_arrays(root)
             np.testing.assert_array_equal(arrays['fl'] - arrays['f'], [2, 2])
             np.testing.assert_array_equal(arrays['fr'] - arrays['f'], [-13, -13])
+
+    def test_side_only_offsets_still_reference_front_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = capture_offsets(self.make_track(directory), cameras=('fr',))
+            self.assertEqual(set(result), {'fr'})
+            np.testing.assert_allclose(result['fr'], [-13e-9, -13e-9], rtol=1e-12, atol=0)
+
+    def test_different_camera_lengths_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_track(directory)
+            (root / 'Track_images' / 'Track_fl_images' / '00001_ts_300.jpg').unlink()
+            with self.assertRaises(ValueError):
+                capture_offsets(root)
 
     def test_empty_camera_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

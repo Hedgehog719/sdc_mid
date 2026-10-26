@@ -302,6 +302,8 @@ python3 tools/camera_timing.py /root/data/Track3
 
 這解釋為何直接用檔名差值的同步不能無條件跨軌複製。metadata 工具修正本身沒有改定位結果；正式 capture-time 同步仍待獨立 live matching 驗證。
 
+`camera_timing.capture_offsets()` 已提供相對前相機 header 的精確秒偏移；即使只請求側相機也保留正確前相機參照，幀數不一致則拒絕。相關測試增加到 8 項，T1 3011／T2 3299／T3 3142 幀的有限值與前相機零偏移檢查通過；定位入口尚未啟用此函式。
+
 **T2 第一階段實測（前 600 幀、phase 0，43 筆留出，僅本地參考）**：
 
 | 模型 | 位置 RMSE m | 前向 RMSE m | 橫向 RMSE m |
