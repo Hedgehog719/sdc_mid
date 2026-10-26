@@ -15,6 +15,10 @@ frame only.
 
 usage: hyp_select.py select <N> <offsets a,b,..> <hyp.csv:hyp_debug.csv> ...   -> prints the winning index at frame N
        hyp_select.py combine <out.csv> <N> <winner_full.csv> <offsets a,b,..> <hyp.csv:hyp_debug.csv> ...
+    hyp_select.py combine_mean <out.csv> <N> <winner_full.csv> <offsets a,b,..> <hyp.csv:hyp_debug.csv> ...
+
+combine_mean uses the per-frame posterior mean of position and circular mean of heading instead of hard MAP output;
+the full run still continues the MAP hypothesis at N. Weights at frame k use only the likelihood accumulated to k.
 """
 import sys
 
@@ -37,6 +41,16 @@ def choice(S, offsets):
     return np.array([int(next(h for h in order if post[h, k] >= best[k] - MARGIN)) for k in range(S.shape[1])])
 
 
+def posterior_mean(S, offsets, poses):
+    post = S - 0.5 * (np.asarray(offsets, float)[:, None] / PRIOR_SD) ** 2
+    weights = np.exp(post - post.max(axis=0))
+    weights /= weights.sum(axis=0)
+    result = (weights[..., None] * poses).sum(axis=0)
+    result[:, 2] = np.arctan2((weights * np.sin(poses[:, :, 2])).sum(axis=0),
+                              (weights * np.cos(poses[:, :, 2])).sum(axis=0))
+    return result
+
+
 if __name__ == '__main__':
     mode = sys.argv[1]
     if mode == 'select':
@@ -56,8 +70,12 @@ if __name__ == '__main__':
         H = [pd.read_csv(c) for c, _ in pairs]
         F = pd.read_csv(full)
         R = F.copy()
-        for k in range(n):
-            R.iloc[k, 1:] = H[ch[k]].iloc[k, 1:].values
+        if mode == 'combine_mean':
+            R.iloc[:n, 1:] = posterior_mean(S, offs, np.array([h.iloc[:n, 1:].values for h in H]))
+        else:
+            for k in range(n):
+                R.iloc[k, 1:] = H[ch[k]].iloc[k, 1:].values
         R.to_csv(out, index=False)
         sw = int(np.sum(ch[1:] != ch[:-1]))
-        sys.stderr.write(f'frames 0-{n - 1}: hypothesis per frame (switches {sw}), final {ch[n - 1]}; frames {n}+: full run -> {out}\n')
+        estimator = 'posterior mean' if mode == 'combine_mean' else 'MAP'
+        sys.stderr.write(f'frames 0-{n - 1}: {estimator} (MAP switches {sw}), final {ch[n - 1]}; frames {n}+: full run -> {out}\n')

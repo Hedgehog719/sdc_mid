@@ -90,10 +90,15 @@ case $TR in
       # instead of 60 (for the lateral direction they caused a 1 m wrong lock in the T1 rehearsal)
   *) echo "track must be T1, T2 or T3"; exit 1 ;;
 esac
+case ${SDC_HYP_ESTIMATOR:-map} in
+  map) COMBINE=combine ;;
+  mean) COMBINE=combine_mean ;;
+  *) echo "SDC_HYP_ESTIMATOR must be map or mean"; exit 1 ;;
+esac
 P="$P ${SDC_LOC_EXTRA:-}"
 printf '%s\n' "$COMMON $P" > "$W/args.txt"
-printf 'SDC_CAM_SYNC=%s\nSDC_CAM_SYNC_YAW=%s\nSDC_ROT_FIX=%s\n' \
-  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" > "$W/environment.txt"
+printf 'SDC_CAM_SYNC=%s\nSDC_CAM_SYNC_YAW=%s\nSDC_ROT_FIX=%s\nSDC_HYP_ESTIMATOR=%s\n' \
+  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" "${SDC_HYP_ESTIMATOR:-map}" > "$W/environment.txt"
 
 echo "[$(date +%H:%M:%S)] 1. map and sensor data"
 [ -f "$TD/map.npy" ] || python3 tools/map_to_npy.py "$TD/map.pcd" "$TD/map.npy"
@@ -134,7 +139,7 @@ if [ "$TR" = T3 ]; then
   OB=$(echo $HYP | cut -d' ' -f$((BEST + 1)))
   echo "heading hypothesis $OB deg selected at frame $NH ($(cat $W/hyp_select.log))"
   $LOC $W/full.csv --vo $CACHE/vo.npz $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
-  python3 tools/hyp_select.py combine "$OUT" $NH $W/full.csv $OFFS $PAIRS 2>> $W/hyp_select.log
+  python3 tools/hyp_select.py "$COMBINE" "$OUT" $NH $W/full.csv $OFFS $PAIRS 2>> $W/hyp_select.log
   tail -n 1 $W/hyp_select.log
 else
   $LOC "$OUT" --vo "$CACHE/vo.npz" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1

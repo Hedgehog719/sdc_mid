@@ -63,6 +63,8 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 
 執行設定會保存到實驗目錄的 `args.txt`、`environment.txt`；`SDC_LOC_EXTRA` 可傳入其他濾波器實驗參數。輸出目錄在計算前建立。
 
+`SDC_HYP_ESTIMATOR=mean` 可實驗起點航向假設的逐幀後驗平均（位置加權平均、航向圓周平均），取代硬式 MAP 輸出。權重只用累積到當幀的量測似然與原本的 2° 航向先驗；第 600 幀仍保留 MAP 假設繼續定位。預設 `map` 不變；測試用 `python3 -m unittest discover -s tests -v`。
+
 輸出是 Kaggle 格式 `idx,x,y,yaw`（yaw 單位 rad，範圍 (−π, π]，和助教 `processing_codes/txt_to_idx_x_y_yaw.py` 的 atan2 相同；濾波器內部的航向是連續的，Track03 在第 2458 幀轉過 180°，輸出時才換回這個範圍）。每個步驟的輸出已存在時會跳過，所以中斷後可以接著跑。
 
 | 步驟 | 程式 | 輸出 |
