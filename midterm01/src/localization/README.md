@@ -53,6 +53,16 @@ bash tools/run_online.sh /root/data/Track3 T3    # -> work/runs/T3/T3_online.csv
 
 前向量測的實驗規則不再寫死在共用濾波器：`--relaxed_sharp_f 0.012 --relaxed_sharp_from 600` 可啟用後段較弱的匹配，`--fwd_jump_gate 0.7 0.25` 可啟用鎖定時的大位移弱峰值拒絕；兩者預設關閉，便於分別比較。
 
+可重現的獨立實驗（地圖／VO 快取仍共用 `work/runs/T3/`，輸出與參數紀錄不覆寫舊實驗）：
+
+```bash
+SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
+   SDC_RUN_DIR=work/runs/T3_near_sync \
+   bash tools/run_online.sh /root/data/Track3 T3
+```
+
+執行設定會保存到實驗目錄的 `args.txt`、`environment.txt`；`SDC_LOC_EXTRA` 可傳入其他濾波器實驗參數。輸出目錄在計算前建立。
+
 輸出是 Kaggle 格式 `idx,x,y,yaw`（yaw 單位 rad，範圍 (−π, π]，和助教 `processing_codes/txt_to_idx_x_y_yaw.py` 的 atan2 相同；濾波器內部的航向是連續的，Track03 在第 2458 幀轉過 180°，輸出時才換回這個範圍）。每個步驟的輸出已存在時會跳過，所以中斷後可以接著跑。
 
 | 步驟 | 程式 | 輸出 |
