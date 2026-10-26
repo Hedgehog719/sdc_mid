@@ -407,5 +407,5 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | stop_soft | `--still_meas 3 --yaw_soft_peak 0.2` | 0.22 | 57677040 | SubmissionStatus.COMPLETE | `t3_batch_stop_soft.csv` |
 | gyro_heading | `--gyro_heading --gyro_bias -0.266065785` | 0.24 | 57677706 | SubmissionStatus.COMPLETE | `t3_batch_gyro_heading.csv` |
 | capture_header | `--yaw_soft_peak 0.2` | 0.25 | 57678479 | SubmissionStatus.COMPLETE | `t3_batch_capture_header.csv` |
-| vo_capture_dt | `--vo work/runs/T3/vo_capture_dt.npz --yaw_soft_peak 0.2` | pending | 57679196 | SubmissionStatus.PENDING | `t3_batch_vo_capture_dt.csv` |
+| vo_capture_dt | `--vo work/runs/T3/vo_capture_dt.npz --yaw_soft_peak 0.2` | 0.31 | 57679196 | SubmissionStatus.COMPLETE | `t3_batch_vo_capture_dt.csv` |
 <!-- overnight-results:end -->
