@@ -190,11 +190,20 @@ class MarkingMap:
         return P
 
 
+def rot_z_to(n):
+    z = np.array([0.0, 0.0, 1.0])
+    v = np.cross(z, n)
+    s = np.linalg.norm(v)
+    if s < 1e-9:
+        return np.eye(3)
+    from scipy.spatial.transform import Rotation
+    return Rotation.from_rotvec(v / s * np.arcsin(s)).as_matrix()
+
+
 def vehicle_frame(P, pose, height_fn, cam_height=1.5):
     """World points -> vehicle frame (x fwd, y left, z up; camera reference at the origin, road -cam_height below
     it), with the road tilt under the vehicle from the map ground (as ImageBEV3D)."""
     from scipy.spatial.transform import Rotation
-    from register import rot_z_to
     x, y, yaw = pose
     c, s = np.cos(yaw), np.sin(yaw)
     ox, oy = np.meshgrid(np.linspace(-4, 4, 9), np.linspace(-2, 2, 5))
