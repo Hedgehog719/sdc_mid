@@ -6,10 +6,22 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
-from validate_cross_track import evaluate_holdout
+from validate_cross_track import evaluate_holdout, variant_options
 
 
 class HoldoutEvaluationTest(unittest.TestCase):
+    def test_variant_options_keep_controls_separate(self):
+        self.assertEqual(variant_options('T1', 'baseline'), (False, False, ''))
+        self.assertEqual(variant_options('T1', 'translation'), (True, False, ''))
+        sync, yaw, extra = variant_options('T1', 'gnss_bias')
+        self.assertFalse(sync or yaw)
+        self.assertIn('--gnss_bias_sd 0.25', extra)
+        self.assertNotIn('--gyro_heading', extra)
+        sync, yaw, extra = variant_options('T2', 'gnss_bias_heading')
+        self.assertTrue(sync and yaw)
+        self.assertIn('--gyro_bias -0.293533891', extra)
+        self.assertIn('--gnss_bias_tau 3', extra)
+
     def test_causal_extrapolation_uses_only_previous_pose(self):
         times = np.array([0, 1_000_000_000, 2_000_000_000])
         debug = pd.DataFrame({'x': [0.0, 2.0, 999.0], 'y': [0.0, 0.0, 999.0],

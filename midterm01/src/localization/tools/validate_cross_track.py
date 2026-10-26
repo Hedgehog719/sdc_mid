@@ -14,6 +14,21 @@ from overnight_experiments import core_digest, snapshot_runner
 from submit_guarded import check_deadline
 
 
+VARIANTS = ['baseline', 'translation', 'se2', 'gyro_heading', 'gnss_bias', 'gnss_bias_heading']
+
+
+def variant_options(track, variant):
+    sync = variant not in ('baseline', 'gnss_bias')
+    yaw = variant in ('se2', 'gyro_heading', 'gnss_bias_heading')
+    extra = ''
+    if variant in ('gyro_heading', 'gnss_bias_heading'):
+        bias = '-0.263836007' if track == 'T1' else '-0.293533891'
+        extra += f' --gyro_heading --gyro_bias {bias}'
+    if variant in ('gnss_bias', 'gnss_bias_heading'):
+        extra += ' --gnss_bias_sd 0.25 --gnss_bias_tau 3'
+    return sync, yaw, extra
+
+
 def evaluate_holdout(frame_times, debug, samples):
     frame_times = np.asarray(frame_times, dtype=np.int64)
     if len(frame_times) != len(debug) or np.any(np.diff(frame_times) <= 0):
@@ -41,7 +56,7 @@ def evaluate_holdout(frame_times, debug, samples):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--tracks', nargs='+', choices=['T1', 'T2'], default=['T1', 'T2'])
-    parser.add_argument('--variants', nargs='+', choices=['baseline', 'translation', 'se2', 'gyro_heading'],
+    parser.add_argument('--variants', nargs='+', choices=VARIANTS,
                         default=['baseline', 'translation', 'se2', 'gyro_heading'])
     parser.add_argument('--frames', type=int, default=600)
     parser.add_argument('--phase', type=int, choices=[0, 1], default=0)
@@ -50,7 +65,8 @@ def main():
     from common import ply_frames
     package = Path(__file__).resolve().parents[1]
     os.chdir(package)
-    results = []
+    summary = Path(f'work/runs/cross_track_validation_p{arguments.phase}.json')
+    results = json.loads(summary.read_text()) if summary.exists() else []
     for track in arguments.tracks:
         folder = 'Track' + track[1:]
         for variant in arguments.variants:
@@ -60,13 +76,11 @@ def main():
             snapshot = snapshot_runner(package, package / relative)
             digest = core_digest(package)
             extra = f'--gnss_stride 2 --gnss_phase {arguments.phase} --frames {arguments.frames}'
-            if variant == 'gyro_heading':
-                bias = '-0.263836007' if track == 'T1' else '-0.293533891'
-                extra += f' --gyro_heading --gyro_bias {bias}'
+            sync, yaw, model_options = variant_options(track, variant)
+            extra += model_options
             environment = os.environ.copy()
             environment.update(SDC_RUN_DIR=str(relative), SDC_PACKAGE_DIR=str(package), SDC_LOC_EXTRA=extra,
-                               SDC_CAM_SYNC='0' if variant == 'baseline' else '1',
-                               SDC_CAM_SYNC_YAW='1' if variant in ('se2', 'gyro_heading') else '0')
+                               SDC_CAM_SYNC='1' if sync else '0', SDC_CAM_SYNC_YAW='1' if yaw else '0')
             print(f'START {track} {variant} phase {arguments.phase}', flush=True)
             with (relative / 'run.log').open('w') as log:
                 subprocess.run(['bash', str(snapshot), '/root/data/' + folder, track], env=environment,
@@ -79,8 +93,8 @@ def main():
             report = dict(track=track, variant=variant, phase=arguments.phase, frames=len(debug),
                           core_sha256=digest, **evaluate_holdout(times, debug, samples))
             (relative / 'holdout.json').write_text(json.dumps(report, indent=2) + '\n')
+            results = [entry for entry in results if (entry['track'], entry['variant']) != (track, variant)]
             results.append(report)
-            summary = Path(f'work/runs/cross_track_validation_p{arguments.phase}.json')
             summary.write_text(json.dumps(results, indent=2) + '\n')
             print(json.dumps(report), flush=True)
     print('DONE local held-out GNSS validation; no Kaggle uploads; GNSS is not hidden ground truth', flush=True)

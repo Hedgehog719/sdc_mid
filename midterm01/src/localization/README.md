@@ -247,6 +247,19 @@ python3 tools/validate_cross_track.py --frames 600 --phase 0 \
 
 對 T1／T2 依序跑 baseline、translation、SE(2)、gyro-heading 四組（共八組），每組保存獨立輸出、快照與 `holdout.json`，累積摘要寫入 `work/runs/cross_track_validation_p0.json`。評估樣本與濾波器 GNSS 子集互斥；每個 GNSS 時刻只用其之前最後一幀的位姿／速度做短時間外推，不用後一幀內插。相鄰 GNSS 仍可能有時間相關偏差，所以改善只作本地模型篩選，不能當作隱藏真值準確度。腳本沒有 Kaggle 指令，不消耗提交額度。先前臨時長命令未產生完整摘要，不列為完成成果。
 
+額外本地模型可用 `--variants gnss_bias gnss_bias_heading`：前者只啟用已存在的因果 GNSS 偏差狀態（σ=0.25 m、τ=3 s），後者再加 SE(2) 與新航向模型。兩組是不同因子的對照，不將 GNSS 偏差狀態套到沒有 GNSS 的 T3。續跑會保留摘要裡既有的其他模型結果，不因只重跑一個子集而清掉舊紀錄。
+
+**T1 第一階段實測（前 600 幀、phase 0，43 筆留出，僅本地參考）**：
+
+| 模型 | 位置 RMSE m | 前向 RMSE m | 橫向 RMSE m |
+|---|---:|---:|---:|
+| baseline | 0.697875 | 0.560897 | 0.415239 |
+| translation | 0.703717 | 0.569808 | 0.412961 |
+| SE(2) | 0.698762 | 0.565543 | 0.410402 |
+| gyro-heading + SE(2) | 0.689995 | 0.554036 | 0.411264 |
+
+新航向模型在 25/43 個共同時刻的距離較小，四個連續 GNSS 子區段 RMSE 均略降；平均成對距離差 −0.00613 m。幅度很小，受 GNSS 時間相關偏差影響，不能當作統計顯著或 Kaggle 改善。T2 對照、反相留出及全長驗證尚待完成，尚未消耗兩軌提交額度。
+
 ### 6.6 Autonomous Batch Results
 
 Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks before guarded upload. Scores below are Kaggle public scores, not local residuals.
