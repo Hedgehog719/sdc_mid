@@ -246,3 +246,13 @@ python3 tools/validate_cross_track.py --frames 600 --phase 0 \
 ```
 
 對 T1／T2 依序跑 baseline、translation、SE(2)、gyro-heading 四組（共八組），每組保存獨立輸出、快照與 `holdout.json`，累積摘要寫入 `work/runs/cross_track_validation_p0.json`。評估樣本與濾波器 GNSS 子集互斥；每個 GNSS 時刻只用其之前最後一幀的位姿／速度做短時間外推，不用後一幀內插。相鄰 GNSS 仍可能有時間相關偏差，所以改善只作本地模型篩選，不能當作隱藏真值準確度。腳本沒有 Kaggle 指令，不消耗提交額度。先前臨時長命令未產生完整摘要，不列為完成成果。
+
+### 6.6 Autonomous Batch Results
+
+Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks before guarded upload. Scores below are Kaggle public scores, not local residuals.
+
+<!-- overnight-results:begin -->
+| Profile | Extra Options | Public | Ref | Status | File |
+| --- | --- | --- | --- | --- | --- |
+| conditioned_init | `--init_pos_per_hyp` |  |  | validated | `t3_batch_conditioned_init.csv` |
+<!-- overnight-results:end -->
