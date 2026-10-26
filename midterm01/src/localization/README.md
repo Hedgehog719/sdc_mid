@@ -300,6 +300,22 @@ python3 tools/camera_timing.py /root/data/Track3
 
 已建立尚未提交的單因子診斷輸入 `work/runs/T3/vo_capture_dt.npz`：3141 個 `(k−1,k)` 對的 j／k／fwd／lat／resp 與原快取逐值一致，只把 dt 換為該兩幀 header 差並重算 speed；不改影像匹配位移、輸出時鐘或軌跡。原快取 SHA-256 `55a718754c67fb95a75e8d328549e34ba7eaea86476941389edfdb14153a1743`，診斷快取 `a3708b00e370d045a1066a62ff9130b2728092de967504dcebcac8cb988260dc`，JSON 保存轉換依據。此候選在 header 實驗最終評分前記錄，若測試，只用同幀對已可得曝光時間、保持其他模型固定，需全長／前綴／額度／截止檢查，不視為已採用改善。
 
+**05:10 正式化的最後單因子對照**：`camera_timing.retime_vo_pairs()`／CLI 已加入相鄰整數索引、有限位移／品質、單調且正時間間隔檢查；保留來源陣列不變，不修改原 `vo.npz`。時間工具相關 13 項 Docker 測試通過，包含更改未來曝光時間不能改先前 pair 的 dt／speed。重現輸入：
+
+```bash
+python3 tools/camera_timing.py /root/data/Track3 \
+   --vo work/runs/T3/vo.npz --vo-out work/runs/T3/vo_capture_dt.npz
+```
+
+單一全流程入口（主機執行，使用本日最後一次 T3 額度，尚未提交前先通過完整驗證）：
+
+```bash
+python3 midterm01/src/localization/tools/overnight_experiments.py \
+   --profiles vo_capture_dt --deadline 2026-10-27T08:00:00+08:00 --reserve 0
+```
+
+該 profile 明確 `SDC_CAM_CAPTURE=0`，保留既有最佳的側相機 receive-offset 模型，只覆寫 `--vo` 為新時間分母快取，避免兩個因素混用。執行前自動重建／保存 JSON，記錄實際 VO SHA-256；核心或輸入快取在運算期間改變都拒絕提交。仍需五假設、3142 幀、600 幀因果前綴、CSV 與八點硬截止／90 秒 upload timeout。即使退步也不覆蓋最佳 0.22；此後不借用午夜後額度、不再開新 T3 參數掃描。
+
 跨軌抽取進一步發現 **檔名慣例混用**：T1／T2 前相機檔名是 receive time，兩個側相機則是 header capture time；T3 三台皆是 receive time。T1 的 3011 個側相機檔名全部不匹配 receive，但全部精確匹配 header，不能當成缺幀，也不能用最近訊息猜測。工具現按每相機「全量精確匹配」識別兩種慣例，模糊、空或部分匹配拒絕；共 6 項時間對齊測試通過。T1／T2 分別 3011／3299 幀全部配對成功。
 
 | Track | fl−f capture 中位 ms | fr−f capture 中位 ms |

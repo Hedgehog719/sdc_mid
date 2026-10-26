@@ -22,6 +22,7 @@ PROFILES = {
     'stop_soft': '--still_meas 3 --yaw_soft_peak 0.2',
     'gyro_heading': '--gyro_heading --gyro_bias -0.266065785 --yaw_soft_peak 0',
     'capture_header': '--yaw_soft_peak 0.2',
+    'vo_capture_dt': '--vo work/runs/T3/vo_capture_dt.npz --yaw_soft_peak 0.2',
 }
 OFFSETS = ('0', '-1.5', '1.5', '-3', '3')
 COMPETITION = 'sdc-2026-localization-track-03'
@@ -139,6 +140,14 @@ def main():
         candidate = package / 'submissions' / 'online' / f't3_batch_{profile}.csv'
         if candidate.exists():
             raise RuntimeError(f'refuse duplicate candidate filename: {candidate}')
+        if profile == 'vo_capture_dt':
+            with (directory / 'timing_preprocess.log').open('w') as stream:
+                subprocess.run(['docker', 'exec', '-w', '/root/midterm/src/localization', arguments.container,
+                                'python3', 'tools/camera_timing.py', '/root/data/Track3',
+                                '--vo', 'work/runs/T3/vo.npz', '--vo-out', 'work/runs/T3/vo_capture_dt.npz'],
+                               stdout=stream, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, check=True)
+        vo_input = package / 'work' / 'runs' / 'T3' / ('vo_capture_dt.npz' if profile == 'vo_capture_dt' else 'vo.npz')
+        vo_digest = hashlib.sha256(vo_input.read_bytes()).hexdigest()
         print(f'START {profile}; quota {remaining}; revision {revision}', flush=True)
         command = ['docker', 'exec', '-w', '/root/midterm/src/localization', '-e', 'SDC_CAM_SYNC=1',
                    '-e', 'SDC_CAM_SYNC_YAW=1', '-e', 'SDC_HYP_WORKERS=1', '-e', f'SDC_RUN_DIR={relative}',
@@ -151,6 +160,8 @@ def main():
                            stdin=subprocess.DEVNULL, check=True)
         if core_digest(package) != source_digest:
             raise RuntimeError('core source changed during the run; refuse mixed-version submission')
+        if hashlib.sha256(vo_input.read_bytes()).hexdigest() != vo_digest:
+            raise RuntimeError('VO input changed during the run; refuse mixed-input submission')
         output = directory / 'T3_online.csv'
         validate_csv(output)
         winner = validate_prefix(directory)
@@ -158,6 +169,7 @@ def main():
         report = {'profile': profile, 'extra': PROFILES[profile], 'revision': revision,
                   'core_sha256': source_digest,
                   'capture_time_sync': profile == 'capture_header',
+                  'vo_input': str(vo_input.relative_to(package)), 'vo_input_sha256': vo_digest,
                   'arguments': shlex.split((directory / 'args.txt').read_text()),
                   'environment': dict(line.split('=', 1) for line in (directory / 'environment.txt').read_text().splitlines() if line),
                   'validation': {'output_rows': 3142, 'causal_prefix_frames': 600,
