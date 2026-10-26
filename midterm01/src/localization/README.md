@@ -179,6 +179,7 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 | `tools/overnight_experiments.py` | 固定有限候選、全長 Docker／前綴驗證、保留額度、逐組歸檔與 commit/push |
 | `tools/validate_cross_track.py` | T1／T2 固定 GNSS 留出、腳本快照、逐組保存摘要；沒有上傳功能 |
 | `tools/camera_timing.py` | 抽取 H.265 影像 header 時間、按檔名到達時間精確整數對齊，不做缺失內插 |
+| `tools/gnss_heading.py` | 尚待整合的弱航向先驗：到達時間、過期、一次使用、重複與相關間隔控制 |
 | `tests/test_camera_sync.py` | 平移相容、旋轉方向、遮罩、拍攝座標逆運算、當前幀限制 |
 | `tests/test_hyp_select.py` | 權重、±π 航向、數值穩定、因果前綴 |
 | `tests/test_submit_guarded.py` | 時區、07:58／08:00 拒絕、無效 CSV |
@@ -186,6 +187,7 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 | `tests/test_overnight_experiments.py` | 批次的因果前綴一致、拒絕被改寫前綴、拒絕不完整假設 |
 | `tests/test_cross_track_validation.py` | 留出評估只外推前一幀、度／弧度及橫向誤差、無重疊拒絕 |
 | `tests/test_camera_timing.py` | 精確 metadata 配對、缺失拒絕、拍攝／到達時間順序 |
+| `tests/test_gnss_heading.py` | 未來訊息不得改 frame0、過期／無效拒絕、一次額度、重複及 ±π 等價 |
 | `submissions/online/t3_online_*.csv` | 保留實際提交的產物，不用手工修正軌跡 |
 
 Docker：`sdc_midterm01`，工作目錄 `/root/midterm/src/localization`。執行 `python3 -m unittest discover -s tests -v`；同步候選完整 3142 幀，檢查欄位、連續索引、有限數值及 yaw ∈ [−π, π]。近距候選前 600 幀與完整執行前綴一致（1e−12 容忍度）。編輯器 diagnostics 與 Pylance 語法檢查亦已檢查；這些不是隱藏真值的正確性保證。
@@ -267,6 +269,10 @@ python3 tools/validate_cross_track.py --frames 600 --phase 0 \
 **GNSS 航向的待驗證缺口**：提供且允許使用的 `/localizer_node/gnss_pose` 已有有效、會變動的 yaw 四元數，但目前濾波器只讀 x／y。T1／T2 相對既有因果輸出航向的差值分別約 mean −0.359／+0.904°、std 1.859／1.461°；不是精確真值，也不是單純逐對 GPS 位移角度，不能直接覆蓋濾波器航向。競賽說明允許 T1／T2 GNSS pose sensor fusion，T3 不提供 GNSS，不能套用此資料。
 
 T2 起點前 5 秒的提供航向固定 −15.2055°，現有 frame0 為 −20.6901°；但第一筆 GNSS 在 frame0 之後才到，**不能讀第一筆之後的訊息倒回改 frame0**。可考慮在第一筆真正到達時做一次弱航向先驗，或明確建模重複／時間相關量測，不能把停車時同一個持續不變航向反覆當獨立樣本。T1 frame0 前最近 GNSS 約 14.4 ms，起點 5 秒 GNSS yaw std 1.77°；兩軌需各自驗證。此項尚未實作，待核心凍結批次結束後處理。
+
+弱先驗的獨立支援模組 `gnss_heading.py` 已準備，但尚未接入 EKF：無效／零四元數變成 invalid，不當成 0°；樣本必須已到達、未過期，一次模式只消耗第一筆有效樣本，連續模式至少間隔 2 秒且拒絕完全相同的持續航向。6 項 Docker 回歸測試通過，包含第一次到達晚於 frame0、±π 等價與過期／無效樣本不消耗額度；尚不能宣稱任何 T1／T2 分數改善。
+
+**0.22 方法的量測對照**：原 SE(2) 與 soft-heading 完整方法的勝出 offset 分別 −1.5°／0°，不能當作純單濾波器消融。前 600 幀共同 199 次量測的 lane-heading innovation RMS 0.8071 → 0.6333°、near-heading 0.4773 → 0.3456°、near-lateral 0.05238 → 0.04815 m；全長航向分別 0.8132 → 0.7474°、0.4167 → 0.3668°。部分前向／橫向指標未改善，起步最大單步變化仍 1.127 m；實際採用理由以已確認的 Kaggle public 0.22 與完整因果模型驗證為準，不宣稱 private 已知或所有殘差全面更好。
 
 **已否定的起點側傾捷徑**：T3 frame0 IMU roll 減地圖道路 roll，在錯誤粗航向下為 0.637°，在匹配後航向下只剩 0.065°。不能因初值看起來有側傾就直接初始化；這會把錯誤航向造成的地圖平面旋轉誤認成車身姿態。本輪不採用。
 
