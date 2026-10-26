@@ -1,0 +1,12 @@
+{
+  "profile": "gyro_heading",
+  "extra": "--gyro_heading --gyro_bias -0.266065785",
+  "revision": "d020ad1107d5dd08393f8eb36f34519d90574219",
+  "core_sha256": "66e267af2bb24fe71c39ee9ecf1731822333e7c4a7574b26c9953a0fc27eba91",
+  "deadline": "2026-10-27T08:00:00+08:00",
+  "winner_offset": "0",
+  "sha256": "c5c9d04a70641dad03cb75aca754df3f9fce83797db29e25c44ce4e1818ff0b9",
+  "status": "validated",
+  "score": "",
+  "ref": ""
+}
