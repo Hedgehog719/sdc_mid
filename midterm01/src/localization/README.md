@@ -321,6 +321,21 @@ T2 這一階段不支持直接採用上述修改；T1 小幅改善也不能外�
 
 **GNSS 留出不是獨立真值**：T1 phase0 的 43 個留出樣本中位時間間隔約 0.500 s；baseline 前向／橫向殘差 lag-1 correlation 約 0.964／0.904，GNSS bias 模型仍約 0.943／0.890。不能把 43 筆當成 43 次獨立準確度證據，也不能以小幅平均差宣稱統計顯著；後續保留反相、分段、全長與實際 Kaggle 驗證。
 
+**第二階段跨軌本地結果（均前 600 幀，不是 Kaggle 分數）**：
+
+| Track／模型 | phase0 位置 RMSE m | phase1 位置 RMSE m | 結論 |
+|---|---:|---:|---|
+| T1 baseline | 0.697875 | 0.730889 | 原設定控制 |
+| T1 gyro-heading + SE(2) | 0.689995 | 0.726159 | 兩拆分均小幅改善，仍需全長 |
+| T1 GNSS bias only | 0.634929 | 0.663155 | 兩拆分均約 9% 改善，進入全長驗證 |
+| T1 GNSS bias + gyro-heading | 0.663796 | 未測 | 不優於 bias-only，暫不擴展 |
+| T2 baseline | 0.189316 | 0.226255 | 原設定控制 |
+| T2 gyro-heading + SE(2) | 0.205834 | 0.224127 | 不同拆分方向不一致，不直接採用 |
+| T2 GNSS bias only | 0.263233 | 未測 | 第一拆分明顯退步，不採用 |
+| T2 GNSS bias + gyro-heading | 0.273266 | 未測 | 第一拆分明顯退步，不採用 |
+
+phase0 每組 43 個留出，phase1 T1 43／T2 44 個。總計已完成八組初始對照、四組 bias 控制、四組 baseline／gyro 反相及一組 T1 bias 反相，共 17 組。T1 bias-only 的橫向平均殘差改變符號（phase0 −0.263 → +0.284 m），總誤差下降不代表每個偏差消失；全長仍須檢查。正在以全部合法 GNSS 跑 T1 600 幀／3011 幀兩次，確認前綴一致後才考慮單次 Kaggle 評分。T1／T2 本輪尚未提交，額度各保留 15 次。
+
 ### 6.6 Autonomous Batch Results
 
 Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks before guarded upload. Scores below are Kaggle public scores, not local residuals.
