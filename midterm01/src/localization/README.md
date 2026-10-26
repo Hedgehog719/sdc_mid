@@ -364,6 +364,10 @@ python3 midterm01/src/localization/tools/overnight_experiments.py \
 
 同時保留舊 `conditioned_init`／`gyro_heading` 的定義：批次參數明確傳入 `--yaw_soft_peak 0`，不因正式 runner 新預設而暗中改變歷史實驗。
 
+**新整合實測更新（05:00）**：T3 `capture_header` 全長／前綴通過，實際 Kaggle public **0.25**（57678479），差於 soft-heading 0.22，**不採用，`SDC_CAM_CAPTURE` 預設仍為 0**。正確 header 語義不保證在既有外參、地圖匹配與輸出時鐘下更準；完整方法勝出假設也由 offset 0° 變為 −1.5°，不能把 0.03 分差直接解讀成時間修正本身的公尺誤差。保留為可重現研究對照，不修改目前正式檔。T3 剩 2 次。
+
+新本地前 600 幀 phase0（非 Kaggle）：T1 一次弱航向 0.698479 m，對 baseline 0.697875 幾乎無改善；T1 header 同步 0.663700 m，值得反相檢查但不僅憑它採用。T2 一次弱航向 0.237969 m，差於 baseline 0.189316，暫不做全長提交；停車時 orientation 可能是持續舊方向，訊息到達新不代表方向資訊更新。T2 header 尚在計算；本輪 T2 未消耗提交額度，原 v19／正式 0.26 檔保持不變。
+
 失敗後只作模型診斷：相對原 v7（不是 ground truth），bias 候選前 0–299／300–599 幀的橫向差 RMS 約 0.403／0.766 m，600 幀後兩段約 0.070／0.068 m；前 300 幀 lane-yaw／VO accepted 都為 0。增加 GNSS bias 狀態可能讓初始航向與側向偏差在低可觀測區間互相吸收，即使相鄰留出 GNSS 較接近，也可能沿著錯誤模型解漂移。此分析不產生逐段修正量；後續若處理，應以因果的可觀測性與感測器品質控制模型自由度，不按 public 分數決定某幀後手動切換。
 
 ### 6.6 Autonomous Batch Results
