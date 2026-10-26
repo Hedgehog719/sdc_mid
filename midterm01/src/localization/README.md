@@ -29,6 +29,7 @@ pip3 install transformers           # SegFormer 道路分割（Dockerfile 之後
 我們使用的版本：Python 3.10、numpy 1.23.5、scipy 1.8、pandas 2.0、opencv 4.11、torch 2.11 (cu128)、transformers 5.20、ultralytics 8.4、rosbags 0.11。
 
 模型權重：
+
 - SegFormer-B2 Cityscapes：第一次執行時會從 Hugging Face 自動下載 `nvidia/segformer-b2-finetuned-cityscapes-1024-1024`。
 - YOLO11x-seg：ultralytics 會自動下載 `yolo11x-seg.pt`。也可以用 `YOLO_WEIGHTS=/path/yolo11x-seg.pt` 指定本機檔案。
 
@@ -68,7 +69,7 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 輸出是 Kaggle 格式 `idx,x,y,yaw`（yaw 單位 rad，範圍 (−π, π]，和助教 `processing_codes/txt_to_idx_x_y_yaw.py` 的 atan2 相同；濾波器內部的航向是連續的，Track03 在第 2458 幀轉過 180°，輸出時才換回這個範圍）。每個步驟的輸出已存在時會跳過，所以中斷後可以接著跑。
 
 | 步驟 | 程式 | 輸出 |
-|---|---|---|
+| --- | --- | --- |
 | 1. 地圖、感測器 | `map_to_npy.py`、`extract_bag.py` | `map.npy`、`map_intensity.npy`、`sensors/imu.csv`（`gnss.csv`） |
 | 2. 逐張影像 | `segment_road.py`（SegFormer）、`segment_vehicles.py`（YOLO） | `road/*.npz`、`masks/*.npz` |
 | 3. 標線地圖 | `marking_map.py ALL` | `work/runs/<T>/mk_D.npz`、`mk_S.npz` |
@@ -122,7 +123,7 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 ## 5. 檔案
 
 | 檔案 | 用途 |
-|---|---|
+| --- | --- |
 | `tools/run_online.sh` | 端到端執行（上表 5 個步驟） |
 | `tools/localize_online.py` | 線上 Kalman filter（最終定位） |
 | `tools/hyp_select.py` | Track03 起點航向假設的因果選擇 |
@@ -140,10 +141,12 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 
 **最新確認最佳：Kaggle public 0.22，達成 `<0.23`，提交 ID 57675838。** 檔案 `submissions/online/t3_batch_soft_heading.csv`，完整設定／核心雜湊／SHA-256／來源 revision 見同名 JSON。模型為原 SE(2) 因果流程加 `--yaw_soft_peak 0.2`：峰值 0.20–0.25 的航向採用較大的量測噪聲，不是硬丟棄，也不放寬所有位置修正。完整五假設與全長 live matching、600 幀前綴一致、3142 幀 CSV、截止及額度防護皆通過；以下較早「尚未達標」敘述是當時實驗進展，非目前最佳狀態。private 分數未知。
 
+**本輪收尾狀態（2026-10-27 05:39，Asia/Taipei）**：全部工作完成，沒有本輪定位 Python／Kaggle 提交程序或後續排程。最後 VO timing public 0.31（57679196），不採用；正式 T1／T2／T3 為 0.46／0.26／0.22。本日 UTC 提交核對：T1 2 次、T2 0 次、T3 15 次（其中本輪新增 12 次），沒有超過每日 15 次，也沒有借用午夜後額度。08:00 後不再提交；目前已提前停止本輪自動工作。正式 CSV 的列數、索引、有限值、wrapped yaw 與採用來源逐位元一致性均通過。
+
 先依感測器時間戳與本地幾何／innovation 驗證決定修改，再提交檢查；不對提交軌跡做離線修正。
 
 | 版本 | 修改 | Kaggle public | 提交 ID |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `T3_sync.csv`（既有） | 側相機平移同步 | 0.23 | 57636864 |
 | `t3_online_se2.csv` | 因果平移＋旋轉同步，恢復原前向門檻，完整 MAP 航向假設 | 0.23 | 57672334 |
 | `t3_online_mean.csv` | 同組 SE(2) 假設，前 600 幀改因果後驗平均 | 0.23 | 57672914 |
@@ -171,7 +174,7 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 ### 6.2 改動檔案與驗證
 
 | 檔案 | 修改 |
-|---|---|
+| --- | --- |
 | `tools/localize_online.py` | 門檻實驗參數、因果速度／角速度傳遞、可選近距同步、停車額度保留 |
 | `tools/bev.py` | SE(2) 影像 warp、相機拍攝座標逆轉換，共用平面運動模型 |
 | `tools/lane_single.py` | 傳遞當幀角速度，保留原本兩參數呼叫相容性 |
@@ -264,7 +267,7 @@ python3 tools/validate_cross_track.py --frames 600 --phase 0 \
 **T1 第一階段實測（前 600 幀、phase 0，43 筆留出，僅本地參考）**：
 
 | 模型 | 位置 RMSE m | 前向 RMSE m | 橫向 RMSE m |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | baseline | 0.697875 | 0.560897 | 0.415239 |
 | translation | 0.703717 | 0.569808 | 0.412961 |
 | SE(2) | 0.698762 | 0.565543 | 0.410402 |
@@ -316,10 +319,12 @@ python3 midterm01/src/localization/tools/overnight_experiments.py \
 
 該 profile 明確 `SDC_CAM_CAPTURE=0`，保留既有最佳的側相機 receive-offset 模型，只覆寫 `--vo` 為新時間分母快取，避免兩個因素混用。執行前自動重建／保存 JSON，記錄實際 VO SHA-256；核心或輸入快取在運算期間改變都拒絕提交。仍需五假設、3142 幀、600 幀因果前綴、CSV 與八點硬截止／90 秒 upload timeout。即使退步也不覆蓋最佳 0.22；此後不借用午夜後額度、不再開新 T3 參數掃描。
 
+**最後 VO timing 的實際結果**：全長、五假設、600 幀前綴、輸入／核心雜湊、CSV 及截止檢查全部通過，但 Kaggle public **0.31**（57679196），不優於 0.22，**不採用，不改原 `vo.npz` 或正式 runner 的 VO 預設**。真實曝光時間修正可能與現有 process time、既有校正、量測品質及起點假設耦合；此分數不提供逐幀誤差真值，不能據此對輸出平移或回填速度。本輪在既有預算內完成此事先記錄的單因子後停止，不再新增模型。
+
 跨軌抽取進一步發現 **檔名慣例混用**：T1／T2 前相機檔名是 receive time，兩個側相機則是 header capture time；T3 三台皆是 receive time。T1 的 3011 個側相機檔名全部不匹配 receive，但全部精確匹配 header，不能當成缺幀，也不能用最近訊息猜測。工具現按每相機「全量精確匹配」識別兩種慣例，模糊、空或部分匹配拒絕；共 6 項時間對齊測試通過。T1／T2 分別 3011／3299 幀全部配對成功。
 
 | Track | fl−f capture 中位 ms | fr−f capture 中位 ms |
-|---|---:|---:|
+| --- | ---: | ---: |
 | T1 | +6.952182 | +21.189413 |
 | T2 | −2.395117 | +20.704074 |
 | T3 | +1.292269 | −13.429226 |
@@ -331,7 +336,7 @@ python3 midterm01/src/localization/tools/overnight_experiments.py \
 **T2 第一階段實測（前 600 幀、phase 0，43 筆留出，僅本地參考）**：
 
 | 模型 | 位置 RMSE m | 前向 RMSE m | 橫向 RMSE m |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | baseline | 0.189316 | 0.096643 | 0.162790 |
 | translation | 0.191289 | 0.102690 | 0.161389 |
 | SE(2) | 0.191710 | 0.102478 | 0.162022 |
@@ -352,7 +357,7 @@ T2 這一階段不支持直接採用上述修改；T1 小幅改善也不能外�
 **第二階段跨軌本地結果（均前 600 幀，不是 Kaggle 分數）**：
 
 | Track／模型 | phase0 位置 RMSE m | phase1 位置 RMSE m | 結論 |
-|---|---:|---:|---|
+| --- | ---: | ---: | --- |
 | T1 baseline | 0.697875 | 0.730889 | 原設定控制 |
 | T1 gyro-heading + SE(2) | 0.689995 | 0.726159 | 兩拆分均小幅改善，仍需全長 |
 | T1 GNSS bias only | 0.634929 | 0.663155 | 兩拆分均約 9% 改善，進入全長驗證 |
@@ -409,3 +414,15 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | capture_header | `--yaw_soft_peak 0.2` | 0.25 | 57678479 | SubmissionStatus.COMPLETE | `t3_batch_capture_header.csv` |
 | vo_capture_dt | `--vo work/runs/T3/vo_capture_dt.npz --yaw_soft_peak 0.2` | 0.31 | 57679196 | SubmissionStatus.COMPLETE | `t3_batch_vo_capture_dt.csv` |
 <!-- overnight-results:end -->
+
+### 6.7 最終採用與後續
+
+| Track | 正式檔 | 採用來源 | 已確認 public | 本輪結論 |
+| --- | --- | --- | ---: | --- |
+| T1 | `submissions/final/result_1.csv` | `t1_online_v7.csv` | 0.46 | bias 退步、header 同分，保留原模型 |
+| T2 | `submissions/final/result_2.csv` | `t2_online_v19.csv` | 0.26 | 22 組跨軌對照中的 T2 新模型無穩健改善，不消耗提交額度 |
+| T3 | `submissions/final/result_3.csv` | `t3_batch_soft_heading.csv` | **0.22** | 達到 `<0.23`，保留較簡單的 SE(2)+soft-heading |
+
+最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
+
+後續合法研究重點不是再以排行榜掃逐段位移：先處理 clock convention／measurement age 與既有外參校正的一致性；用獨立幾何擾動與跨路段可觀測性驗證，不把高度相關 GNSS 留出當 ground truth；對 lane peak／sharpness／遮擋建立更可靠的量測噪聲模型；在訊息實際到達時因果處理，已輸出幀不回寫。T1／T2 的舊低分 RTS／leaderboard probing 結果不恢復使用。private 分數未知，不能宣稱已達到未公開評估的準確度。Kaggle 網站最終選擇未由本輪自動更改，需與正式候選一致；本輪沒有留下會在 08:00 後提交的工作。

@@ -14,7 +14,9 @@
 
 正式交付檔 [`result_3.csv`](midterm01/src/localization/submissions/final/result_3.csv) 已同步為該 0.22 檔，格式與 SHA-256 完全一致；重現參數與其他兩軌正式候選見 [final README](midterm01/src/localization/submissions/final/README.md)。
 
-本輪已完成前向門檻隔離、SE(2)／近距／曝光同步、後驗平均、停車額度、起點位置／航向耦合與固定 ensemble 等對照；較差候選不取代最佳檔，所有分數與負結果逐組記錄。T1／T2 已做 21 組本地對照及 T1 額外反相檢查；T1 的 GNSS bias 全長候選實際 0.59，不採用，正式仍是 0.46；T2 尚未提交，正式仍是 0.26。最後一個 T3 VO 曝光間隔單因子與 T1 header 全長正在驗證，尚不宣稱改善。
+**本輪已完成並停止自動提交（05:39 已確認所有工作結束）**。T3 最佳為 0.22；最後 VO 時間分母候選 0.31、固定 ensemble 0.23、header 同步 0.25，均不採用。T1 的兩個全長候選為 0.59／0.46，正式保留原 0.46；T2 未提交新模型，正式保留 0.26。三份正式檔皆通過格式、列數與來源 SHA-256 一致性檢查。
+
+已完成 22 組本地 GNSS 留出／反相對照及全部 **58 項 Docker 回歸測試**，並保存實際提交的 CSV／JSON、來源設定與失敗原因。本日 UTC 額度核對：T3 已用 15／15（本輪新增 12 次），T1 已用 2／15，T2 0／15；沒有排程重試或 08:00 後的新提交工作。
 
 分析依據、逐檔改動、驗證方法、實際提交 ID、失敗實驗、後續 T3 改進與 **T1／T2 合法提升方向** 均記錄在 [定位 README 第 6 節](midterm01/src/localization/README.md#6-t3-同步實驗2026-10-26)。所有更新提交到目前分支 `copilot/research-kaggle-competition`。
 
