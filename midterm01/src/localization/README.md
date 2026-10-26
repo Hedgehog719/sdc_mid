@@ -175,11 +175,13 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 | `tools/run_online.sh` | 隔離實驗輸出、重用前處理快取、保存參數與環境、可選假設估計方式 |
 | `tools/submit_guarded.py` | 驗證 CSV、明確時區截止與上傳前二次時間檢查 |
 | `tools/overnight_experiments.py` | 固定有限候選、全長 Docker／前綴驗證、保留額度、逐組歸檔與 commit/push |
+| `tools/validate_cross_track.py` | T1／T2 固定 GNSS 留出、腳本快照、逐組保存摘要；沒有上傳功能 |
 | `tests/test_camera_sync.py` | 平移相容、旋轉方向、遮罩、拍攝座標逆運算、當前幀限制 |
 | `tests/test_hyp_select.py` | 權重、±π 航向、數值穩定、因果前綴 |
 | `tests/test_submit_guarded.py` | 時區、07:58／08:00 拒絕、無效 CSV |
 | `tests/test_localize_options.py` | 停車額度跨偵測抖動保留、GNSS 子集隔離、起點位置依航向求解 |
 | `tests/test_overnight_experiments.py` | 批次的因果前綴一致、拒絕被改寫前綴、拒絕不完整假設 |
+| `tests/test_cross_track_validation.py` | 留出評估只外推前一幀、度／弧度及橫向誤差、無重疊拒絕 |
 | `submissions/online/t3_online_*.csv` | 保留實際提交的產物，不用手工修正軌跡 |
 
 Docker：`sdc_midterm01`，工作目錄 `/root/midterm/src/localization`。執行 `python3 -m unittest discover -s tests -v`；同步候選完整 3142 幀，檢查欄位、連續索引、有限數值及 yaw ∈ [−π, π]。近距候選前 600 幀與完整執行前綴一致（1e−12 容忍度）。編輯器 diagnostics 與 Pylance 語法檢查亦已檢查；這些不是隱藏真值的正確性保證。
@@ -232,6 +234,15 @@ python3 midterm01/src/localization/tools/overnight_experiments.py \
 
 **T2**：目前歷史候選為 v19（記錄 public 0.26）。優先改善起點靜止車陣中的航向可觀測性：保留靜止時的因果寬範圍重搜、品質加權及動態車輛遮罩，不用後續行駛方向倒推起點。保留已驗證有效的 road gate 與較寬 lane-heading noise（2.5°），用共同幀與 GNSS 留出檢查是否需要品質相關噪聲；不要把 T3 的 0.7° 直接套回。相機時間同步可獨立比較，但先核對左右相機偏差、近距一致性；以 T3 失敗實驗為警惕，物理模型更完整不代表目前校正下必然更準。
 
-T1／T2 以上是有既有程式與歷史依據的待驗證方向，**本輪尚未重跑或重新提交兩軌，不能宣稱它們分數已改善**。最終可用設定以各軌獨立 Docker 重跑、因果檢查和實際提交回報為準。
+T1／T2 以上是有既有程式與歷史依據的待驗證方向，**本輪尚未完成兩軌完整驗證或重新提交，不能宣稱它們分數已改善**。最終可用設定以各軌獨立 Docker 重跑、因果檢查和實際提交回報為準。
 
 留出測試設定：`SDC_LOC_EXTRA="--gnss_stride 2 --gnss_phase 0 --frames 600"` 只把偶數編號 GNSS 輸入濾波器，奇數編號保留在檔案供評估；反相驗證則用 `--gnss_phase 1`。預設 stride=1／phase=0 維持全部 GNSS。已用 Track1 的 440 筆樣本驗證預設逐值不變、兩子集無交集、無效參數拒絕。部分幀留出輸出不是正式提交檔，不能以其分數冒充 Kaggle 成績；GNSS 時間相關誤差仍使此指標不等於 ground truth。
+
+完整可重現的本地留出批次（容器內執行）：
+
+```bash
+python3 tools/validate_cross_track.py --frames 600 --phase 0 \
+   --deadline 2026-10-27T08:00:00+08:00
+```
+
+對 T1／T2 依序跑 baseline、translation、SE(2)、gyro-heading 四組（共八組），每組保存獨立輸出、快照與 `holdout.json`，累積摘要寫入 `work/runs/cross_track_validation_p0.json`。評估樣本與濾波器 GNSS 子集互斥；每個 GNSS 時刻只用其之前最後一幀的位姿／速度做短時間外推，不用後一幀內插。相鄰 GNSS 仍可能有時間相關偏差，所以改善只作本地模型篩選，不能當作隱藏真值準確度。腳本沒有 Kaggle 指令，不消耗提交額度。先前臨時長命令未產生完整摘要，不列為完成成果。
