@@ -378,5 +378,5 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | conditioned_init | `--init_pos_per_hyp` | 0.24 | 57675166 | SubmissionStatus.COMPLETE | `t3_batch_conditioned_init.csv` |
 | stop_soft | `--still_meas 3 --yaw_soft_peak 0.2` | 0.22 | 57677040 | SubmissionStatus.COMPLETE | `t3_batch_stop_soft.csv` |
 | gyro_heading | `--gyro_heading --gyro_bias -0.266065785` | 0.24 | 57677706 | SubmissionStatus.COMPLETE | `t3_batch_gyro_heading.csv` |
-| capture_header | `--yaw_soft_peak 0.2` | pending | 57678479 | SubmissionStatus.PENDING | `t3_batch_capture_header.csv` |
+| capture_header | `--yaw_soft_peak 0.2` | 0.25 | 57678479 | SubmissionStatus.COMPLETE | `t3_batch_capture_header.csv` |
 <!-- overnight-results:end -->
