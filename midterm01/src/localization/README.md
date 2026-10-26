@@ -390,6 +390,8 @@ python3 midterm01/src/localization/tools/overnight_experiments.py \
 
 T1 header 額外反相留出已完成：phase1 位置 RMSE 0.683824 m（baseline 0.730889），前向 0.524406、橫向 0.438878；phase0 0.663700（baseline 0.697875），兩拆分方向一致。現在只對此模型做全部 GNSS 的 600／3011 幀全長前綴驗證，未提交前不替換原 0.46 正式檔；不再把 T2 負結果模型拿去消耗額度。這一額外反相使本地短程對照合計 22 組。
 
+**T1 header 最終驗證**：`t1_capture_header.csv` 已完成 3011 幀 live matching、獨立 600 幀前綴及核心版本一致性檢查，Kaggle public **0.46**（57679143），與原 v7 相同。沒有證據顯示較低公開分數，因此保留較簡單的原 T1 預設及 `result_1.csv`，不因相同四捨五入分數推測 private 更好。實際參數、環境、影像 header metadata SHA-256、CSV SHA-256 與驗證在同名 JSON。T1 本輪提交 2 次（0.59 不採用、0.46 同分不替換），剩 13 次；T2 未提交、仍 15 次。接下來不再新增兩軌模型。
+
 失敗後只作模型診斷：相對原 v7（不是 ground truth），bias 候選前 0–299／300–599 幀的橫向差 RMS 約 0.403／0.766 m，600 幀後兩段約 0.070／0.068 m；前 300 幀 lane-yaw／VO accepted 都為 0。增加 GNSS bias 狀態可能讓初始航向與側向偏差在低可觀測區間互相吸收，即使相鄰留出 GNSS 較接近，也可能沿著錯誤模型解漂移。此分析不產生逐段修正量；後續若處理，應以因果的可觀測性與感測器品質控制模型自由度，不按 public 分數決定某幀後手動切換。
 
 ### 6.6 Autonomous Batch Results
