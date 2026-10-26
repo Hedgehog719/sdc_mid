@@ -783,7 +783,7 @@ if __name__ == '__main__':
             if D.get('still'):
                 if still_k0 is None:
                     still_k0, still_used = k, 0
-            else:
+            elif v >= 0.3:
                 still_k0 = None
             if ATT is not None and REPLAY is None:
                 # body attitude relative to the road (causal): IMU roll / pitch at the frame time minus the map road plane
