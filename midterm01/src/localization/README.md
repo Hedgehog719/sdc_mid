@@ -254,5 +254,5 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 <!-- overnight-results:begin -->
 | Profile | Extra Options | Public | Ref | Status | File |
 | --- | --- | --- | --- | --- | --- |
-| conditioned_init | `--init_pos_per_hyp` |  |  | validated | `t3_batch_conditioned_init.csv` |
+| conditioned_init | `--init_pos_per_hyp` | pending |  | submitted | `t3_batch_conditioned_init.csv` |
 <!-- overnight-results:end -->
