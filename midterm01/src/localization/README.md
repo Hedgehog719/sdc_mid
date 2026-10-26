@@ -294,6 +294,10 @@ python3 tools/camera_timing.py /root/data/Track3
 
 工具會建立可重算的 `sensors/camera_timing.csv` 並逐檔精確檢查。3 項 Docker 回歸測試已通過。定位核心尚未接入 header offset，避免污染目前凍結批次；完成後只比較相機相對曝光同步，不擅自改變 Kaggle frame 的輸出時間定義。
 
+同一時間語義問題也影響 VO 的速度分母：三軌 receive pair interval 減 capture pair interval 的 **RMS** 分別約 T1 0.980／T2 0.477／T3 1.041 ms（MAE 0.785／0.315／0.684 ms，兩者分開計算）。T3 最初接收間隔 11.7／48.3 ms 會把同一影像位移換成約 23.9／5.18 m/s；以各自曝光間隔診斷時約 7.81／6.89 m/s。這是速度量測時間定義，不是已知真實速度，不能用後續幀回填 frame0。
+
+已建立尚未提交的單因子診斷輸入 `work/runs/T3/vo_capture_dt.npz`：3141 個 `(k−1,k)` 對的 j／k／fwd／lat／resp 與原快取逐值一致，只把 dt 換為該兩幀 header 差並重算 speed；不改影像匹配位移、輸出時鐘或軌跡。原快取 SHA-256 `55a718754c67fb95a75e8d328549e34ba7eaea86476941389edfdb14153a1743`，診斷快取 `a3708b00e370d045a1066a62ff9130b2728092de967504dcebcac8cb988260dc`，JSON 保存轉換依據。此候選在 header 實驗最終評分前記錄，若測試，只用同幀對已可得曝光時間、保持其他模型固定，需全長／前綴／額度／截止檢查，不視為已採用改善。
+
 跨軌抽取進一步發現 **檔名慣例混用**：T1／T2 前相機檔名是 receive time，兩個側相機則是 header capture time；T3 三台皆是 receive time。T1 的 3011 個側相機檔名全部不匹配 receive，但全部精確匹配 header，不能當成缺幀，也不能用最近訊息猜測。工具現按每相機「全量精確匹配」識別兩種慣例，模糊、空或部分匹配拒絕；共 6 項時間對齊測試通過。T1／T2 分別 3011／3299 幀全部配對成功。
 
 | Track | fl−f capture 中位 ms | fr−f capture 中位 ms |
