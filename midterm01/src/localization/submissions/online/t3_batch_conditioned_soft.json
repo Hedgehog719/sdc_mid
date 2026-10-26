@@ -6,7 +6,7 @@
   "deadline": "2026-10-27T08:00:00+08:00",
   "winner_offset": "0",
   "sha256": "1a6bbd929c6499637f5427d102448d95504cf689536f2c264cfb3fadfe5c6f85",
-  "status": "validated",
-  "score": "",
+  "status": "submitted",
+  "score": "pending",
   "ref": ""
 }
