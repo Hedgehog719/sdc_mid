@@ -340,6 +340,8 @@ T2 這一階段不支持直接採用上述修改；T1 小幅改善也不能外�
 
 phase0 每組 43 個留出，phase1 T1 43／T2 44 個。總計已完成八組初始對照、四組 bias 控制、四組 baseline／gyro 反相及一組 T1 bias 反相，共 17 組。T1 bias-only 的橫向平均殘差改變符號（phase0 −0.263 → +0.284 m），總誤差下降不代表每個偏差消失；全長仍須檢查。正在以全部合法 GNSS 跑 T1 600 幀／3011 幀兩次，確認前綴一致後才考慮單次 Kaggle 評分。T1／T2 本輪尚未提交，額度各保留 15 次。
 
+**T1 全長與實際提交更新**：`t1_online_bias_causal.csv` 已完成全部 GNSS 的 3011 幀 live matching，與獨立 600 幀輸出前綴一致，CSV／核心版本檢查通過；實際 Kaggle public **0.59**（ref 57677630），明顯差於原 v7 的 0.46，**不採用、不替換 `submissions/final/result_1.csv`**。完整參數／環境／SHA-256 見同名 JSON。本地兩拆分較好並不能保證真實定位更好：相鄰 GNSS 高度相關、map／camera 偏差可能被當成 GNSS bias 吸收，起步局部指標也無法代表整段 public 評估。此失敗不作隱藏真值回推，不按分數擬合位置偏移；後續需更獨立的幾何／可觀測性驗證。T1 本日已用 1 次、剩 14 次；T2 仍未提交、保留 15 次。
+
 ### 6.6 Autonomous Batch Results
 
 Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks before guarded upload. Scores below are Kaggle public scores, not local residuals.
