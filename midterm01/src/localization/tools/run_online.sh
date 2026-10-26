@@ -19,6 +19,8 @@ TD=$(realpath "$1")
 TR=$2
 CACHE=work/runs/$TR
 W=${SDC_RUN_DIR:-$CACHE}
+HYP_WORKERS=${SDC_HYP_WORKERS:-3}
+case $HYP_WORKERS in 1|2|3) ;; *) echo "SDC_HYP_WORKERS must be 1, 2 or 3"; exit 1 ;; esac
 OUT=${3:-$W/${TR}_online.csv}
 mkdir -p "$W" "$CACHE" "$(dirname "$OUT")"
 N=$(basename "$TD")
@@ -97,8 +99,8 @@ case ${SDC_HYP_ESTIMATOR:-map} in
 esac
 P="$P ${SDC_LOC_EXTRA:-}"
 printf '%s\n' "$COMMON $P" > "$W/args.txt"
-printf 'SDC_CAM_SYNC=%s\nSDC_CAM_SYNC_YAW=%s\nSDC_ROT_FIX=%s\nSDC_HYP_ESTIMATOR=%s\n' \
-  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" "${SDC_HYP_ESTIMATOR:-map}" > "$W/environment.txt"
+printf 'SDC_CAM_SYNC=%s\nSDC_CAM_SYNC_YAW=%s\nSDC_ROT_FIX=%s\nSDC_HYP_ESTIMATOR=%s\nSDC_HYP_WORKERS=%s\n' \
+  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" "${SDC_HYP_ESTIMATOR:-map}" "$HYP_WORKERS" > "$W/environment.txt"
 
 echo "[$(date +%H:%M:%S)] 1. map and sensor data"
 [ -f "$TD/map.npy" ] || python3 tools/map_to_npy.py "$TD/map.pcd" "$TD/map.npy"
@@ -131,7 +133,7 @@ if [ "$TR" = T3 ]; then
   for o in $HYP; do
     $LOC $W/hyp_$o.csv --vo $CACHE/vo.npz $IMU $COMMON $P --init_offset $o --frames $NH --debug $W/hyp_${o}_dbg.csv > $W/hyp_$o.log 2>&1 &
     PAIRS="$PAIRS $W/hyp_$o.csv:$W/hyp_${o}_dbg.csv"; i=$((i + 1))
-    [ $((i % 3)) -eq 0 ] && wait     # at most 3 map-loading runs at a time (memory)
+    [ $((i % HYP_WORKERS)) -eq 0 ] && wait
   done
   wait
   OFFS=$(echo $HYP | tr ' ' ',')

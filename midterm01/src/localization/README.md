@@ -170,10 +170,12 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 | `tools/hyp_select.py` | 可選逐幀 posterior mean、圓周航向平均、穩定 softmax |
 | `tools/run_online.sh` | 隔離實驗輸出、重用前處理快取、保存參數與環境、可選假設估計方式 |
 | `tools/submit_guarded.py` | 驗證 CSV、明確時區截止與上傳前二次時間檢查 |
+| `tools/overnight_experiments.py` | 固定有限候選、全長 Docker／前綴驗證、保留額度、逐組歸檔與 commit/push |
 | `tests/test_camera_sync.py` | 平移相容、旋轉方向、遮罩、拍攝座標逆運算、當前幀限制 |
 | `tests/test_hyp_select.py` | 權重、±π 航向、數值穩定、因果前綴 |
 | `tests/test_submit_guarded.py` | 時區、07:58／08:00 拒絕、無效 CSV |
 | `tests/test_localize_options.py` | 停車額度跨偵測抖動保留、GNSS 子集隔離、起點位置依航向求解 |
+| `tests/test_overnight_experiments.py` | 批次的因果前綴一致、拒絕被改寫前綴、拒絕不完整假設 |
 | `submissions/online/t3_online_*.csv` | 保留實際提交的產物，不用手工修正軌跡 |
 
 Docker：`sdc_midterm01`，工作目錄 `/root/midterm/src/localization`。執行 `python3 -m unittest discover -s tests -v`；同步候選完整 3142 幀，檢查欄位、連續索引、有限數值及 yaw ∈ [−π, π]。近距候選前 600 幀與完整執行前綴一致（1e−12 容忍度）。編輯器 diagnostics 與 Pylance 語法檢查亦已檢查；這些不是隱藏真值的正確性保證。
@@ -198,6 +200,17 @@ python3 midterm01/src/localization/tools/submit_guarded.py \
 ```
 
 上例僅展示命令格式，不表示舊的 `submission_still3.csv` 已含停車額度修正。每次修改先 focused validation，再 commit／push 到目前分支；提交與實際 public score 記錄到本節。失敗實驗保留紀錄，但不替換最佳候選。
+
+固定批次（在主機 repository root 執行，不在容器內）：
+
+```bash
+python3 midterm01/src/localization/tools/overnight_experiments.py \
+   --deadline 2026-10-27T08:00:00+08:00 --reserve 2
+```
+
+四個預先宣告的模型實驗為 `conditioned_init`、`soft_heading`、`conditioned_soft`、`stop_soft`。每組以 live matching 跑完整五假設與全長軌跡，不用 replay 當提交檔；逐組檢查 3142 幀 CSV，以及勝出假設「只跑 600 幀」和全長前 600 幀相同。結果的 CSV、SHA-256、參數／revision、提交 ref／public score 及 README 表格會 commit／push。開始時工作樹必須乾淨，已存在的候選檔名拒絕重複提交；不足保留額度、截止將近或驗證失敗即停止。07:30 起不再啟動新重型實驗，07:58 起不啟動上傳。查詢剛提交尚未評分時記 pending，後續再只讀補齊，不用重複上傳取分數。
+
+`SDC_HYP_WORKERS=1|2|3` 可限制起點假設同時載入地圖的數量（預設 3，批次採 1）。與 T1／T2 留出工作並行時維持總記憶體低於 Docker 20 GiB；不並行啟動多個批次。
 
 ### 6.4 後續 T3 改進順序
 
