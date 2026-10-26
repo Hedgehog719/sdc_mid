@@ -309,6 +309,10 @@ T2 這一階段不支持直接採用上述修改；T1 小幅改善也不能外�
 
 **投影診斷與反證**：已在 `work/runs/T3_projection_review/` 生成 0／105／630／2400／2448／2700 幀的三相機標線投影。投影落在車身可能只是地面標線被遮擋，不等於地圖保存了高車身點。`MarkingMap.points()` 的 z 本來就來自 `MarkingMap.height()`；630 幀半徑 24 m 內 25,734 格差值全為 0，所以「再用自身高度圖過濾高物體」是無效檢查，本輪不採用。影像遮擋仍應由車輛遮罩及量測可見性處理，不手工移動軌跡。
 
+**額外校正假設的量級檢查**：同一個獨立 T2 靜止三軸 bias 投影到各軌新 heading-rate 定義時，隨姿態變動、相對 frame0 常數校正的最大額外積分差約 T1 0.062°、T2 0.226°、T3 0.081°。這是校正敏感度估計，不是已觀測定位誤差；量級不足以支持本輪再加三軸偏差參數，優先驗證已確認的拍攝時間語義問題。
+
+**GNSS 留出不是獨立真值**：T1 phase0 的 43 個留出樣本中位時間間隔約 0.500 s；baseline 前向／橫向殘差 lag-1 correlation 約 0.964／0.904，GNSS bias 模型仍約 0.943／0.890。不能把 43 筆當成 43 次獨立準確度證據，也不能以小幅平均差宣稱統計顯著；後續保留反相、分段、全長與實際 Kaggle 驗證。
+
 ### 6.6 Autonomous Batch Results
 
 Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks before guarded upload. Scores below are Kaggle public scores, not local residuals.
