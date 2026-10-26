@@ -176,12 +176,14 @@ SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1 SDC_LOC_EXTRA="--near_sync" \
 | `tools/submit_guarded.py` | 驗證 CSV、明確時區截止與上傳前二次時間檢查 |
 | `tools/overnight_experiments.py` | 固定有限候選、全長 Docker／前綴驗證、保留額度、逐組歸檔與 commit/push |
 | `tools/validate_cross_track.py` | T1／T2 固定 GNSS 留出、腳本快照、逐組保存摘要；沒有上傳功能 |
+| `tools/camera_timing.py` | 抽取 H.265 影像 header 時間、按檔名到達時間精確整數對齊，不做缺失內插 |
 | `tests/test_camera_sync.py` | 平移相容、旋轉方向、遮罩、拍攝座標逆運算、當前幀限制 |
 | `tests/test_hyp_select.py` | 權重、±π 航向、數值穩定、因果前綴 |
 | `tests/test_submit_guarded.py` | 時區、07:58／08:00 拒絕、無效 CSV |
 | `tests/test_localize_options.py` | 停車額度跨偵測抖動保留、GNSS 子集隔離、起點位置依航向求解 |
 | `tests/test_overnight_experiments.py` | 批次的因果前綴一致、拒絕被改寫前綴、拒絕不完整假設 |
 | `tests/test_cross_track_validation.py` | 留出評估只外推前一幀、度／弧度及橫向誤差、無重疊拒絕 |
+| `tests/test_camera_timing.py` | 精確 metadata 配對、缺失拒絕、拍攝／到達時間順序 |
 | `submissions/online/t3_online_*.csv` | 保留實際提交的產物，不用手工修正軌跡 |
 
 Docker：`sdc_midterm01`，工作目錄 `/root/midterm/src/localization`。執行 `python3 -m unittest discover -s tests -v`；同步候選完整 3142 幀，檢查欄位、連續索引、有限數值及 yaw ∈ [−π, π]。近距候選前 600 幀與完整執行前綴一致（1e−12 容忍度）。編輯器 diagnostics 與 Pylance 語法檢查亦已檢查；這些不是隱藏真值的正確性保證。
@@ -267,6 +269,16 @@ T2 起點前 5 秒的提供航向固定 −15.2055°，現有 frame0 為 −20.6
 **已否定的起點側傾捷徑**：T3 frame0 IMU roll 減地圖道路 roll，在錯誤粗航向下為 0.637°，在匹配後航向下只剩 0.065°。不能因初值看起來有側傾就直接初始化；這會把錯誤航向造成的地圖平面旋轉誤認成車身姿態。本輪不採用。
 
 **預先定義的 T3 ensemble 對照**：待所有成員完成，使用既有 `tools/ensemble.py` 對原 SE(2)、soft-heading、gyro-heading 三個因果模型逐幀等權平均（各 1/3，yaw 用圓周平均）。不按分數擬合權重、不依路段挑成員、沒有未來幀參與某一幀輸出；這與三模型在線平行跑再即時平均等價。此計畫在後兩個成員評分前宣告，仍需 CSV／因果一致性驗證與額度防護，不能保證更好。過去 T1 ensemble 曾退步，不能把平均當作必然改善。
+
+**已驗證的影像時間語義缺口**：現有 `camera_time_offsets()` 用 JPG 檔名的 bag receive time 作為相機拍攝偏移，但 bag 的 H.265 topic 內另有真正的 `header.stamp`。T3 三相機各 3142 幀都能精確配對，不缺失、不以未來資料插值。前相機 receive−header 中位數 7.912 ms、最大 31.651 ms；真實 fl 相對 f 曝光時間中位數 +1.292 ms（範圍 +0.835…+1.851 ms），fr −13.429 ms（−13.888…−12.552 ms），比 receive time 差值穩定。用既有因果速度換算，誤用 receive offset 的行駛中 warp 位移誤差 RMS：fl 0.01222 m、fr 0.01250 m；最大 0.0650／0.0563 m。這不是 ground-truth 定位誤差，而是兩種時間定義造成的可量測投影差。
+
+```bash
+python3 tools/camera_timing.py /root/data/Track3
+```
+
+工具會建立可重算的 `sensors/camera_timing.csv` 並逐檔精確檢查。3 項 Docker 回歸測試已通過。定位核心尚未接入 header offset，避免污染目前凍結批次；完成後只比較相機相對曝光同步，不擅自改變 Kaggle frame 的輸出時間定義。
+
+**投影診斷與反證**：已在 `work/runs/T3_projection_review/` 生成 0／105／630／2400／2448／2700 幀的三相機標線投影。投影落在車身可能只是地面標線被遮擋，不等於地圖保存了高車身點。`MarkingMap.points()` 的 z 本來就來自 `MarkingMap.height()`；630 幀半徑 24 m 內 25,734 格差值全為 0，所以「再用自身高度圖過濾高物體」是無效檢查，本輪不採用。影像遮擋仍應由車輛遮罩及量測可見性處理，不手工移動軌跡。
 
 ### 6.6 Autonomous Batch Results
 
