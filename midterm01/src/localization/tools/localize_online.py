@@ -54,6 +54,8 @@ ap.add_argument('--init', default='', help='x,y,yaw_rad instead of init_guess.tx
 ap.add_argument('--init_yaw', type=float, default=25.0, help='deg: heading window of the initial search')
 ap.add_argument('--init_offset', type=float, default=0.0, help='deg added to the frame-0 heading (heading hypotheses, '
                 'tools/hyp_select.py: the frame-0 match can be flat over several degrees)')
+ap.add_argument('--init_pos_per_hyp', action='store_true', help='with --init_pos: refine frame-0 position at each '
+                'hypothesis heading instead of sharing the position refined at zero heading offset')
 ap.add_argument('--rmax', type=float, default=14.0)
 ap.add_argument('--near_sync', action='store_true', help='with SDC_CAM_SYNC=1: project near-alignment map points at '
                 'each camera capture time instead of the front-camera timestamp')
@@ -483,12 +485,13 @@ def initial_pose(G):
         yaw = y0
     elif a.init_pos and G is None:   # init_guess grossly off (heading > gross_yaw): its position is suspect as well ->
         LS.set_window(max_shift=a.init_pos, max_yaw=1.0, yaw_step=0.5)   # frame-0 match position, wide window
+        position_yaw = yaw + np.radians(a.init_offset) if a.init_pos_per_hyp else yaw
         try:
-            r = LS.match(0, (x, y, yaw))
+            r = LS.match(0, (x, y, position_yaw))
         except (IndexError, ValueError):
             r = None
         if r is not None and r[0] > a.min_peak_lo:
-            c, s = np.cos(yaw), np.sin(yaw)
+            c, s = np.cos(position_yaw), np.sin(position_yaw)
             x, y = x + c * r[2] - s * r[3], y + s * r[2] + c * r[3]
             print(f'frame-0 position correction: forward {r[2]:+.2f} m, lateral {r[3]:+.2f} m (peak {r[0]:.3f})', flush=True)
         LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
