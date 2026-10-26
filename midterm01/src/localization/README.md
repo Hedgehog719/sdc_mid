@@ -309,5 +309,5 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | Profile | Extra Options | Public | Ref | Status | File |
 | --- | --- | --- | --- | --- | --- |
 | conditioned_init | `--init_pos_per_hyp` | 0.24 | 57675166 | SubmissionStatus.COMPLETE | `t3_batch_conditioned_init.csv` |
-| soft_heading | `--yaw_soft_peak 0.2` | pending | 57675838 | SubmissionStatus.PENDING | `t3_batch_soft_heading.csv` |
+| soft_heading | `--yaw_soft_peak 0.2` | 0.22 | 57675838 | SubmissionStatus.COMPLETE | `t3_batch_soft_heading.csv` |
 <!-- overnight-results:end -->
