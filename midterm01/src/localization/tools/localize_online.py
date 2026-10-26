@@ -68,6 +68,11 @@ ap.add_argument('--min_sharp_f_lo', type=float, default=1.0, help='forward fixes
                 'min_sharp_f] only while the forward sd exceeds --lo_sharp_sd (they are biased by -0.2..-0.5 m, but beat '
                 'drifting without GNSS)')
 ap.add_argument('--lo_sharp_sd', type=float, default=0.35)
+ap.add_argument('--relaxed_sharp_f', type=float, default=0.0, help='experimental forward sharpness threshold after '
+                '--relaxed_sharp_from; 0 keeps --min_sharp_f throughout')
+ap.add_argument('--relaxed_sharp_from', type=int, default=600)
+ap.add_argument('--fwd_jump_gate', type=float, nargs=2, default=[0.0, 0.25], metavar=('DIST', 'PEAK'),
+                help='experimental rejection of forward jumps above DIST m with peak below PEAK while locked; DIST=0 disables')
 ap.add_argument('--floor', type=float, nargs=3, default=[0.3, 0.15, 0.3], help='sd floors: forward m, lateral m, heading deg')
 ap.add_argument('--min_peak', type=float, default=0.2)
 ap.add_argument('--min_peak_yaw', type=float, default=0.25)
@@ -897,22 +902,20 @@ if __name__ == '__main__':
                         f_ok = y_ok = False
                     D.update(ln_df=df, ln_dl=dl, ln_dy=np.degrees(dyaw), ln_sf=sf, ln_sl=sl, ln_pk=peak, ln_fok=int(f_ok),
                              ln_lok=int(l_ok), ln_yok=int(y_ok), ln_fa=0, ln_la=0, ln_ya=0)
-                    min_sf = 0.012 if (a.min_sharp_f_lo < a.min_sharp_f and k >= 600) else a.min_sharp_f
-                    if f_ok and (sf > min_sf or (sf > a.min_sharp_f_lo and var('f') > a.lo_sharp_sd ** 2)):
-                        # Outlier rejection: if already locked with low forward variance, reject large isolated forward jumps with weak peak
-                        if var('f') <= a.lo_sharp_sd ** 2 and abs(df) > 0.7 and peak < 0.25:
-                            pass
-                        else:
-                            sig = float(np.clip(a.lane_fc / np.sqrt(sf), 0.15, 3.0) if a.lane_fc > 0 else np.clip(a.lane_k[0] / sf, 0.2, 3.0))
-                            S = var('f') + sig ** 2
-                            big_f.append(np.sign(df) if df * df > 6.25 * S else 0)
-                            if len(big_f) >= 4 and abs(sum(big_f[-4:])) == 4:   # 4 consistent large corrections: drifted
-                                inflate('f', df * df)
-                                big_f.clear()
-                            D['ln_fa'] = int(upd_fwd(df, sig, robust=True))
-                            cnt['fwd'] += D['ln_fa']
-                            if a.lo_peak_start and D['ln_fa'] and peak > a.min_peak:   # first regular forward lock: no
-                                lo_ok = False                                          # weak matches from now on
+                    min_sf = a.relaxed_sharp_f if a.relaxed_sharp_f > 0 and k >= a.relaxed_sharp_from else a.min_sharp_f
+                    jump_ok = not (a.fwd_jump_gate[0] > 0 and var('f') <= a.lo_sharp_sd ** 2
+                                   and abs(df) > a.fwd_jump_gate[0] and peak < a.fwd_jump_gate[1])
+                    if f_ok and jump_ok and (sf > min_sf or (sf > a.min_sharp_f_lo and var('f') > a.lo_sharp_sd ** 2)):
+                        sig = float(np.clip(a.lane_fc / np.sqrt(sf), 0.15, 3.0) if a.lane_fc > 0 else np.clip(a.lane_k[0] / sf, 0.2, 3.0))
+                        S = var('f') + sig ** 2
+                        big_f.append(np.sign(df) if df * df > 6.25 * S else 0)
+                        if len(big_f) >= 4 and abs(sum(big_f[-4:])) == 4:
+                            inflate('f', df * df)
+                            big_f.clear()
+                        D['ln_fa'] = int(upd_fwd(df, sig, robust=True))
+                        cnt['fwd'] += D['ln_fa']
+                        if a.lo_peak_start and D['ln_fa'] and peak > a.min_peak:
+                            lo_ok = False
                     if a.drift_n > 0 and peak > a.min_peak and abs(dl) < win - 0.15:   # wrong-lock detector: weak lane
                         S2 = var('l') + max(a.lane_k[1] / max(sl, 1e-3), 0.1) ** 2   # matches (low sharpness) are not
                         drift_l.append(np.sign(dl) if dl * dl > 6.25 * S2 else 0)    # used, but a run of large
