@@ -53,6 +53,11 @@ def check_quota(submissions_csv, now, maximum=15, reserve=0):
     return remaining
 
 
+def upload_timeout(now, deadline):
+    check_deadline(now, deadline, buffer_seconds=1)
+    return min(90.0, (deadline - now).total_seconds() - 1.0)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('csv_file', type=Path)
@@ -71,11 +76,15 @@ def main():
                      check=True, capture_output=True, text=True)
         remaining = check_quota(history.stdout, datetime.now(timezone.utc), arguments.max_per_day, arguments.reserve)
         check_deadline(datetime.now(timezone.utc), arguments.deadline, arguments.buffer_seconds)
+        timeout = upload_timeout(datetime.now(timezone.utc), arguments.deadline)
     except (ValueError, OSError) as error:
         parser.exit(2, f'{error}\n')
     print(f'Validated {arguments.csv_file}; remaining today {remaining}; upload deadline {arguments.deadline.isoformat()}', flush=True)
-    subprocess.run(['kaggle', 'competitions', 'submit', '-c', arguments.competition,
-                    '-f', str(arguments.csv_file), '-m', arguments.message], check=True)
+    try:
+        subprocess.run(['kaggle', 'competitions', 'submit', '-c', arguments.competition,
+                        '-f', str(arguments.csv_file), '-m', arguments.message], check=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        parser.exit(3, 'upload timed out; outcome unknown, verify submission history before any retry\n')
 
 
 if __name__ == '__main__':

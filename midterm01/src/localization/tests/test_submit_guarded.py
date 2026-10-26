@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
-from submit_guarded import check_deadline, check_quota, validate_csv
+from submit_guarded import check_deadline, check_quota, upload_timeout, validate_csv
 
 
 class SubmissionGuardTest(unittest.TestCase):
@@ -60,6 +60,13 @@ class SubmissionGuardTest(unittest.TestCase):
                 check_quota(history, now)
         with self.assertRaises(ValueError):
             check_quota('ref,fileName,date,description,status,publicScore,privateScore\n', now, maximum=0)
+
+    def test_upload_timeout_cannot_extend_past_hard_deadline(self):
+        self.assertEqual(upload_timeout(datetime.fromisoformat('2026-10-27T07:57:59+08:00'), self.deadline), 90)
+        self.assertEqual(upload_timeout(datetime.fromisoformat('2026-10-27T07:59:30+08:00'), self.deadline), 29)
+        for now in ['2026-10-27T07:59:59+08:00', '2026-10-27T08:00:00+08:00']:
+            with self.assertRaises(ValueError):
+                upload_timeout(datetime.fromisoformat(now), self.deadline)
 
 
 if __name__ == '__main__':
