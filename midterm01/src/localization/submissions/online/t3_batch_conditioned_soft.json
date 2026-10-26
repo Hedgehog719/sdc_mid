@@ -1,0 +1,12 @@
+{
+  "profile": "conditioned_soft",
+  "extra": "--init_pos_per_hyp --yaw_soft_peak 0.2",
+  "revision": "351501c4da28d78ec07623c2d453fe3f38fd8188",
+  "core_sha256": "66e267af2bb24fe71c39ee9ecf1731822333e7c4a7574b26c9953a0fc27eba91",
+  "deadline": "2026-10-27T08:00:00+08:00",
+  "winner_offset": "0",
+  "sha256": "1a6bbd929c6499637f5427d102448d95504cf689536f2c264cfb3fadfe5c6f85",
+  "status": "validated",
+  "score": "",
+  "ref": ""
+}
