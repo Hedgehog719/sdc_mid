@@ -820,7 +820,7 @@ if __name__ == '__main__':
                 # measurement - the searches are averaged by the filter
                 yaw_s = yaw
                 LS.BM.A.seg_gate = 0.0 if a.seg_gate_track else a.seg_gate
-                LS.set_motion_frame(k, v)
+                LS.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
                 for my, ms, ys in ((a.init_yaw, 1.0, 1.0), (3.0, 1.0, 0.5)):
                     LS.set_window(max_shift=ms, max_yaw=my, yaw_step=ys)
                     try:
@@ -859,7 +859,7 @@ if __name__ == '__main__':
                         DYN[k, 0] = pitch_est   # camera pitch tracked from the lane matches (slope changes, braking dive)
                     if a.seg_gate_track and a.seg_gate_from > 0:
                         LS.BM.A.seg_gate = a.seg_gate if k >= a.seg_gate_from else 0.0
-                    LS.set_motion_frame(k, v)
+                    LS.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if a.pitch_track and not frozen and r is not None and mi % a.pitch_every == 0:
                         pk = [None, r[5], None]

@@ -43,6 +43,7 @@ def bev_grid():
 
 
 CAM_SYNC = os.environ.get('SDC_CAM_SYNC', '0') == '1'   # compensate the side cameras' capture-time offsets
+CAM_SYNC_YAW = os.environ.get('SDC_CAM_SYNC_YAW', '0') == '1'
 
 
 def camera_time_offsets(track_dir, cams=('f', 'fl', 'fr')):
@@ -71,6 +72,20 @@ def shift_rows(img, d_m, interp=cv2.INTER_LINEAR):
     return cv2.warpAffine(img, M, (img.shape[1], img.shape[0]), flags=interp, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
 
 
+def sync_motion(img, distance, angle, interp=cv2.INTER_LINEAR):
+    """Warp capture-time BEV points into the reference frame using constant planar body velocity."""
+    if abs(angle) < 1e-9:
+        return shift_rows(img, distance, interp)
+    forward = distance * np.sin(angle) / angle
+    lateral = distance * 2 * np.sin(angle / 2) ** 2 / angle
+    centre = (Y_MAX / RES - 0.5, X_MAX / RES - 0.5)
+    transform = cv2.getRotationMatrix2D(centre, np.degrees(angle), 1.0)
+    transform[0, 2] -= lateral / RES
+    transform[1, 2] -= forward / RES
+    return cv2.warpAffine(img, transform, (img.shape[1], img.shape[0]), flags=interp,
+                          borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+
 class ImageBEV:
     def __init__(self, track_dir, cam_height=2.1, pitch_deg=0.0, roll_deg=0.0, yaw_deg=0.0, cams=('f', 'fl', 'fr')):
         track = os.path.basename(os.path.normpath(track_dir))
@@ -80,6 +95,7 @@ class ImageBEV:
         self.names = {c: sorted(os.listdir(os.path.join(track_dir, f'{track}_images', f'{track}_{c}_images'))) for c in cams}
         self.capture_dt = camera_time_offsets(track_dir, cams) if CAM_SYNC else None
         self.motion_frame, self.motion_speed = None, 0.0
+        self.motion_yaw_rate = 0.0
         hood = cv2.imread(os.path.join(track_dir, f'{track}_images', 'camera_info', 'gige_100_f_hdr_mask.png'), cv2.IMREAD_UNCHANGED)
         self.hood = None
         if hood is not None:
@@ -268,15 +284,17 @@ class ImageBEV:
         dts = camera_time_offsets(self.track_dir, self.cams)
         self.tshift = {c: np.asarray(speed, float)[:len(dts[c])] * dts[c][:len(speed)] for c in self.cams}
 
-    def set_motion_frame(self, i, speed):
-        """Set the causal speed used to compensate camera offsets for one online frame."""
+    def set_motion_frame(self, i, speed, yaw_rate=0.0):
+        """Set causal body velocity (m/s, rad/s) for capture-time compensation of one online frame."""
         self.motion_frame, self.motion_speed = int(i), float(speed)
+        self.motion_yaw_rate = float(yaw_rate)
 
     def _sync(self, c, i, arr, interp=cv2.INTER_LINEAR):
         if self.tshift is not None and c in self.tshift and i < len(self.tshift[c]):
             d_m = float(self.tshift[c][i])
         elif self.capture_dt is not None and c in self.capture_dt and i < len(self.capture_dt[c]) and i == self.motion_frame:
-            d_m = self.motion_speed * float(self.capture_dt[c][i])
+            delta = float(self.capture_dt[c][i])
+            return sync_motion(arr, self.motion_speed * delta, self.motion_yaw_rate * delta if CAM_SYNC_YAW else 0.0, interp)
         else:
             return arr
         return shift_rows(arr, d_m, interp)
