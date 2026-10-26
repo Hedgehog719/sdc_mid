@@ -14,7 +14,7 @@
 #   4. road-surface visual odometry of consecutive frame pairs (k-1, k)
 #   5. tools/localize_online.py: one forward Kalman filter over the frames in time order
 set -e
-cd "$(dirname "$0")/.."
+cd "${SDC_PACKAGE_DIR:-$(dirname "$0")/..}"
 TD=$(realpath "$1")
 TR=$2
 CACHE=work/runs/$TR

@@ -19,6 +19,7 @@ PROFILES = {
     'soft_heading': '--yaw_soft_peak 0.2',
     'conditioned_soft': '--init_pos_per_hyp --yaw_soft_peak 0.2',
     'stop_soft': '--still_meas 3 --yaw_soft_peak 0.2',
+    'gyro_heading': '--gyro_heading --gyro_bias -0.266065785',
 }
 OFFSETS = ('0', '-1.5', '1.5', '-3', '3')
 COMPETITION = 'sdc-2026-localization-track-03'
@@ -27,6 +28,19 @@ COMPETITION = 'sdc-2026-localization-track-03'
 def read_rows(path):
     with Path(path).open(newline='') as stream:
         return list(csv.DictReader(stream))
+
+
+def snapshot_runner(package, directory):
+    destination = Path(directory) / 'runner_snapshot.sh'
+    shutil.copyfile(Path(package) / 'tools' / 'run_online.sh', destination)
+    return destination
+
+
+def core_digest(package):
+    digest = hashlib.sha256()
+    for name in ('localize_online.py', 'bev.py', 'bev_match.py', 'lane_single.py', 'marking_map.py', 'camera_model.py'):
+        digest.update((Path(package) / 'tools' / name).read_bytes())
+    return digest.hexdigest()
 
 
 def validate_prefix(directory, prefix_frames=600):
@@ -117,22 +131,28 @@ def main():
         relative = f'work/runs/T3_batch_{profile}'
         directory = package / relative
         directory.mkdir(parents=True, exist_ok=True)
+        runner = snapshot_runner(package, directory)
+        source_digest = core_digest(package)
         candidate = package / 'submissions' / 'online' / f't3_batch_{profile}.csv'
         if candidate.exists():
             raise RuntimeError(f'refuse duplicate candidate filename: {candidate}')
         print(f'START {profile}; quota {remaining}; revision {revision}', flush=True)
         command = ['docker', 'exec', '-w', '/root/midterm/src/localization', '-e', 'SDC_CAM_SYNC=1',
                    '-e', 'SDC_CAM_SYNC_YAW=1', '-e', 'SDC_HYP_WORKERS=1', '-e', f'SDC_RUN_DIR={relative}',
+                   '-e', 'SDC_PACKAGE_DIR=/root/midterm/src/localization',
                    '-e', f'SDC_LOC_EXTRA={PROFILES[profile]}', arguments.container,
-                   'bash', 'tools/run_online.sh', '/root/data/Track3', 'T3']
+                   'bash', f'/root/midterm/src/localization/{runner.relative_to(package)}', '/root/data/Track3', 'T3']
         with (directory / 'run.log').open('w') as stream:
             subprocess.run(command, cwd=repository, stdout=stream, stderr=subprocess.STDOUT,
                            stdin=subprocess.DEVNULL, check=True)
+        if core_digest(package) != source_digest:
+            raise RuntimeError('core source changed during the run; refuse mixed-version submission')
         output = directory / 'T3_online.csv'
         validate_csv(output)
         winner = validate_prefix(directory)
         shutil.copyfile(output, candidate)
         report = {'profile': profile, 'extra': PROFILES[profile], 'revision': revision,
+                  'core_sha256': source_digest,
                   'deadline': arguments.deadline.isoformat(), 'winner_offset': winner,
                   'sha256': hashlib.sha256(candidate.read_bytes()).hexdigest(),
                   'status': 'validated', 'score': '', 'ref': ''}

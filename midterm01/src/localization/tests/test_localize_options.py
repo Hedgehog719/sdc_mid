@@ -42,6 +42,31 @@ class StandstillBudgetTest(unittest.TestCase):
         self.assertEqual((state['still_k0'], state['still_used']), (3000, 0))
 
 
+class GyroHeadingTest(unittest.TestCase):
+    def setUp(self):
+        self.rate = load_function('gyro_heading_rate', {'np': np})
+
+    def test_body_roll_does_not_change_heading(self):
+        orientation = Rotation.from_euler('ZYX', [[30, 15, 10]], degrees=True)
+        rates = np.array([[0.02, 0.0, 0.0]])
+        self.assertGreater(abs(orientation.apply(rates)[0, 2]), 0.001)
+        np.testing.assert_allclose(self.rate(orientation, rates), 0.0, atol=1e-12)
+
+    def test_world_yaw_rotation_has_correct_rate_at_tilt(self):
+        orientation = Rotation.from_euler('ZYX', [[0, 15, 10], [45, -15, 20], [90, 5, -5]], degrees=True)
+        body_rates = orientation.inv().apply(np.tile([0.0, 0.0, 0.1], (3, 1)))
+        np.testing.assert_allclose(self.rate(orientation, body_rates), 0.1, atol=1e-12)
+
+    def test_matches_quaternion_finite_difference(self):
+        orientation = Rotation.from_euler('ZYX', [[20, -20, 15]], degrees=True)
+        body_rates = np.array([[0.03, -0.02, 0.04]])
+        interval = 1e-6
+        following = orientation * Rotation.from_rotvec(body_rates * interval)
+        difference = following.as_euler('ZYX')[:, 0] - orientation.as_euler('ZYX')[:, 0]
+        expected = np.arctan2(np.sin(difference), np.cos(difference)) / interval
+        np.testing.assert_allclose(self.rate(orientation, body_rates), expected, atol=1e-8)
+
+
 class GnssSubsetTest(unittest.TestCase):
     def setUp(self):
         self.samples = pd.DataFrame({'t': [10, 20, 30, 40], 'x': [1.0, 2.0, 3.0, 4.0], 'y': [0.0] * 4})

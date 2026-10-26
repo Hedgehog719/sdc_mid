@@ -36,6 +36,15 @@ from common import ply_frames  # noqa: E402
 from marking_map import MarkingMap, road_level, vehicle_frame  # noqa: E402
 import lane_single as LS  # noqa: E402
 
+def gyro_heading_rate(orientation, body_rates):
+    """Yaw derivative of the body-forward direction, not angular velocity projected on world z."""
+    angular = orientation.apply(body_rates)
+    forward = orientation.apply(np.tile([1.0, 0.0, 0.0], (len(body_rates), 1)))
+    derivative = np.cross(angular, forward)
+    horizontal = np.maximum((forward[:, :2] ** 2).sum(axis=1), 1e-6)
+    return (forward[:, 0] * derivative[:, 1] - forward[:, 1] * derivative[:, 0]) / horizontal
+
+
 ap = argparse.ArgumentParser()
 ap.add_argument('track_dir')
 ap.add_argument('marks', help='marking map (marking_map.py ALL ... --hi 2.5 --lo 1.2 --cell 0.7)')
@@ -52,6 +61,8 @@ ap.add_argument('--gnss_bias_sd', type=float, default=0.0, help='m (joint EKF): 
                 'state of this sd (GNSS errors are strongly time-correlated: autocorrelation 0.8-0.9 at 1 s); 0 = white noise only')
 ap.add_argument('--gnss_bias_tau', type=float, default=3.0, help='s: correlation time of the GNSS bias')
 ap.add_argument('--no_imu', action='store_true')
+ap.add_argument('--gyro_heading', action='store_true', help='use the yaw derivative of the IMU forward axis instead '
+                'of world-z angular velocity; --gyro_bias must use the same convention')
 ap.add_argument('--step', type=int, default=3, help='map measurement every step frames')
 ap.add_argument('--init', default='', help='x,y,yaw_rad instead of init_guess.txt')
 ap.add_argument('--init_yaw', type=float, default=25.0, help='deg: heading window of the initial search')
@@ -393,7 +404,8 @@ def load_imu():
     im = pd.read_csv(f)
     q = Rotation.from_quat(im[['qx', 'qy', 'qz', 'qw']].values)
     t = im.t.values.astype(np.float64)
-    wz = q.apply(im[['wx', 'wy', 'wz']].values)[:, 2]
+    body_rates = im[['wx', 'wy', 'wz']].values
+    wz = gyro_heading_rate(q, body_rates) if a.gyro_heading else q.apply(body_rates)[:, 2]
     yaw_g = np.concatenate([[0], np.cumsum(0.5 * (wz[1:] + wz[:-1]) * np.diff(t) * 1e-9)])
     aw = q.apply(im[['ax', 'ay', 'az']].values)
     yq = np.unwrap(q.as_euler('ZYX')[:, 0])

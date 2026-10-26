@@ -2,14 +2,26 @@ import csv
 from pathlib import Path
 import os
 import sys
+import subprocess
 import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
-from overnight_experiments import OFFSETS, validate_prefix
+from overnight_experiments import OFFSETS, snapshot_runner, validate_prefix
 
 
 class CausalPrefixTest(unittest.TestCase):
+    def test_runner_snapshot_does_not_follow_live_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            (package / 'tools').mkdir()
+            live = package / 'tools' / 'run_online.sh'
+            live.write_text("printf 'original runner\\n'\n")
+            snapshot = snapshot_runner(package, package)
+            live.write_text("printf 'changed runner\\n'\n")
+            output = subprocess.check_output(['bash', str(snapshot)], text=True)
+            self.assertEqual(output, 'original runner\n')
+
     def make_fixture(self, directory):
         directory = Path(directory)
         for offset in OFFSETS:
