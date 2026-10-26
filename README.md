@@ -14,7 +14,7 @@
 
 正式交付檔 [`result_3.csv`](midterm01/src/localization/submissions/final/result_3.csv) 已同步為該 0.22 檔，格式與 SHA-256 完全一致；重現參數與其他兩軌正式候選見 [final README](midterm01/src/localization/submissions/final/README.md)。
 
-本輪已測試前向門檻隔離、因果 SE(2) 同步、近距同步、後驗平均、停車額度與起點位置／航向耦合。近距同步 0.27、起點耦合 0.24，不取代最佳檔；固定批次仍在完成其餘預先宣告的模型對照，所有實際分數逐組記錄。T1／T2 已完成八組本地 GNSS 留出對照，尚未消耗兩軌提交額度。
+本輪已完成前向門檻隔離、SE(2)／近距／曝光同步、後驗平均、停車額度、起點位置／航向耦合與固定 ensemble 等對照；較差候選不取代最佳檔，所有分數與負結果逐組記錄。T1／T2 已做 21 組本地對照及 T1 額外反相檢查；T1 的 GNSS bias 全長候選實際 0.59，不採用，正式仍是 0.46；T2 尚未提交，正式仍是 0.26。最後一個 T3 VO 曝光間隔單因子與 T1 header 全長正在驗證，尚不宣稱改善。
 
 分析依據、逐檔改動、驗證方法、實際提交 ID、失敗實驗、後續 T3 改進與 **T1／T2 合法提升方向** 均記錄在 [定位 README 第 6 節](midterm01/src/localization/README.md#6-t3-同步實驗2026-10-26)。所有更新提交到目前分支 `copilot/research-kaggle-competition`。
 
