@@ -420,7 +420,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | Track | 正式檔 | 採用來源 | 已確認 public | 本輪結論 |
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v7_img.csv` | 0.47 | v7 設定在目前映像重跑（舊 0.46 檔無法重現，見 6.8） |
-| T2 | `submissions/final/result_2.csv` | `t2_online_v20.csv` | 0.26 | v19 + `--slow_sharp_f 0.035 2`（6.8），離線 0.214 → 0.206 |
+| T2 | `submissions/final/result_2.csv` | `t2_online_v21.csv` | 0.26 | v19 + `--slow_sharp_f 0.035 2` + `--stand_search_sigma 4`（6.8），離線 0.214 → 0.205 |
 | T3 | `submissions/final/result_3.csv` | `t3_online_vofill.csv` | **0.22** | SE(2)+soft-heading+VO 缺口補值（6.8），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
@@ -471,3 +471,7 @@ T1 變體也要對同環境基準 0.427 比較，不能對舊檔 0.408：fwd_bat
 - **T2 放寬 GNSS 前向 σ 到 0.25**：0.207，持平。
 - **T2 起步段**：剩下的 −0.2 m 前向差在 GNSS 和參考之間（濾波器的 GNSS innovation 已約為 0），車陣中沒有地圖量測可依據，不調整。
 - **T1 `--fwd_batch 8/10/12`**：對參考 0.427 → 0.408／0.414／0.407，方向一致。以 N=10 提交為 t1_online_v8（Kaggle 57691455），public 0.47，與 v7_img 同分，保留較簡單的 v7_img。
+- **T2 v21（`--stand_search_sigma 4`，原本 2.5）**：靜止時的五次航向搜尋看的是同一個車陣場景，誤差彼此相關，相對起步後 lane 航向推定的位置都約 +1.5°。若每次都當成 σ=2.5° 的獨立量測，五次合起來會把航向轉到 +0.77°。
+  - 共同幀 innovation：lane 航向 0.581 → 0.518°，lane lat 0.113 → 0.100 m；起步後 300–600 幀的 lane 航向 innovation −0.36 → −0.31°。
+  - 對參考 0.206 → 0.205。σ=5.6 時前 200 幀反向偏太多（0.215），每 60 幀搜一次則為 0.212。
+  - runner 重跑逐位元相同；Kaggle 57692689 public 0.26，已採用為正式檔。

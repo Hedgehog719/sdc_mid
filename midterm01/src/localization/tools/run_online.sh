@@ -42,8 +42,12 @@ case $TR in
       # heading sigma 0.5 / 1.0 / 1.5, GNSS sigma 0.6 fwd / 0.3 lat, terrain, segmentation gate: all worse)
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.15 --acc_noise 0.05 --floor 0.1 0.1 0.15
-         --stand_search 30 --stand_search_sigma 2.5 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5
+         --stand_search 30 --stand_search_sigma 4 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5
          --slow_sharp_f 0.035 2" ;;
+      # --stand_search_sigma 4 (was 2.5): the standstill searches see the same queue scene, their errors are correlated
+      # (all ~+1.5 deg vs where the moving lane headings later put it); 2.5 each let five of them rotate the heading
+      # +0.77 deg: fair innovations lane heading 0.581 -> 0.518 deg, lane lat 0.113 -> 0.100 m, vs the reference 0.206 ->
+      # 0.205 (5.6: heading at frames 0-200 too far the other way, 0.215)
       # --slow_sharp_f 0.035 2: below 2 m/s (the start queue, bus alongside) lane forward fixes need sharpness > 0.035;
       # the barely-sharp ones there (0.020-0.034, peak 0.20-0.25) all said -0.3..-0.5 m against GNSS: GNSS forward
       # innovations 0-400 rms 0.116 -> 0.083 m, vs the reference 0.214 -> 0.206, from 400 unchanged (0.035 / 0.05 and
