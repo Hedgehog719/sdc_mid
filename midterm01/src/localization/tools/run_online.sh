@@ -127,6 +127,14 @@ echo "[$(date +%H:%M:%S)] 3. road-marking maps (whole map)"
 
 echo "[$(date +%H:%M:%S)] 4. visual odometry"
 [ -f "$CACHE/vo.npz" ] || python3 tools/bev_vo.py "$TD" "$CACHE/vo.npz" $IMU | tail -n 1
+VO=$CACHE/vo.npz
+if [ "$TR" = T3 ]; then
+  # pairs whose template block is < 90 % valid (lead vehicle close ahead: frames 1147-2160, 2854-3141) had no VO at all;
+  # those pairs alone are refilled from a matching with the validity mask (>= 30 % valid), every other pair unchanged
+  [ -f "$CACHE/vo_m30.npz" ] || python3 tools/bev_vo.py "$TD" "$CACHE/vo_m30.npz" $IMU --mask_tol 0.3 | tail -n 1
+  [ -f "$CACHE/vo_fill.npz" ] || python3 tools/vo_fill.py "$CACHE/vo.npz" "$CACHE/vo_m30.npz" "$CACHE/vo_fill.npz"
+  VO=$CACHE/vo_fill.npz
+fi
 
 echo "[$(date +%H:%M:%S)] 5. online localization ($N)"
 LOC="python3 tools/localize_online.py $TD $CACHE/mk_D.npz $CACHE/mk_S.npz"
@@ -136,7 +144,7 @@ if [ "$TR" = T3 ]; then
   # per-frame causal selection by accepted map measurements, the winner continues (tools/hyp_select.py)
   NH=600; HYP="0 -1.5 1.5 -3 3"; PAIRS=""; i=0
   for o in $HYP; do
-    $LOC $W/hyp_$o.csv --vo $CACHE/vo.npz $IMU $COMMON $P --init_offset $o --frames $NH --debug $W/hyp_${o}_dbg.csv > $W/hyp_$o.log 2>&1 &
+    $LOC $W/hyp_$o.csv --vo $VO $IMU $COMMON $P --init_offset $o --frames $NH --debug $W/hyp_${o}_dbg.csv > $W/hyp_$o.log 2>&1 &
     PAIRS="$PAIRS $W/hyp_$o.csv:$W/hyp_${o}_dbg.csv"; i=$((i + 1))
     [ $((i % HYP_WORKERS)) -eq 0 ] && wait
   done
@@ -145,11 +153,11 @@ if [ "$TR" = T3 ]; then
   BEST=$(python3 tools/hyp_select.py select $NH $OFFS $PAIRS 2> $W/hyp_select.log)
   OB=$(echo $HYP | cut -d' ' -f$((BEST + 1)))
   echo "heading hypothesis $OB deg selected at frame $NH ($(cat $W/hyp_select.log))"
-  $LOC $W/full.csv --vo $CACHE/vo.npz $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
+  $LOC $W/full.csv --vo $VO $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
   python3 tools/hyp_select.py "$COMBINE" "$OUT" $NH $W/full.csv $OFFS $PAIRS 2>> $W/hyp_select.log
   tail -n 1 $W/hyp_select.log
 else
-  $LOC "$OUT" --vo "$CACHE/vo.npz" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1
+  $LOC "$OUT" --vo "$VO" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1
 fi
 tail -n 1 "$W/localize.log"
 echo "[$(date +%H:%M:%S)] done -> $OUT"

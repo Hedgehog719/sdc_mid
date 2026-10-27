@@ -89,6 +89,12 @@ ap.add_argument('--min_sharp_f_lo', type=float, default=1.0, help='forward fixes
                 'min_sharp_f] only while the forward sd exceeds --lo_sharp_sd (they are biased by -0.2..-0.5 m, but beat '
                 'drifting without GNSS)')
 ap.add_argument('--lo_sharp_sd', type=float, default=0.35)
+ap.add_argument('--fwd_batch', type=int, default=0, help='>0: lane-match forward offsets too weak to use one by one (peak > '
+                '--fwd_batch_peak, sharpness > --min_sharp_f_lo, inside the window) are collected and their median is applied as '
+                'one forward fix every this many (sigma = robust spread / sqrt(n), floor 0.15 m); only while the forward sd '
+                'exceeds --fwd_batch_sd. Track01 start: weak matches scatter -1.9..+2.5 m one by one, their median says -0.35 m')
+ap.add_argument('--fwd_batch_peak', type=float, default=0.08)
+ap.add_argument('--fwd_batch_sd', type=float, default=0.35, help='m: forward sd above which weak offsets are batched')
 ap.add_argument('--relaxed_sharp_f', type=float, default=0.0, help='experimental forward sharpness threshold after '
                 '--relaxed_sharp_from; 0 keeps --min_sharp_f throughout')
 ap.add_argument('--relaxed_sharp_from', type=int, default=600)
@@ -550,6 +556,7 @@ if __name__ == '__main__':
         DYN[:, 1] += a.roll_add
     att_ema = None
     still_k0, still_used = None, 0   # --still_meas: frame where the current standstill began
+    fwd_buf = []   # --fwd_batch: weak lane-match forward offsets awaiting their median
     roll_mean, roll_n = 0.0, 0   # --roll_imu_map
     if a.terrain and REPLAY is None:
         LS.BM.BEV.terrain = MK.height
@@ -977,6 +984,16 @@ if __name__ == '__main__':
                         cnt['fwd'] += D['ln_fa']
                         if a.lo_peak_start and D['ln_fa'] and peak > a.min_peak:
                             lo_ok = False
+                    elif (a.fwd_batch > 0 and var('f') > a.fwd_batch_sd ** 2 and peak > a.fwd_batch_peak
+                          and sf > a.min_sharp_f_lo and abs(df) < win - 0.15 and travelled >= a.start_dist):
+                        fwd_buf.append(df)   # weak forward offset: batched, applied as a robust median
+                        if len(fwd_buf) >= a.fwd_batch:
+                            fb = np.array(fwd_buf)
+                            med = float(np.median(fb))
+                            sgb = max(1.4826 * float(np.median(np.abs(fb - med))) / np.sqrt(len(fb)), 0.15)
+                            D['fb_df'], D['fb_a'] = med, int(upd_fwd(med, sgb))
+                            cnt['fwd'] += D['fb_a']
+                            fwd_buf.clear()
                     if a.drift_n > 0 and peak > a.min_peak and abs(dl) < win - 0.15:   # wrong-lock detector: weak lane
                         S2 = var('l') + max(a.lane_k[1] / max(sl, 1e-3), 0.1) ** 2   # matches (low sharpness) are not
                         drift_l.append(np.sign(dl) if dl * dl > 6.25 * S2 else 0)    # used, but a run of large

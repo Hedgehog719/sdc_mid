@@ -419,10 +419,42 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 
 | Track | 正式檔 | 採用來源 | 已確認 public | 本輪結論 |
 | --- | --- | --- | ---: | --- |
-| T1 | `submissions/final/result_1.csv` | `t1_online_v7.csv` | 0.46 | bias 退步、header 同分，保留原模型 |
-| T2 | `submissions/final/result_2.csv` | `t2_online_v19.csv` | 0.26 | 22 組跨軌對照中的 T2 新模型無穩健改善，不消耗提交額度 |
-| T3 | `submissions/final/result_3.csv` | `t3_batch_soft_heading.csv` | **0.22** | 達到 `<0.23`，保留較簡單的 SE(2)+soft-heading |
+| T1 | `submissions/final/result_1.csv` | `t1_online_v7_img.csv` | 0.47 | v7 設定在目前映像重跑（舊 0.46 檔無法重現，見 6.8） |
+| T2 | `submissions/final/result_2.csv` | `t2_online_v19_img.csv` | 0.26 | v19 設定在目前映像重跑，同分 |
+| T3 | `submissions/final/result_3.csv` | `t3_online_vofill.csv` | **0.22** | SE(2)+soft-heading+VO 缺口補值（6.8），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
 
 後續合法研究重點不是再以排行榜掃逐段位移：先處理 clock convention／measurement age 與既有外參校正的一致性；用獨立幾何擾動與跨路段可觀測性驗證，不把高度相關 GNSS 留出當 ground truth；對 lane peak／sharpness／遮擋建立更可靠的量測噪聲模型；在訊息實際到達時因果處理，已輸出幀不回寫。T1／T2 的舊低分 RTS／leaderboard probing 結果不恢復使用。private 分數未知，不能宣稱已達到未公開評估的準確度。Kaggle 網站最終選擇未由本輪自動更改，需與正式候選一致；本輪沒有留下會在 08:00 後提交的工作。
+
+### 6.8 VO 缺口修正與 10/27 檢查（2026-10-27，台北時間）
+
+**檢查結果**：10/26–27 的改動（SE(2) 側相機同步、`--yaw_soft_peak 0.2`、選用的 capture timing／GNSS yaw／gyro_heading／hyp mean、`submit_guarded.py`、`overnight_experiments.py`、tests）均為選用或已寫入 T3 預設；runner 以目前程式重跑 T3，與 0.22 正式檔逐值相同（max dpos 0.0），58 項 unittest 通過。
+
+**發現的問題：路面 VO 長段缺失**。`bev_vo.py` 在模板區塊有效像素 < 90%（前車遮罩）時整對放棄，改寫 IMU 預測位移且 `resp=0`，濾波器忽略 `resp<=0.5` 的對，所以跟車時完全沒有 VO：T1 第 1–351 幀（車速 0.5–6 m/s）、T2 第 1–408 幀、T3 第 1147–2160 與 2854–3141 幀。
+
+- `bev_vo.py --mask_tol 0.3`：有效比例介於 0.3 與 0.9 的區塊以有效遮罩做 `TM_CCOEFF_NORMED`；預設 0.9 時結果逐值不變。
+- `tools/vo_fill.py`：只補原本 `resp<=0` 的對，其餘逐值保留（全面改用遮罩匹配會讓 T1 的逐對峰值追蹤發散）。補上的對數為 T1 312、T2 371、T3 1073。
+- T3 結果：前 900 幀完全相同，接受的 VO 從 1740 增為 2813；共同幀 innovation 中 lane fwd 0.080 → 0.078 m、near yaw 0.314 → 0.308°，其餘差異在 ±0.001 以內。
+  - 位置差：900–1257 幀平均 0.016 m，1257–2200 幀 0.056 m，2900–3142 幀 0.094 m。
+  - 已接入 `run_online.sh`，僅 T3：步驟 4 產生 `vo_m30.npz` 與 `vo_fill.npz`。
+- T1／T2 不採用：T1 對參考，同環境基準 0.427 → 0.437（混沌，約 ±0.02 屬雜訊範圍）；T2 0.214 → 0.215（持平）。
+
+**未採用：`--fwd_batch N`**。把單次太弱的 lane 前向偏移累積 N 次，取中位數作一次量測；預設關閉。
+- T1：N=10 得 0.414、N=6 得 0.426（同環境基準 0.427），都在混沌範圍內；各批中位數本身也不一致（+0.44、−1.1、+0.39、−0.58）。
+- T3：結尾段的批次值為 −0.39、−0.89 等。這類弱匹配本身已知有 −0.2～−0.5 m 偏差，而共同幀 innovation 在 2400 幀後有好有壞（lane lat 0.101 → 0.107、near lat 0.076 → 0.069），N=6 還會改動起步段。
+
+**T3 提交**：runner 輸出 `submissions/online/t3_online_vofill.csv`（Kaggle 57688125）public **0.22**，與 soft_heading 同分；public 區段（約 157–1257 幀）平均只差 0.005 m，差異主要落在 private 段。runner 重跑逐位元相同；`vo_m30.npz`／`vo_fill.npz` 重建後逐陣列相同。
+
+**發現的問題：T1／T2 正式檔無法以目前 Docker 逐位元重現**。容器在 10/25 15:26 重建（映像仍是 10/16 的 `sdc_ros2_dev`），v7／v19 則是 10/24 在舊容器產生；舊容器裡手動裝過的套件已不存在。用 v7 當時的 commit（6f19f83）在目前容器跑 T1，前 60 幀就差 2.4e-5 m，再被混沌的 T1 濾波器放大，所以不是程式改動造成。目前環境本身是確定的：重跑三次結果逐位元相同。
+
+| Track | 舊容器檔 | 目前映像重跑（runner） | 對參考離線 | public |
+| --- | --- | --- | --- | --- |
+| T1 | t1_online_v7（0.46） | `t1_online_v7_img.csv` | 0.408 → 0.427 | 0.47（57689088） |
+| T2 | t2_online_v19（0.26） | `t2_online_v19_img.csv` | 0.214 → 0.214 | 0.26（57689091） |
+
+為符合「runner 可重現」的規定，`submissions/final/result_1..3` 改為目前映像可逐位元重現的版本。舊的 v7（0.46）在目前環境無法重現；若要選它，需自行承擔 TA 重跑不一致的風險。
+
+T1 變體也要對同環境基準 0.427 比較，不能對舊檔 0.408：fwd_batch 10 得 0.414、6 得 0.426，vofill 0.437，masked VO 全面使用 0.468。這些都在 T1 約 ±0.02 的混沌範圍內，fb10 的各批中位數也互相矛盾，所以不採用。
+
+本地篩選腳本放在 `work/online/`（未納入版控）：`t3_full.sh`（runner 的 T3 完整定位階段，假設 0°，可加選項）、`vo_valid.py`（逐列帶的模板有效比例）。
