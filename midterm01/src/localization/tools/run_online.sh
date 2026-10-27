@@ -114,7 +114,11 @@ case $TR in
       # instead of 60 (for the lateral direction they caused a 1 m wrong lock in the T1 rehearsal)
   *) echo "track must be T1, T2 or T3"; exit 1 ;;
 esac
-case ${SDC_HYP_ESTIMATOR:-map} in
+# T3 heading-hypothesis output for frames 0..NH-1: posterior mean (default; the minimum mean-square-error estimate,
+# which is what an RMSE score rewards, with each frame's weights from the likelihoods up to that frame) or the
+# per-frame MAP hypothesis; vs the start reference (work/online/start_batch.py) frames 0-60 0.309 -> 0.262 m,
+# public 0.20 -> 0.19 (t3_online_kvo97_mean; on 10/26 without --kvo0: 0.330 vs 0.349, both public 0.23)
+case ${SDC_HYP_ESTIMATOR:-mean} in
   map) COMBINE=combine ;;
   mean) COMBINE=combine_mean ;;
   *) echo "SDC_HYP_ESTIMATOR must be map or mean"; exit 1 ;;
@@ -122,7 +126,7 @@ esac
 P="$P ${SDC_LOC_EXTRA:-}"
 printf '%s\n' "$COMMON $P" > "$W/args.txt"
 printf 'SDC_CAM_SYNC=%s\nSDC_CAM_SYNC_YAW=%s\nSDC_ROT_FIX=%s\nSDC_HYP_ESTIMATOR=%s\nSDC_HYP_WORKERS=%s\nSDC_CAM_CAPTURE=%s\n' \
-  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" "${SDC_HYP_ESTIMATOR:-map}" "$HYP_WORKERS" "${SDC_CAM_CAPTURE:-0}" > "$W/environment.txt"
+  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" "${SDC_HYP_ESTIMATOR:-mean}" "$HYP_WORKERS" "${SDC_CAM_CAPTURE:-0}" > "$W/environment.txt"
 
 echo "[$(date +%H:%M:%S)] 1. map and sensor data"
 if [[ ${SDC_CAM_CAPTURE:-0} == 1 ]]; then
