@@ -98,6 +98,9 @@ ap.add_argument('--fwd_batch_sd', type=float, default=0.35, help='m: forward sd 
 ap.add_argument('--relaxed_sharp_f', type=float, default=0.0, help='experimental forward sharpness threshold after '
                 '--relaxed_sharp_from; 0 keeps --min_sharp_f throughout')
 ap.add_argument('--relaxed_sharp_from', type=int, default=600)
+ap.add_argument('--slow_sharp_f', type=float, nargs=2, default=[0.0, 0.0], metavar=('SHARP', 'SPEED'),
+                help='forward fixes need sharpness above SHARP while the estimated speed is below SPEED m/s (queues: '
+                'vehicles alongside hide the markings and the barely-sharp matches are biased -0.3..-0.5 m); 0 disables')
 ap.add_argument('--fwd_jump_gate', type=float, nargs=2, default=[0.0, 0.25], metavar=('DIST', 'PEAK'),
                 help='experimental rejection of forward jumps above DIST m with peak below PEAK while locked; DIST=0 disables')
 ap.add_argument('--floor', type=float, nargs=3, default=[0.3, 0.15, 0.3], help='sd floors: forward m, lateral m, heading deg')
@@ -971,6 +974,8 @@ if __name__ == '__main__':
                     D.update(ln_df=df, ln_dl=dl, ln_dy=np.degrees(dyaw), ln_sf=sf, ln_sl=sl, ln_pk=peak, ln_fok=int(f_ok),
                              ln_lok=int(l_ok), ln_yok=int(y_ok), ln_fa=0, ln_la=0, ln_ya=0)
                     min_sf = a.relaxed_sharp_f if a.relaxed_sharp_f > 0 and k >= a.relaxed_sharp_from else a.min_sharp_f
+                    if a.slow_sharp_f[0] > 0 and abs(v) < a.slow_sharp_f[1]:
+                        min_sf = max(min_sf, a.slow_sharp_f[0])
                     jump_ok = not (a.fwd_jump_gate[0] > 0 and var('f') <= a.lo_sharp_sd ** 2
                                    and abs(df) > a.fwd_jump_gate[0] and peak < a.fwd_jump_gate[1])
                     if f_ok and jump_ok and (sf > min_sf or (sf > a.min_sharp_f_lo and var('f') > a.lo_sharp_sd ** 2)):

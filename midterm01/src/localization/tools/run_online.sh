@@ -42,7 +42,12 @@ case $TR in
       # heading sigma 0.5 / 1.0 / 1.5, GNSS sigma 0.6 fwd / 0.3 lat, terrain, segmentation gate: all worse)
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.15 --acc_noise 0.05 --floor 0.1 0.1 0.15
-         --stand_search 30 --stand_search_sigma 2.5 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5" ;;
+         --stand_search 30 --stand_search_sigma 2.5 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5
+         --slow_sharp_f 0.035 2" ;;
+      # --slow_sharp_f 0.035 2: below 2 m/s (the start queue, bus alongside) lane forward fixes need sharpness > 0.035;
+      # the barely-sharp ones there (0.020-0.034, peak 0.20-0.25) all said -0.3..-0.5 m against GNSS: GNSS forward
+      # innovations 0-400 rms 0.116 -> 0.083 m, vs the reference 0.214 -> 0.206, from 400 unchanged (0.035 / 0.05 and
+      # 2 / 4 m/s identical; a global 0.035 hurt the steady state 0.163 -> 0.171); T1 identical output
       # --yaw_sigma 2.5 (COMMON 0.7): the T2 lane headings are biased in places (426-570: accepted innovations -0.5..-0.8
       # deg, the heading drifted -1 deg); with GNSS the heading also follows the GNSS / lateral fixes through the joint
       # EKF: vs the reference 1.0 -> 0.217, 1.5 -> 0.216, 2.5 -> 0.214 (steady 0.180 -> 0.163); T1 gets worse (0.411 ->

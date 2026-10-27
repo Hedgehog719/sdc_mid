@@ -420,7 +420,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | Track | 正式檔 | 採用來源 | 已確認 public | 本輪結論 |
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v7_img.csv` | 0.47 | v7 設定在目前映像重跑（舊 0.46 檔無法重現，見 6.8） |
-| T2 | `submissions/final/result_2.csv` | `t2_online_v19_img.csv` | 0.26 | v19 設定在目前映像重跑，同分 |
+| T2 | `submissions/final/result_2.csv` | `t2_online_v20.csv` | 0.26 | v19 + `--slow_sharp_f 0.035 2`（6.8），離線 0.214 → 0.206 |
 | T3 | `submissions/final/result_3.csv` | `t3_online_vofill.csv` | **0.22** | SE(2)+soft-heading+VO 缺口補值（6.8），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
@@ -458,3 +458,10 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 T1 變體也要對同環境基準 0.427 比較，不能對舊檔 0.408：fwd_batch 10 得 0.414、6 得 0.426，vofill 0.437，masked VO 全面使用 0.468。這些都在 T1 約 ±0.02 的混沌範圍內，fb10 的各批中位數也互相矛盾，所以不採用。
 
 本地篩選腳本放在 `work/online/`（未納入版控）：`t3_full.sh`（runner 的 T3 完整定位階段，假設 0°，可加選項）、`vo_valid.py`（逐列帶的模板有效比例）。
+
+**T2：起步車陣的弱前向匹配（v20，`--slow_sharp_f 0.035 2`）**。T2 前 300 幀對參考一直落後 0.23–0.31 m。當時被接受的 lane 前向修正，sharpness 只有 0.020–0.034、peak 0.20–0.25，都剛過門檻，而且一致指向 −0.3～−0.5 m；同一時間 GNSS 前向 innovation 都是正的（+0.04～+0.15 m），方向相反。這與既有記錄「低 sharpness 前向匹配偏差 −0.2～−0.5 m」一致。
+- 新選項 `--slow_sharp_f SHARP SPEED`：估計車速低於 SPEED 時，前向修正的 sharpness 要高於 SHARP。
+- T2 結果：第 0–400 幀的 GNSS 前向 innovation rms 0.116 → 0.083 m（全程 0.100 → 0.096）；對參考 0.214 → 0.206，400 幀之後不變。
+- 對參數不敏感：0.035 和 0.05、2 和 4 m/s 的結果完全相同。全程改用 0.035 則穩態變差（0.163 → 0.171），所以只在低速時套用。
+- T1 輸出逐位元不變。T3 只在第 2979 幀之後改變，共同幀 innovation 持平略差，不採用。
+- runner 重跑逐位元相同。Kaggle 57690754 public 0.26，兩位小數看不出 0.008 的離線差異。
