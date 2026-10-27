@@ -62,6 +62,11 @@ ap.add_argument('--fwd_sharp_bias', type=float, nargs=2, default=[0.0, 0.04], me
                 'with sharpness sf < S0 are moved by +C ln(S0 / sf) m (flat-ground BEV: weak forward matches lie behind; '
                 'vs the references, medians T1 -0.40 / -0.34 / -0.17 m and T2 -0.83 / -0.49 / -0.33 m at sf 0.003-0.006 / '
                 '0.006-0.01 / 0.01-0.02, both ~ -0.27 ln(0.04 / sf)); C=0 disables')
+ap.add_argument('--gnss_noyaw_v', type=float, default=0.0, help='m/s: below this speed GNSS position updates leave the '
+                'heading and the gyro bias unchanged (Schmidt / consider update, Joseph form): over the short baseline of '
+                'slow driving a drifting GNSS bias (Track02 start: lateral innovations +0.25 m while creeping at 0.1-1.2 m/s) '
+                'is read as a heading error (+0.6 deg at frames 250-300; Track01 start: -0.2 m at 2 m/s turned the heading '
+                'from +1.5 to -1.2 deg); 0 disables')
 ap.add_argument('--gnss_huber', action='store_true', help='GNSS position updates get the --huber weight too (multipath '
                 'outliers: Track01 GNSS innovations reach 1-2 m against sigma 0.2 m); they still do not count in the map '
                 'log-likelihood')
@@ -80,6 +85,8 @@ ap.add_argument('--guess', default='', help='x,y,yaw_rad in place of the init_gu
 ap.add_argument('--first', type=int, default=0, help='validation only: the filter starts at this frame as if it were frame 0 '
                 '(restart tests of the start logic on frames with a converged trajectory); earlier rows are written as zeros')
 ap.add_argument('--init_yaw', type=float, default=25.0, help='deg: heading window of the initial search')
+ap.add_argument('--init_fwd', type=float, default=0.0, help='m added to the frame-0 position along the heading (position '
+                'hypotheses of the start bank)')
 ap.add_argument('--init_offset', type=float, default=0.0, help='deg added to the frame-0 heading (heading hypotheses, '
                 'tools/hyp_select.py: the frame-0 match can be flat over several degrees)')
 ap.add_argument('--init_pos_per_hyp', action='store_true', help='with --init_pos: refine frame-0 position at each '
@@ -603,6 +610,7 @@ if __name__ == '__main__':
         LS.set_motion_frame(a.first, 0.0)
     x, y, yaw = REPLAY['init'] if REPLAY is not None else initial_pose(G)
     yaw += np.radians(a.init_offset)
+    x, y = x + a.init_fwd * np.cos(yaw), y + a.init_fwd * np.sin(yaw)
     REC['init'] = (x, y, yaw)
     print(f'initial pose (frame 0): x {x:.2f} y {y:.2f} yaw {np.degrees(yaw):.2f} deg', flush=True)
     v, b, w, kvo = 0.0, 0.0, 0.0, a.kvo0
@@ -660,7 +668,7 @@ if __name__ == '__main__':
         if cur < sd * sd:
             inflate(kind, sd * sd - cur)
 
-    def jupd(h, e, r2, gate, robust=False, huber=False):
+    def jupd(h, e, r2, gate, robust=False, huber=False, fix=()):
         """Scalar measurement update of the joint EKF: innovation e = z - h.s, noise variance r2. robust: Huber
         weight (map matches have heavy tails: a normalised innovation above --huber inflates the noise)."""
         global x, y, yaw, v, b, kvo, bg, PJ, gbx, gby, LL
@@ -675,10 +683,16 @@ if __name__ == '__main__':
         if (robust or huber) and a.huber > 0 and t > a.huber:
             S = S - r2 + r2 * t / a.huber
         K = PJ @ h / S
+        if fix:   # consider update: these states are not changed by this measurement (Joseph form keeps PJ consistent)
+            K[list(fix)] = 0.0
         x, y, yaw = x + K[0] * e, y + K[1] * e, yaw + K[2] * e
         v, b, kvo, bg = max(0.0, v + K[3] * e), b + K[4] * e, float(np.clip(kvo + K[5] * e, *a.kvo_range)), bg + K[6] * e
         gbx, gby = gbx + K[7] * e, gby + K[8] * e
-        PJ = PJ - np.outer(K, h @ PJ)
+        if fix:
+            IKH = np.eye(9) - np.outer(K, h)
+            PJ = IKH @ PJ @ IKH.T + np.outer(K, K) * (S - float(h @ PJ @ h))
+        else:
+            PJ = PJ - np.outer(K, h @ PJ)
         PJ = 0.5 * (PJ + PJ.T)
         return True
 
@@ -712,10 +726,10 @@ if __name__ == '__main__':
         x, y, yaw, v = x + d * cm, y + d * sm, yaw + dpsi, v_new
         return d
 
-    def upd_fwd(e, sig, gate=16.0, robust=False, huber=False):
+    def upd_fwd(e, sig, gate=16.0, robust=False, huber=False, fix=()):
         global x, y, v, b, kvo, P3
         if a.joint:
-            return jupd(np.r_[axis('f'), np.zeros(7)], e, sig ** 2, gate, robust, huber)
+            return jupd(np.r_[axis('f'), np.zeros(7)], e, sig ** 2, gate, robust, huber, fix)
         S = P3[0, 0] + sig ** 2
         if e * e >= gate * S:
             return False
@@ -726,10 +740,10 @@ if __name__ == '__main__':
         P3 = P3 - np.outer(K, P3[0, :])
         return True
 
-    def upd_lat(e, sig, gate=16.0, robust=False, huber=False):
+    def upd_lat(e, sig, gate=16.0, robust=False, huber=False, fix=()):
         global x, y, Pl
         if a.joint:
-            return jupd(np.r_[axis('l'), np.zeros(7)], e, sig ** 2, gate, robust, huber)
+            return jupd(np.r_[axis('l'), np.zeros(7)], e, sig ** 2, gate, robust, huber, fix)
         S = Pl + sig ** 2
         if e * e >= gate * S:
             return False
@@ -871,8 +885,9 @@ if __name__ == '__main__':
                             ok2 = jupd(np.array([-s, c, 0, 0, 0, 0, 0, -s, c]), el, a.gnss_sigma[1] ** 2, 25.0, huber=a.gnss_huber)
                         else:
                             ef, el = c * (gx - x) + s * (gy - y), -s * (gx - x) + c * (gy - y)
-                            ok1 = upd_fwd(ef, a.gnss_sigma[0], 25.0, huber=a.gnss_huber)
-                            ok2 = upd_lat(el, a.gnss_sigma[1], 25.0, huber=a.gnss_huber)
+                            gfix = (2, 6) if a.gnss_noyaw_v > 0 and v < a.gnss_noyaw_v else ()
+                            ok1 = upd_fwd(ef, a.gnss_sigma[0], 25.0, huber=a.gnss_huber, fix=gfix)
+                            ok2 = upd_lat(el, a.gnss_sigma[1], 25.0, huber=a.gnss_huber, fix=gfix)
                         D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
                         if gnss_prior is not None:
