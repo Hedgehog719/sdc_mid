@@ -791,4 +791,5 @@ T3 沒有 ground truth，所以前向模型的參數改用 **GNSS-denied 預演*
 **修正**：把舊快取移到 `work/runs/T3/stale_1027/`，讓 runner 從零重建（`work/runs/T3_fresh`）。
 - 第 0–1146 幀和原正式檔完全相同（public 部分不變）；第 1146–2160 幀平均差 0.003 m，第 2160–3142 幀平均差 0.044 m（最大 0.57 m）。
 - 重新提交為 `t3_online_kvo97_mean_r.csv`（Kaggle 57715774），public 0.19，並改為正式檔 `result_3.csv`。先前的 kvo97／kvo97_mean 檔是用舊快取產生的，無法從零重現，不能作為最終選擇。
-- T1、T2 的檢查進行中。
+- T1、T2：`mk_D`、`mk_S`、`vo` 從零重建後逐陣列相同（T1／T2 的 runner 不使用遮罩 VO），兩份正式檔可從原始資料重現。
+- 殘餘風險：路面分割和車輛遮罩（`$TD/road/f.npz`、`$TD/masks/f.npz`，由 SegFormer／YOLO 產生）存在資料夾中，沒有重新推論驗證；若重新推論，GPU 浮點運算的差異可能讓結果有極小差別。
