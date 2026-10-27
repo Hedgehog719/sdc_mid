@@ -58,6 +58,10 @@ ap.add_argument('--gnss_stride', type=int, default=1, help='validation only: con
 ap.add_argument('--gnss_phase', type=int, default=0, help='validation only: first GNSS sample index for --gnss_stride')
 ap.add_argument('--gnss_yaw_sigma', type=float, default=0.0, help='deg: optional weak GNSS orientation prior; 0 disables')
 ap.add_argument('--gnss_yaw_once', action='store_true', help='use only the first valid GNSS heading when it arrives')
+ap.add_argument('--fwd_sharp_bias', type=float, nargs=2, default=[0.0, 0.04], metavar=('C', 'S0'), help='lane forward offsets '
+                'with sharpness sf < S0 are moved by +C ln(S0 / sf) m (flat-ground BEV: weak forward matches lie behind; '
+                'vs the references, medians T1 -0.40 / -0.34 / -0.17 m and T2 -0.83 / -0.49 / -0.33 m at sf 0.003-0.006 / '
+                '0.006-0.01 / 0.01-0.02, both ~ -0.27 ln(0.04 / sf)); C=0 disables')
 ap.add_argument('--gnss_huber', action='store_true', help='GNSS position updates get the --huber weight too (multipath '
                 'outliers: Track01 GNSS innovations reach 1-2 m against sigma 0.2 m); they still do not count in the map '
                 'log-likelihood')
@@ -208,6 +212,13 @@ ap.add_argument('--meas_prior', default='', help='parameter studies only: record
                 'trajectory (own earlier output) instead of the filter state, so that replays stay valid')
 ap.add_argument('--accum_dist', type=float, default=0.0, help='>0: lane matches on the camera response accumulated over '
                 'the past accum_dist metres (frames <= k, warped by the filter\'s own past poses)')
+ap.add_argument('--accum_vmin', type=float, default=0.0, help='--accum_dist: accumulate only at speeds >= this (m/s); '
+                'slower frames match alone (near a stop the travelled distance stalls and the window falls back to the '
+                'last frames of one scene)')
+ap.add_argument('--accum_dr', action='store_true', help='--accum_dist: warp the past frames by the dead-reckoned relative '
+                'motion (IMU heading and filter speed, no map / GNSS corrections) instead of the corrected poses: a '
+                'correction between two frames shifted their marks against each other (the corrected-pose accumulation '
+                'diverged in the Track01 GNSS-free simulation); only the relative motion over a few metres matters')
 ap.add_argument('--record', default='', help='save the per-frame map measurements (absolute poses) for --replay')
 ap.add_argument('--replay', default='', help='run the filter on recorded map measurements (fast parameter studies)')
 ap.add_argument('--lane_yaw_off', type=float, default=0.25, help='deg: heading bias of the lane-match headings (calibration, '
@@ -611,6 +622,7 @@ if __name__ == '__main__':
     vo_hist = []
     lo_ok = True      # weak lane matches allowed (--min_peak_lo); with --lo_peak_start only until the first regular lock
     travelled = 0.0
+    dr = None         # --accum_dr: dead-reckoned pose (x, y, heading) for the accumulation warps
     cnt = dict(fwd=0, lat=0, yaw=0, vo=0, gnss=0, still=0)
     gi = 0
     if G is not None:
@@ -784,6 +796,9 @@ if __name__ == '__main__':
                     Fy = np.array([[1.0, -dt], [0.0, 1.0]]) if heading else np.eye(2)
                     PY = Fy @ PY @ Fy.T + np.diag([qy * dt, np.radians(a.gyro_bias_walk) ** 2 * dt])
                 travelled += abs(d)
+                if a.accum_dr and dr is not None:
+                    hm_ = dr[2] + 0.5 * dyaw_p
+                    dr = (dr[0] + d * np.cos(hm_), dr[1] + d * np.sin(hm_), dr[2] + dyaw_p)
                 if DYN is not None and a.roll_per_lat != 0.0 and REPLAY is None:
                     # suspension roll model: body roll proportional to the lateral (centripetal) acceleration speed x yaw
                     # rate (the IMU's own roll in turns contains the centripetal pseudo-tilt)
@@ -818,6 +833,8 @@ if __name__ == '__main__':
                             # for a steady 0.25-0.28 m per pair)
                             dd = zf / max(kvo, 1e-3) - d
                             x, y = x + dd * np.cos(yaw), y + dd * np.sin(yaw)
+                            if a.accum_dr and dr is not None:
+                                dr = (dr[0] + dd * np.cos(dr[2]), dr[1] + dd * np.sin(dr[2]), dr[2])
                             u = np.array([np.cos(yaw), np.sin(yaw)])
                             PJ[:2, :2] += np.outer(u, u) * (0.1 * abs(zf)) ** 2
                             D['vo_a'] = 1
@@ -926,7 +943,7 @@ if __name__ == '__main__':
                     LS.set_window(max_shift=win)
                     mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
                     if a.accum_dist > 0:
-                        LS.set_pose(k, mp)   # current prior of frame k (past frames hold their final poses)
+                        LS.set_pose(k, dr if a.accum_dr else mp)   # current prior of frame k (past frames hold their final poses)
                     frozen = a.still_freeze and bool(D.get('still'))
                     if frozen and a.still_meas > 0 and still_k0 is not None:   # a few measurements of the stop pose
                         el = k - still_k0
@@ -940,6 +957,8 @@ if __name__ == '__main__':
                     if a.seg_gate_track and a.seg_gate_from > 0:
                         LS.BM.A.seg_gate = a.seg_gate if k - a.first >= a.seg_gate_from else 0.0
                     LS.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
+                    if a.accum_dist > 0 and a.accum_vmin > 0:
+                        LS.BM.A.accum = 12 if v >= a.accum_vmin else 0
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if a.pitch_track and not frozen and r is not None and mi % a.pitch_every == 0:
                         pk = [None, r[5], None]
@@ -982,6 +1001,8 @@ if __name__ == '__main__':
                         f_ok = y_ok = False
                     D.update(ln_df=df, ln_dl=dl, ln_dy=np.degrees(dyaw), ln_sf=sf, ln_sl=sl, ln_pk=peak, ln_fok=int(f_ok),
                              ln_lok=int(l_ok), ln_yok=int(y_ok), ln_fa=0, ln_la=0, ln_ya=0)
+                    if a.fwd_sharp_bias[0] > 0 and 0 < sf < a.fwd_sharp_bias[1]:
+                        df += a.fwd_sharp_bias[0] * np.log(a.fwd_sharp_bias[1] / sf)
                     min_sf = a.relaxed_sharp_f if a.relaxed_sharp_f > 0 and k >= a.relaxed_sharp_from else a.min_sharp_f
                     if a.slow_sharp_f[0] > 0 and abs(v) < a.slow_sharp_f[1]:
                         min_sf = max(min_sf, a.slow_sharp_f[0])
@@ -1092,7 +1113,11 @@ if __name__ == '__main__':
                          sdl=np.sqrt(var('l')), sdy=np.degrees(np.sqrt(var('y'))))
                 DBG.append(D)
             if a.accum_dist > 0 and REPLAY is None:
-                LS.set_pose(k, (x, y, yaw) if MP is None else (MP.x[k], MP.y[k], MP.yaw[k]))
+                if a.accum_dr:
+                    dr = dr if dr is not None else (x, y, yaw)
+                    LS.set_pose(k, dr)
+                else:
+                    LS.set_pose(k, (x, y, yaw) if MP is None else (MP.x[k], MP.y[k], MP.yaw[k]))
             if k % 300 == 0:
                 print(f'  frame {k}: x {x:.2f} y {y:.2f} yaw {np.degrees(yaw):.2f} v {v:.2f} | sd fwd {np.sqrt(var("f")):.2f} '
                       f'lat {np.sqrt(var("l")):.2f} yaw {np.degrees(np.sqrt(var("y"))):.2f} | bg {np.degrees(bg):+.3f} kvo {kvo:.3f} | {cnt}', flush=True)
