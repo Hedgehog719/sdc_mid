@@ -28,6 +28,11 @@ pip3 install transformers           # SegFormer 道路分割（Dockerfile 之後
 
 我們使用的版本：Python 3.10、numpy 1.23.5、scipy 1.8、pandas 2.0、opencv 4.11、torch 2.11 (cu128)、transformers 5.20、ultralytics 8.4、rosbags 0.11。
 
+**正式檔（`submissions/final/result_1..3.csv`，10/27–28）實際的定位環境**：容器 `sdc_midterm01` 在 10/25 由 10/16 建的映像重建，裡面是 Python 3.10.12、numpy 1.23.5、scipy 1.8.0、pandas 2.0.3、**OpenCV 4.5.4（Ubuntu 的 `python3-opencv`）**，沒有 torch。
+- 路面分割（`$TD/road/*.npz`，T1／T2 為 10/18、T3 為 10/23 產生）和車輛遮罩（`$TD/masks/*.npz`）是在舊容器中，以上一段列出的 torch／transformers／ultralytics 版本產生的。runner 看到這些檔案已存在就會直接沿用。
+- 若要逐位元重現，請使用同樣的 OpenCV 4.5.4：ultralytics 會連帶安裝 pip 版的 `opencv-python`，它會蓋過系統的 4.5.4（可在定位前執行 `pip3 uninstall opencv-python`），並沿用相同的分割檔。混沌的 T1 濾波器會放大任何函式庫差異（見 6.8）。
+- 中間產物（標線地圖、VO、遮罩 VO）已確認可在這個環境下從零重建且逐陣列相同（6.17）。
+
 模型權重：
 
 - SegFormer-B2 Cityscapes：第一次執行時會從 Hugging Face 自動下載 `nvidia/segformer-b2-finetuned-cityscapes-1024-1024`。
