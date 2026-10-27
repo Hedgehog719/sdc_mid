@@ -206,6 +206,9 @@ ap.add_argument('--near_min_sigma', type=float, default=0.08, help='m: smallest 
 ap.add_argument('--lane_fc', type=float, default=0.0, help='>0: lane forward sigma = lane_fc / sqrt(sharpness) (measured: '
                 'robust sd 0.42 m at sharpness 0.015, 0.75 m at 0.0045, 0.2 m at 0.06 -> ~0.05) instead of lane_k[0] / sharpness')
 ap.add_argument('--vo_noise', type=float, default=0.04, help='relative VO speed noise of a 3-pair mean')
+ap.add_argument('--kvo0', type=float, default=1.0, help='initial VO scale (VO speed / true speed); converged values: '
+                'Track01 0.963, Track02 0.994, Track03 0.95-0.97 (the start runs on the initial value until map fixes '
+                'correct it: 1.0 against 0.96 = 4 %% slow)')
 ap.add_argument('--kvo_range', type=float, nargs=2, default=[0.85, 1.15], help='VO scale limits (measured: T2 ~1.0, T1 ~0.9; '
                 'a loose range let a wrong speed be absorbed into the scale)')
 ap.add_argument('--meas_prior', default='', help='parameter studies only: record the map measurements around this '
@@ -600,7 +603,7 @@ if __name__ == '__main__':
     yaw += np.radians(a.init_offset)
     REC['init'] = (x, y, yaw)
     print(f'initial pose (frame 0): x {x:.2f} y {y:.2f} yaw {np.degrees(yaw):.2f} deg', flush=True)
-    v, b, w, kvo = 0.0, 0.0, 0.0, 1.0
+    v, b, w, kvo = 0.0, 0.0, 0.0, a.kvo0
     P3 = np.diag([1.0, a.v0_sd, 0.05, 0.05]) ** 2      # along-track [position, speed, accel bias, VO scale]
     Pl = 1.0 ** 2                                       # cross-track position
     bg = np.radians(a.gyro_bias)
