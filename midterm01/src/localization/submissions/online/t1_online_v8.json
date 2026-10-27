@@ -1,0 +1,10 @@
+{
+  "profile": "t1_online_v8",
+  "runner": "SDC_LOC_EXTRA='--fwd_batch 10' tools/run_online.sh /root/data/Track1 T1",
+  "sha256": "979e7eedd7b0bf4ca7a5811a8c108336ac2f34283188796045fae0dae4aac733",
+  "status": "SubmissionStatus.COMPLETE",
+  "score": "0.47",
+  "ref": "57691455",
+  "submitted": "2026-10-27T14:15:41+08:00",
+  "adopted": false
+}

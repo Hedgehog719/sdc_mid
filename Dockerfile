@@ -31,9 +31,9 @@ RUN pip3 install --no-cache-dir \
     pycryptodomex \
     rosbags
 
-# Localization tools (tools/*.py): registration, fusion, YOLO vehicle masks (RTX 50xx needs cu128 wheels)
+# Localization tools (tools/*.py): registration, fusion, YOLO vehicle masks, SegFormer (RTX 50xx needs cu128 wheels)
 RUN pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu128 \
- && pip3 install --no-cache-dir small_gicp scipy pyyaml ultralytics "numpy==1.23.5"
+ && pip3 install --no-cache-dir small_gicp scipy pyyaml ultralytics transformers huggingface-hub "numpy==1.23.5"
 
 WORKDIR /root/midterm
 

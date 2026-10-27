@@ -1,0 +1,35 @@
+{
+  "profile": "fixed_equal_three_causal_models",
+  "members": [
+    {
+      "file": "t3_online_se2.csv",
+      "weight": 0.3333333333333333,
+      "source_submission": "57672334",
+      "sha256": "2abb0974b121aa267c0bbecb56939d404e06496a0de0bdfa92d8c834c5df0ed9"
+    },
+    {
+      "file": "t3_batch_soft_heading.csv",
+      "weight": 0.3333333333333333,
+      "source_submission": "57675838",
+      "sha256": "ef5d8e693b3fb6618f5db217856c3e87e1de990fdfb6114cb267b51fa5d9821b"
+    },
+    {
+      "file": "t3_batch_gyro_heading.csv",
+      "weight": 0.3333333333333333,
+      "source_submission": "57677706",
+      "sha256": "c5c9d04a70641dad03cb75aca754df3f9fce83797db29e25c44ce4e1818ff0b9"
+    }
+  ],
+  "weight_selection": "preregistered equal weights; no leaderboard fitting",
+  "validation": {
+    "rows": 3142,
+    "exact_prefix_frames": 600,
+    "indices_aligned": true,
+    "circular_heading": true
+  },
+  "sha256": "99478b72658cc0b60523211cfff1d01b6aefc8bd8329627af7e017b345270584",
+  "status": "SubmissionStatus.COMPLETE",
+  "score": "0.23",
+  "ref": "57678540",
+  "deadline": "2026-10-27T08:00:00+08:00"
+}

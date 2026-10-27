@@ -35,6 +35,16 @@ from bev import ImageBEV  # noqa: E402
 from common import ply_frames  # noqa: E402
 from marking_map import MarkingMap, road_level, vehicle_frame  # noqa: E402
 import lane_single as LS  # noqa: E402
+from gnss_heading import HeadingPrior, quaternion_headings  # noqa: E402
+
+def gyro_heading_rate(orientation, body_rates):
+    """Yaw derivative of the body-forward direction, not angular velocity projected on world z."""
+    angular = orientation.apply(body_rates)
+    forward = orientation.apply(np.tile([1.0, 0.0, 0.0], (len(body_rates), 1)))
+    derivative = np.cross(angular, forward)
+    horizontal = np.maximum((forward[:, :2] ** 2).sum(axis=1), 1e-6)
+    return (forward[:, 0] * derivative[:, 1] - forward[:, 1] * derivative[:, 0]) / horizontal
+
 
 ap = argparse.ArgumentParser()
 ap.add_argument('track_dir')
@@ -43,18 +53,33 @@ ap.add_argument('lane_marks', help='soft marking map (marking_map.py ALL ... --m
 ap.add_argument('out')
 ap.add_argument('--vo', default='', help='bev_vo.py npz (road-surface odometry)')
 ap.add_argument('--gnss', action='store_true', help='use sensors/gnss.csv (Track01/02)')
+ap.add_argument('--gnss_stride', type=int, default=1, help='validation only: consume every Nth GNSS sample; '
+                'other samples remain held out from the filter')
+ap.add_argument('--gnss_phase', type=int, default=0, help='validation only: first GNSS sample index for --gnss_stride')
+ap.add_argument('--gnss_yaw_sigma', type=float, default=0.0, help='deg: optional weak GNSS orientation prior; 0 disables')
+ap.add_argument('--gnss_yaw_once', action='store_true', help='use only the first valid GNSS heading when it arrives')
 ap.add_argument('--gnss_sigma', type=float, nargs=2, default=[0.3, 0.3], help='m: along / across-track GNSS noise (white part '
                 'when --gnss_bias_sd > 0)')
 ap.add_argument('--gnss_bias_sd', type=float, default=0.0, help='m (joint EKF): GNSS error modelled as a first-order Gauss-Markov bias '
                 'state of this sd (GNSS errors are strongly time-correlated: autocorrelation 0.8-0.9 at 1 s); 0 = white noise only')
 ap.add_argument('--gnss_bias_tau', type=float, default=3.0, help='s: correlation time of the GNSS bias')
 ap.add_argument('--no_imu', action='store_true')
+ap.add_argument('--gyro_heading', action='store_true', help='use the yaw derivative of the IMU forward axis instead '
+                'of world-z angular velocity; --gyro_bias must use the same convention')
 ap.add_argument('--step', type=int, default=3, help='map measurement every step frames')
 ap.add_argument('--init', default='', help='x,y,yaw_rad instead of init_guess.txt')
+ap.add_argument('--guess', default='', help='x,y,yaw_rad in place of the init_guess.txt pose; the frame-0 searches still run '
+                '(validation: restart tests)')
+ap.add_argument('--first', type=int, default=0, help='validation only: the filter starts at this frame as if it were frame 0 '
+                '(restart tests of the start logic on frames with a converged trajectory); earlier rows are written as zeros')
 ap.add_argument('--init_yaw', type=float, default=25.0, help='deg: heading window of the initial search')
 ap.add_argument('--init_offset', type=float, default=0.0, help='deg added to the frame-0 heading (heading hypotheses, '
                 'tools/hyp_select.py: the frame-0 match can be flat over several degrees)')
+ap.add_argument('--init_pos_per_hyp', action='store_true', help='with --init_pos: refine frame-0 position at each '
+                'hypothesis heading instead of sharing the position refined at zero heading offset')
 ap.add_argument('--rmax', type=float, default=14.0)
+ap.add_argument('--near_sync', action='store_true', help='with SDC_CAM_SYNC=1: project near-alignment map points at '
+                'each camera capture time instead of the front-camera timestamp')
 ap.add_argument('--lat', type=float, default=6.0)
 ap.add_argument('--bg_weight', type=float, default=1.0)
 ap.add_argument('--min_contrast', type=float, default=0.12)
@@ -68,6 +93,20 @@ ap.add_argument('--min_sharp_f_lo', type=float, default=1.0, help='forward fixes
                 'min_sharp_f] only while the forward sd exceeds --lo_sharp_sd (they are biased by -0.2..-0.5 m, but beat '
                 'drifting without GNSS)')
 ap.add_argument('--lo_sharp_sd', type=float, default=0.35)
+ap.add_argument('--fwd_batch', type=int, default=0, help='>0: lane-match forward offsets too weak to use one by one (peak > '
+                '--fwd_batch_peak, sharpness > --min_sharp_f_lo, inside the window) are collected and their median is applied as '
+                'one forward fix every this many (sigma = robust spread / sqrt(n), floor 0.15 m); only while the forward sd '
+                'exceeds --fwd_batch_sd. Track01 start: weak matches scatter -1.9..+2.5 m one by one, their median says -0.35 m')
+ap.add_argument('--fwd_batch_peak', type=float, default=0.08)
+ap.add_argument('--fwd_batch_sd', type=float, default=0.35, help='m: forward sd above which weak offsets are batched')
+ap.add_argument('--relaxed_sharp_f', type=float, default=0.0, help='experimental forward sharpness threshold after '
+                '--relaxed_sharp_from; 0 keeps --min_sharp_f throughout')
+ap.add_argument('--relaxed_sharp_from', type=int, default=600)
+ap.add_argument('--slow_sharp_f', type=float, nargs=2, default=[0.0, 0.0], metavar=('SHARP', 'SPEED'),
+                help='forward fixes need sharpness above SHARP while the estimated speed is below SPEED m/s (queues: '
+                'vehicles alongside hide the markings and the barely-sharp matches are biased -0.3..-0.5 m); 0 disables')
+ap.add_argument('--fwd_jump_gate', type=float, nargs=2, default=[0.0, 0.25], metavar=('DIST', 'PEAK'),
+                help='experimental rejection of forward jumps above DIST m with peak below PEAK while locked; DIST=0 disables')
 ap.add_argument('--floor', type=float, nargs=3, default=[0.3, 0.15, 0.3], help='sd floors: forward m, lateral m, heading deg')
 ap.add_argument('--min_peak', type=float, default=0.2)
 ap.add_argument('--min_peak_yaw', type=float, default=0.25)
@@ -236,7 +275,8 @@ def score(q, resp):
     vals = []
     Rr = Rm if R_CUR is None else R_CUR
     for c in CAMS:
-        uv, ok = C.project(c, q @ Rr)
+        camera_points = B.points_at_capture(c, B.motion_frame, q) if a.near_sync else q
+        uv, ok = C.project(c, camera_points @ Rr)
         h, w = resp[c].shape
         u, v = uv[:, 0], uv[:, 1]
         ins = ok & (u >= 0) & (u < w - 1) & (v >= 0) & (v < h - 1)
@@ -380,7 +420,8 @@ def load_imu():
     im = pd.read_csv(f)
     q = Rotation.from_quat(im[['qx', 'qy', 'qz', 'qw']].values)
     t = im.t.values.astype(np.float64)
-    wz = q.apply(im[['wx', 'wy', 'wz']].values)[:, 2]
+    body_rates = im[['wx', 'wy', 'wz']].values
+    wz = gyro_heading_rate(q, body_rates) if a.gyro_heading else q.apply(body_rates)[:, 2]
     yaw_g = np.concatenate([[0], np.cumsum(0.5 * (wz[1:] + wz[:-1]) * np.diff(t) * 1e-9)])
     aw = q.apply(im[['ax', 'ay', 'az']].values)
     yq = np.unwrap(q.as_euler('ZYX')[:, 0])
@@ -440,11 +481,23 @@ def standstill(t1):
     return m1 - m0 > 50 and an[m0:m1].std() < a.zupt_acc and wn[m0:m1].max() < np.radians(a.zupt_gyro)
 
 
+GNSS_YAW = None
+
+
 def load_gnss():
+    global GNSS_YAW
+    GNSS_YAW = None
     f = os.path.join(a.track_dir, 'sensors', 'gnss.csv')
     if not a.gnss or not os.path.exists(f):
         return None
+    if a.gnss_stride < 1 or not 0 <= a.gnss_phase < a.gnss_stride:
+        raise ValueError('--gnss_stride must be positive and 0 <= --gnss_phase < --gnss_stride')
     g = pd.read_csv(f)
+    g = g.iloc[a.gnss_phase::a.gnss_stride]
+    if a.gnss_yaw_sigma < 0:
+        raise ValueError('--gnss_yaw_sigma must be nonnegative')
+    if a.gnss_yaw_sigma > 0:
+        GNSS_YAW = quaternion_headings(g[['qx', 'qy', 'qz', 'qw']].values)
     return g.t.values.astype(np.int64), g.x.values, g.y.values
 
 
@@ -456,16 +509,18 @@ def initial_pose(G):
         return [float(v) for v in a.init.split(',')]
     M = np.loadtxt(os.path.join(a.track_dir, 'init_guess.txt'), delimiter=',')
     x, y, yaw = M[0, 3], M[1, 3], Rotation.from_matrix(M[:3, :3]).as_euler('ZYX')[0]
+    if a.guess:
+        x, y, yaw = (float(v) for v in a.guess.split(','))
     if G is not None:
-        k = int(np.searchsorted(G[0], TS[0], side='right')) - 1
-        if k >= 0 and (TS[0] - G[0][k]) * 1e-9 < 0.5:
+        k = int(np.searchsorted(G[0], TS[a.first], side='right')) - 1
+        if k >= 0 and (TS[a.first] - G[0][k]) * 1e-9 < 0.5:
             x, y = G[1][k], G[2][k]
     y0 = yaw
     LS.BM.A.seg_gate = 0.0 if a.seg_gate_track else a.seg_gate
     for my, ms, ys in ((a.init_yaw, 1.0, 1.0), (3.0, 1.0, 0.5)):
         LS.set_window(max_shift=ms, max_yaw=my, yaw_step=ys)
         try:
-            r = LS.match(0, (x, y, yaw))
+            r = LS.match(a.first, (x, y, yaw))
         except (IndexError, ValueError):
             r = None
         if r is not None and r[0] > 0.08:
@@ -475,12 +530,13 @@ def initial_pose(G):
         yaw = y0
     elif a.init_pos and G is None:   # init_guess grossly off (heading > gross_yaw): its position is suspect as well ->
         LS.set_window(max_shift=a.init_pos, max_yaw=1.0, yaw_step=0.5)   # frame-0 match position, wide window
+        position_yaw = yaw + np.radians(a.init_offset) if a.init_pos_per_hyp else yaw
         try:
-            r = LS.match(0, (x, y, yaw))
+            r = LS.match(a.first, (x, y, position_yaw))
         except (IndexError, ValueError):
             r = None
         if r is not None and r[0] > a.min_peak_lo:
-            c, s = np.cos(yaw), np.sin(yaw)
+            c, s = np.cos(position_yaw), np.sin(position_yaw)
             x, y = x + c * r[2] - s * r[3], y + s * r[2] + c * r[3]
             print(f'frame-0 position correction: forward {r[2]:+.2f} m, lateral {r[3]:+.2f} m (peak {r[0]:.3f})', flush=True)
         LS.set_window(max_shift=2.5, max_yaw=3.0, yaw_step=0.5)
@@ -509,6 +565,7 @@ if __name__ == '__main__':
         DYN[:, 1] += a.roll_add
     att_ema = None
     still_k0, still_used = None, 0   # --still_meas: frame where the current standstill began
+    fwd_buf = []   # --fwd_batch: weak lane-match forward offsets awaiting their median
     roll_mean, roll_n = 0.0, 0   # --roll_imu_map
     if a.terrain and REPLAY is None:
         LS.BM.BEV.terrain = MK.height
@@ -524,7 +581,7 @@ if __name__ == '__main__':
         VO = {int(j): (f, d, r) for j, f, d, r in zip(zv['j'], zv['fwd'], zv['dt'], zv['resp'])}   # pair (j, j + 1)
     print(f'{T}: {n} frames, IMU {"yes" if heading else "no"}, GNSS {"yes" if G is not None else "no"}, VO {"yes" if VO else "no"}', flush=True)
     if REPLAY is None:
-        LS.set_motion_frame(0, 0.0)
+        LS.set_motion_frame(a.first, 0.0)
     x, y, yaw = REPLAY['init'] if REPLAY is not None else initial_pose(G)
     yaw += np.radians(a.init_offset)
     REC['init'] = (x, y, yaw)
@@ -554,7 +611,7 @@ if __name__ == '__main__':
     cnt = dict(fwd=0, lat=0, yaw=0, vo=0, gnss=0, still=0)
     gi = 0
     if G is not None:
-        gi = int(np.searchsorted(G[0], TS[0], side='right'))   # samples up to frame 0 are not used afterwards
+        gi = int(np.searchsorted(G[0], TS[a.first], side='right'))   # samples up to frame 0 are not used afterwards
 
     def axis(kind):   # unit vector of the vehicle's forward ('f') or left ('l') axis in the map frame
         return np.array([np.cos(yaw), np.sin(yaw)]) if kind == 'f' else np.array([-np.sin(yaw), np.cos(yaw)])
@@ -676,15 +733,37 @@ if __name__ == '__main__':
         PY = PY - np.outer(K, PY[0, :])
         return True
 
-    meas_frames = list(range(a.step, n, a.step))
+    gnss_prior = HeadingPrior(once=a.gnss_yaw_once) if GNSS_YAW is not None else None
+    cnt['gnss_yaw'] = 0
+
+    def update_gnss_heading(index, frame_time):
+        if gnss_prior is None:
+            return False
+        measured = gnss_prior.consume(G[0][index], frame_time, GNSS_YAW[index])
+        if measured is None:
+            return False
+        if heading:
+            measured += heading(G[0][index], frame_time) - bg * ((frame_time - G[0][index]) * 1e-9)
+        residual = np.arctan2(np.sin(measured - yaw), np.cos(measured - yaw))
+        return upd_yaw(residual, np.radians(a.gnss_yaw_sigma), robust=True)
+
+    initial_gnss_yaw = False
+    if gnss_prior is not None and G is not None:
+        previous = int(np.searchsorted(G[0], TS[a.first], side='right')) - 1
+        if previous >= 0:
+            initial_gnss_yaw = update_gnss_heading(previous, TS[a.first])
+            cnt['gnss_yaw'] += int(initial_gnss_yaw)
+    meas_frames = list(range(a.first + a.step, n, a.step))
     block = 4 * a.workers
     mi = 0
     with Pool(a.workers) as pool:
         pending = iter(())
         resp_cache = {}
-        for k in range(n):
+        for k in range(a.first, n):
             D = {'k': k}
-            if k > 0:
+            if k == a.first and initial_gnss_yaw:
+                D['g_ya'] = 1
+            if k > a.first:
                 t0, t1 = TS[k - 1] * 1.0, TS[k] * 1.0
                 dt = (t1 - t0) * 1e-9
                 dyaw_p = (heading(t0, t1) - bg * dt) if heading else w * dt
@@ -771,11 +850,14 @@ if __name__ == '__main__':
                             ok2 = upd_lat(el, a.gnss_sigma[1], 25.0)
                         D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
+                        if gnss_prior is not None:
+                            D['g_ya'] = int(update_gnss_heading(gi, TS[k]))
+                            cnt['gnss_yaw'] += D['g_ya']
                         gi += 1
             if D.get('still'):
                 if still_k0 is None:
                     still_k0, still_used = k, 0
-            else:
+            elif v >= 0.3:
                 still_k0 = None
             if ATT is not None and REPLAY is None:
                 # body attitude relative to the road (causal): IMU roll / pitch at the frame time minus the map road plane
@@ -815,7 +897,7 @@ if __name__ == '__main__':
                 # measurement - the searches are averaged by the filter
                 yaw_s = yaw
                 LS.BM.A.seg_gate = 0.0 if a.seg_gate_track else a.seg_gate
-                LS.set_motion_frame(k, v)
+                LS.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
                 for my, ms, ys in ((a.init_yaw, 1.0, 1.0), (3.0, 1.0, 0.5)):
                     LS.set_window(max_shift=ms, max_yaw=my, yaw_step=ys)
                     try:
@@ -853,8 +935,8 @@ if __name__ == '__main__':
                     if DYN is not None and a.pitch_track and not frozen:
                         DYN[k, 0] = pitch_est   # camera pitch tracked from the lane matches (slope changes, braking dive)
                     if a.seg_gate_track and a.seg_gate_from > 0:
-                        LS.BM.A.seg_gate = a.seg_gate if k >= a.seg_gate_from else 0.0
-                    LS.set_motion_frame(k, v)
+                        LS.BM.A.seg_gate = a.seg_gate if k - a.first >= a.seg_gate_from else 0.0
+                    LS.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if a.pitch_track and not frozen and r is not None and mi % a.pitch_every == 0:
                         pk = [None, r[5], None]
@@ -897,17 +979,32 @@ if __name__ == '__main__':
                         f_ok = y_ok = False
                     D.update(ln_df=df, ln_dl=dl, ln_dy=np.degrees(dyaw), ln_sf=sf, ln_sl=sl, ln_pk=peak, ln_fok=int(f_ok),
                              ln_lok=int(l_ok), ln_yok=int(y_ok), ln_fa=0, ln_la=0, ln_ya=0)
-                    if f_ok and (sf > a.min_sharp_f or (sf > a.min_sharp_f_lo and var('f') > a.lo_sharp_sd ** 2)):
+                    min_sf = a.relaxed_sharp_f if a.relaxed_sharp_f > 0 and k >= a.relaxed_sharp_from else a.min_sharp_f
+                    if a.slow_sharp_f[0] > 0 and abs(v) < a.slow_sharp_f[1]:
+                        min_sf = max(min_sf, a.slow_sharp_f[0])
+                    jump_ok = not (a.fwd_jump_gate[0] > 0 and var('f') <= a.lo_sharp_sd ** 2
+                                   and abs(df) > a.fwd_jump_gate[0] and peak < a.fwd_jump_gate[1])
+                    if f_ok and jump_ok and (sf > min_sf or (sf > a.min_sharp_f_lo and var('f') > a.lo_sharp_sd ** 2)):
                         sig = float(np.clip(a.lane_fc / np.sqrt(sf), 0.15, 3.0) if a.lane_fc > 0 else np.clip(a.lane_k[0] / sf, 0.2, 3.0))
                         S = var('f') + sig ** 2
                         big_f.append(np.sign(df) if df * df > 6.25 * S else 0)
-                        if len(big_f) >= 4 and abs(sum(big_f[-4:])) == 4:   # 4 consistent large corrections: drifted
+                        if len(big_f) >= 4 and abs(sum(big_f[-4:])) == 4:
                             inflate('f', df * df)
                             big_f.clear()
                         D['ln_fa'] = int(upd_fwd(df, sig, robust=True))
                         cnt['fwd'] += D['ln_fa']
-                        if a.lo_peak_start and D['ln_fa'] and peak > a.min_peak:   # first regular forward lock: no
-                            lo_ok = False                                          # weak matches from now on
+                        if a.lo_peak_start and D['ln_fa'] and peak > a.min_peak:
+                            lo_ok = False
+                    elif (a.fwd_batch > 0 and var('f') > a.fwd_batch_sd ** 2 and peak > a.fwd_batch_peak
+                          and sf > a.min_sharp_f_lo and abs(df) < win - 0.15 and travelled >= a.start_dist):
+                        fwd_buf.append(df)   # weak forward offset: batched, applied as a robust median
+                        if len(fwd_buf) >= a.fwd_batch:
+                            fb = np.array(fwd_buf)
+                            med = float(np.median(fb))
+                            sgb = max(1.4826 * float(np.median(np.abs(fb - med))) / np.sqrt(len(fb)), 0.15)
+                            D['fb_df'], D['fb_a'] = med, int(upd_fwd(med, sgb))
+                            cnt['fwd'] += D['fb_a']
+                            fwd_buf.clear()
                     if a.drift_n > 0 and peak > a.min_peak and abs(dl) < win - 0.15:   # wrong-lock detector: weak lane
                         S2 = var('l') + max(a.lane_k[1] / max(sl, 1e-3), 0.1) ** 2   # matches (low sharpness) are not
                         drift_l.append(np.sign(dl) if dl * dl > 6.25 * S2 else 0)    # used, but a run of large
@@ -934,6 +1031,7 @@ if __name__ == '__main__':
                 if REPLAY is None:
                     mp = (MP.x[k], MP.y[k], MP.yaw[k]) if MP is not None else (x, y, yaw)
                     yspan = float(np.clip(3 * np.degrees(np.sqrt(var('y'))), 1.0, 3.0)) if MP is None else 3.0
+                    B.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
                     rn = None if (a.still_freeze and bool(D.get('still')) and not D.get('still_m')) else \
                         near_measure(k, mp, resp, float(np.clip(3 * np.sqrt(var('l')), 0.4, 1.0)) if MP is None else 1.0, yspan)
                     if rn is not None:

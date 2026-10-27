@@ -1099,3 +1099,20 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
  * Runner T1 9-member ensemble -> t1_online_v8 (== the offline ensemble; members byte-identical to the variant runs).
    SUBMITTED 06:04: public 0.47 (v7 0.46) - the ensemble's start position is worse (0-300: 0.434 -> 0.467 m vs the
    reference) and the public part favours the start -> T1 runner back to the single filter; T1 final t1_online_v7.
+
+## 10/27 evening (see README 6.9 / 6.10)
+ * GNSS-denied rehearsal (work/online/gd.sh: T3 config on T1/T2, no GNSS, init from ref row 0): original VO T1
+   diverges (81 m), VO gap fill 2.67 / T2 0.584; --vo_noise 0.05: T1 0.93, T2 0.514 (0.03 / 0.04 worse; floor 0.1,
+   acc_noise 0.2 worse). VO standstill options (--vo_zupt / --vo_move_n, for the T3 stop: speed 0.2-0.35 m/s until 960
+   though stopped at 920; single VO pairs of 4-6 mm broke the standstill at 1107 / 1152 and let two lane fixes move the
+   stop pose -0.13 / +0.07 m): T2 rehearsal 0.708 -> reverted.
+ * T3 + --vo_noise 0.05 (runner): fair lane fwd 0.077 -> 0.068, lane heading 0.239 -> 0.229, but hypothesis -1.5 chosen
+   (906 vs 896), frames 16-48 differ by up to 0.58 m / 0.53 deg; 157-1257 only rms 0.028 m. SUBMITTED 19:16: public
+   0.26 (vofill 0.22) -> not adopted. The public RMSE is start-dominated (consistent with 10/22 note).
+ * With GNSS: T2 vo_noise 0.08 / 0.05: 0.207 / 0.214 (0.15: 0.205); T1 0.05: 0.450 (0.02: 0.427) -> keep.
+ * Time bases: IMU bag t - header stamp median 0.2-0.3 ms (T3 first 6 samples 7-26 ms bursts); GNSS ~1 ms; images
+   captured 7-9 ms before the file-name time, but lane fwd innovations show no -v*8 ms lag (T2 +0.08 at 5-11 m/s)
+   -> no front-camera latency compensation.
+ * Restart test tool: localize_online --first K0 --guess x,y,yaw (validation only; --first 0 identical on 60 frames),
+   work/online/restart.sh: rerun the T3 start logic (wide heading search, bank) at converged frames with a perturbed
+   init_guess, error vs the converged trajectory over the first 150 frames.

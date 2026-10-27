@@ -10,12 +10,24 @@ import sys
 import numpy as np
 import pandas as pd
 
-out, runs = sys.argv[1], sys.argv[2:]
-T = [pd.read_csv(p) for p in runs]
-n = min(len(t) for t in T)
-assert all(len(t) == n for t in T), 'members differ in length'
-x = np.mean([t.x.values for t in T], 0)
-y = np.mean([t.y.values for t in T], 0)
-yaw = np.arctan2(np.mean([np.sin(t.yaw.values) for t in T], 0), np.mean([np.cos(t.yaw.values) for t in T], 0))
-pd.DataFrame({'idx': T[0].idx.values, 'x': x, 'y': y, 'yaw': yaw}).to_csv(out, index=False)
-print(f'ensemble of {len(T)} runs -> {out}')
+def combine_runs(frames):
+	if not frames or not len(frames[0]):
+		raise ValueError('at least one nonempty causal run is required')
+	expected = np.arange(len(frames[0]))
+	for frame in frames:
+		if list(frame.columns) != ['idx', 'x', 'y', 'yaw'] or len(frame) != len(expected):
+			raise ValueError('members differ in length or schema')
+		if not np.array_equal(frame.idx.to_numpy(), expected) or not np.isfinite(frame.to_numpy()).all():
+			raise ValueError('members must have identical consecutive indices and finite poses')
+	position_x = np.mean([frame.x.values for frame in frames], 0)
+	position_y = np.mean([frame.y.values for frame in frames], 0)
+	heading = np.arctan2(np.mean([np.sin(frame.yaw.values) for frame in frames], 0),
+						 np.mean([np.cos(frame.yaw.values) for frame in frames], 0))
+	return pd.DataFrame({'idx': expected, 'x': position_x, 'y': position_y, 'yaw': heading})
+
+
+if __name__ == '__main__':
+	output, runs = sys.argv[1], sys.argv[2:]
+	result = combine_runs([pd.read_csv(path) for path in runs])
+	result.to_csv(output, index=False)
+	print(f'ensemble of {len(runs)} runs -> {output}')

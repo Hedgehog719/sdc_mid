@@ -14,12 +14,15 @@
 #   4. road-surface visual odometry of consecutive frame pairs (k-1, k)
 #   5. tools/localize_online.py: one forward Kalman filter over the frames in time order
 set -e
-cd "$(dirname "$0")/.."
+cd "${SDC_PACKAGE_DIR:-$(dirname "$0")/..}"
 TD=$(realpath "$1")
 TR=$2
-W=work/runs/$TR
+CACHE=work/runs/$TR
+W=${SDC_RUN_DIR:-$CACHE}
+HYP_WORKERS=${SDC_HYP_WORKERS:-3}
+case $HYP_WORKERS in 1|2|3) ;; *) echo "SDC_HYP_WORKERS must be 1, 2 or 3"; exit 1 ;; esac
 OUT=${3:-$W/${TR}_online.csv}
-mkdir -p "$W"
+mkdir -p "$W" "$CACHE" "$(dirname "$OUT")"
 N=$(basename "$TD")
 
 # per-track settings: camera mount corrections (calibration), GNSS use, gyro bias (calibration) and measurement noise
@@ -39,7 +42,16 @@ case $TR in
       # heading sigma 0.5 / 1.0 / 1.5, GNSS sigma 0.6 fwd / 0.3 lat, terrain, segmentation gate: all worse)
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.15 --acc_noise 0.05 --floor 0.1 0.1 0.15
-         --stand_search 30 --stand_search_sigma 2.5 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5" ;;
+         --stand_search 30 --stand_search_sigma 4 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5
+         --slow_sharp_f 0.035 2" ;;
+      # --stand_search_sigma 4 (was 2.5): the standstill searches see the same queue scene, their errors are correlated
+      # (all ~+1.5 deg vs where the moving lane headings later put it); 2.5 each let five of them rotate the heading
+      # +0.77 deg: fair innovations lane heading 0.581 -> 0.518 deg, lane lat 0.113 -> 0.100 m, vs the reference 0.206 ->
+      # 0.205 (5.6: heading at frames 0-200 too far the other way, 0.215)
+      # --slow_sharp_f 0.035 2: below 2 m/s (the start queue, bus alongside) lane forward fixes need sharpness > 0.035;
+      # the barely-sharp ones there (0.020-0.034, peak 0.20-0.25) all said -0.3..-0.5 m against GNSS: GNSS forward
+      # innovations 0-400 rms 0.116 -> 0.083 m, vs the reference 0.214 -> 0.206, from 400 unchanged (0.035 / 0.05 and
+      # 2 / 4 m/s identical; a global 0.035 hurt the steady state 0.163 -> 0.171); T1 identical output
       # --yaw_sigma 2.5 (COMMON 0.7): the T2 lane headings are biased in places (426-570: accepted innovations -0.5..-0.8
       # deg, the heading drifted -1 deg); with GNSS the heading also follows the GNSS / lateral fixes through the joint
       # EKF: vs the reference 1.0 -> 0.217, 1.5 -> 0.216, 2.5 -> 0.214 (steady 0.180 -> 0.163); T1 gets worse (0.411 ->
@@ -51,10 +63,12 @@ case $TR in
       # T2 starts standing in a queue (bus alongside, markings hidden): the frame-0 heading search is 1.8 deg off ->
       # repeat it every 30 frames while standing with an uncertain heading (later frames see other markings)
   T3) export SDC_ROT_FIX=calib/cam_fix_v10a.json   # no GNSS
+      export SDC_CAM_SYNC=${SDC_CAM_SYNC:-1}
+      export SDC_CAM_SYNC_YAW=${SDC_CAM_SYNC_YAW:-1}
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
          --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init
          --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120 --terrain_lat --seg_gate 0.5 --seg_gate_track
-         --seg_gate_from 300" ;;
+         --seg_gate_from 300 --yaw_soft_peak 0.2" ;;
       # --seg_gate 0.5 --seg_gate_track --seg_gate_from 300: road-surface gate as T2, but only from frame 300 - gated from
       # the start it dropped the right forward fixes at 105-177 and took a wrong one (0.9 m behind for ~40 frames; public
       # 0.35 vs 0.24); from 300 on: start identical, fair innovations lane fwd 0.089 -> 0.067 m, lane heading 0.227 ->
@@ -89,8 +103,20 @@ case $TR in
       # instead of 60 (for the lateral direction they caused a 1 m wrong lock in the T1 rehearsal)
   *) echo "track must be T1, T2 or T3"; exit 1 ;;
 esac
+case ${SDC_HYP_ESTIMATOR:-map} in
+  map) COMBINE=combine ;;
+  mean) COMBINE=combine_mean ;;
+  *) echo "SDC_HYP_ESTIMATOR must be map or mean"; exit 1 ;;
+esac
+P="$P ${SDC_LOC_EXTRA:-}"
+printf '%s\n' "$COMMON $P" > "$W/args.txt"
+printf 'SDC_CAM_SYNC=%s\nSDC_CAM_SYNC_YAW=%s\nSDC_ROT_FIX=%s\nSDC_HYP_ESTIMATOR=%s\nSDC_HYP_WORKERS=%s\nSDC_CAM_CAPTURE=%s\n' \
+  "${SDC_CAM_SYNC:-0}" "${SDC_CAM_SYNC_YAW:-0}" "$SDC_ROT_FIX" "${SDC_HYP_ESTIMATOR:-map}" "$HYP_WORKERS" "${SDC_CAM_CAPTURE:-0}" > "$W/environment.txt"
 
 echo "[$(date +%H:%M:%S)] 1. map and sensor data"
+if [[ ${SDC_CAM_CAPTURE:-0} == 1 ]]; then
+  python3 tools/camera_timing.py "$TD"
+fi
 [ -f "$TD/map.npy" ] || python3 tools/map_to_npy.py "$TD/map.pcd" "$TD/map.npy"
 if [ ! -s "$TD/sensors/imu.csv" ] && ls "$TD"/*.db3 > /dev/null 2>&1; then
   python3 tools/extract_bag.py "$TD" "$TD/sensors" || echo "bag extraction failed: running without IMU"
@@ -105,34 +131,42 @@ YW=${YOLO_WEIGHTS:-yolo11x-seg.pt}   # ultralytics downloads it when it is not a
 [ -f "$TD/masks/f.npz" ] || python3 tools/segment_vehicles.py "$TD" --model "$YW"
 
 echo "[$(date +%H:%M:%S)] 3. road-marking maps (whole map)"
-[ -f "$W/mk_D.npz" ] || python3 tools/marking_map.py "$TD" ALL "$W/mk_D.npz" --hi 2.5 --lo 1.2 --cell 0.7 > "$W/mk_D.log" 2>&1
-[ -f "$W/mk_S.npz" ] || python3 tools/marking_map.py "$TD" ALL "$W/mk_S.npz" --mode soft > "$W/mk_S.log" 2>&1
+[ -f "$CACHE/mk_D.npz" ] || python3 tools/marking_map.py "$TD" ALL "$CACHE/mk_D.npz" --hi 2.5 --lo 1.2 --cell 0.7 > "$CACHE/mk_D.log" 2>&1
+[ -f "$CACHE/mk_S.npz" ] || python3 tools/marking_map.py "$TD" ALL "$CACHE/mk_S.npz" --mode soft > "$CACHE/mk_S.log" 2>&1
 
 echo "[$(date +%H:%M:%S)] 4. visual odometry"
-[ -f "$W/vo.npz" ] || python3 tools/bev_vo.py "$TD" "$W/vo.npz" $IMU | tail -n 1
+[ -f "$CACHE/vo.npz" ] || python3 tools/bev_vo.py "$TD" "$CACHE/vo.npz" $IMU | tail -n 1
+VO=$CACHE/vo.npz
+if [ "$TR" = T3 ]; then
+  # pairs whose template block is < 90 % valid (lead vehicle close ahead: frames 1147-2160, 2854-3141) had no VO at all;
+  # those pairs alone are refilled from a matching with the validity mask (>= 30 % valid), every other pair unchanged
+  [ -f "$CACHE/vo_m30.npz" ] || python3 tools/bev_vo.py "$TD" "$CACHE/vo_m30.npz" $IMU --mask_tol 0.3 | tail -n 1
+  [ -f "$CACHE/vo_fill.npz" ] || python3 tools/vo_fill.py "$CACHE/vo.npz" "$CACHE/vo_m30.npz" "$CACHE/vo_fill.npz"
+  VO=$CACHE/vo_fill.npz
+fi
 
 echo "[$(date +%H:%M:%S)] 5. online localization ($N)"
-LOC="python3 tools/localize_online.py $TD $W/mk_D.npz $W/mk_S.npz"
+LOC="python3 tools/localize_online.py $TD $CACHE/mk_D.npz $CACHE/mk_S.npz"
 if [ "$TR" = T3 ]; then
   # no GNSS and init_guess off by ~17 deg: the frame-0 heading search is flat over several degrees and a filter started
   # a few degrees off may never lock -> bank of heading hypotheses (frame-0 search + offsets) for the first NH frames,
   # per-frame causal selection by accepted map measurements, the winner continues (tools/hyp_select.py)
   NH=600; HYP="0 -1.5 1.5 -3 3"; PAIRS=""; i=0
   for o in $HYP; do
-    $LOC $W/hyp_$o.csv --vo $W/vo.npz $IMU $COMMON $P --init_offset $o --frames $NH --debug $W/hyp_${o}_dbg.csv > $W/hyp_$o.log 2>&1 &
+    $LOC $W/hyp_$o.csv --vo $VO $IMU $COMMON $P --init_offset $o --frames $NH --debug $W/hyp_${o}_dbg.csv > $W/hyp_$o.log 2>&1 &
     PAIRS="$PAIRS $W/hyp_$o.csv:$W/hyp_${o}_dbg.csv"; i=$((i + 1))
-    [ $((i % 3)) -eq 0 ] && wait     # at most 3 map-loading runs at a time (memory)
+    [ $((i % HYP_WORKERS)) -eq 0 ] && wait
   done
   wait
   OFFS=$(echo $HYP | tr ' ' ',')
   BEST=$(python3 tools/hyp_select.py select $NH $OFFS $PAIRS 2> $W/hyp_select.log)
   OB=$(echo $HYP | cut -d' ' -f$((BEST + 1)))
   echo "heading hypothesis $OB deg selected at frame $NH ($(cat $W/hyp_select.log))"
-  $LOC $W/full.csv --vo $W/vo.npz $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
-  python3 tools/hyp_select.py combine "$OUT" $NH $W/full.csv $OFFS $PAIRS 2>> $W/hyp_select.log
+  $LOC $W/full.csv --vo $VO $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
+  python3 tools/hyp_select.py "$COMBINE" "$OUT" $NH $W/full.csv $OFFS $PAIRS 2>> $W/hyp_select.log
   tail -n 1 $W/hyp_select.log
 else
-  $LOC "$OUT" --vo "$W/vo.npz" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1
+  $LOC "$OUT" --vo "$VO" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1
 fi
 tail -n 1 "$W/localize.log"
 echo "[$(date +%H:%M:%S)] done -> $OUT"

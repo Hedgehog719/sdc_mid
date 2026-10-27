@@ -38,6 +38,9 @@ ap.add_argument('--win', type=int, default=12, help='px: peak search window arou
 ap.add_argument('--no_imu', action='store_true')
 ap.add_argument('--yaw_mount', type=float, default=-1.5)
 ap.add_argument('--workers', type=int, default=4)
+ap.add_argument('--mask_tol', type=float, default=0.9, help='minimum valid fraction of the template block; between this '
+                'and 0.9 the block is matched with its validity mask (a lead vehicle close ahead hides the far part of '
+                'the road band, the road just ahead of the hood stays visible); 0.9 = full blocks only')
 a = ap.parse_args()
 
 T = os.path.basename(os.path.normpath(a.track_dir))
@@ -83,9 +86,15 @@ def surface(j):
     g1, v1 = ground(j + a.step)
     rA, rB, cA, cB = CR, g0.shape[0] - CR, CC + 20, g0.shape[1] - CC - 20
     tpl = g0[rA:rB, cA:cB]
-    if v0[rA:rB, cA:cB].mean() < 0.9 or tpl.std() < 1e-3:
+    vt = v0[rA:rB, cA:cB]
+    frac = vt.mean()
+    if frac < min(a.mask_tol, 0.9) or (tpl.std() if frac >= 0.9 else tpl[vt].std()) < 1e-3:   # (full blocks: as before)
         return j, None
-    res = cv2.matchTemplate(g1, tpl, cv2.TM_CCOEFF_NORMED)      # (2CR + 1, 2CC + 41) over shifts
+    if frac >= 0.9:
+        res = cv2.matchTemplate(g1, tpl, cv2.TM_CCOEFF_NORMED)      # (2CR + 1, 2CC + 41) over shifts
+    else:   # partly hidden block: masked normalised correlation over its visible road only
+        res = cv2.matchTemplate(g1, tpl, cv2.TM_CCOEFF_NORMED, mask=vt.astype(np.float32))
+        res = np.nan_to_num(res, nan=0.0, posinf=0.0, neginf=0.0)
     return j, res[:, 20:20 + 2 * CC + 1].astype(np.float32)
 
 
