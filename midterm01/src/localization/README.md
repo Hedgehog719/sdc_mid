@@ -421,7 +421,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v9_ens5.csv` | **0.45** | 5 個因果成員的逐幀平均（v7 設定、`--fwd_batch 8/10/12`、`--gnss_huber`；6.13），離線 0.427 → 0.404 |
 | T2 | `submissions/final/result_2.csv` | `t2_online_v22.csv` | 0.26 | v19 + `--slow_sharp_f 0.035 2` + 停車航向搜尋每 15 幀／σ5.6（6.8、6.12），離線 0.214 → 0.201 |
-| T3 | `submissions/final/result_3.csv` | `t3_online_vofill.csv` | **0.22** | SE(2)+soft-heading+VO 缺口補值（6.8），runner 預設 |
+| T3 | `submissions/final/result_3.csv` | `t3_online_kvo97.csv` | **0.20** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`（6.8、6.15），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
 
@@ -712,3 +712,24 @@ T3 沒有 ground truth，所以前向模型的參數改用 **GNSS-denied 預演*
   - T3（8 m）：lane 前向 innovation 0.074 → 0.057，但停車段位置前移 1.43 m，第 2400 幀附近 near 側向 0.067 → 0.329。
   - 加 `--accum_vmin 3`（低於 3 m/s 只用單幀）：停車段恢復正常，但獨立的 near 側向檢查仍然變差（T3 0.046 → 0.053，第 2400 幀附近 0.210；T2 0.098 → 0.100，對參考 0.201 → 0.203），T3 起步也往後移 0.34 m。
   - 累積後的 lane innovation 本身就比較平滑，不能和單幀直接比較，所以以 near 側向判斷。不採用，選項預設關閉。
+
+### 6.15 T3 kvo97：起步的 VO 尺度先驗（2026-10-28 01:40，public 0.22 → 0.20）
+
+**起步參考（批次擬合，`work/online/start_batch.py`）**：只用資料，不用排行榜。
+- 未知數只有第 0 幀的位置和航向；VO 尺度固定為濾波器收斂值（1/0.958 ≈ 1.044）。
+- 第 0–150 幀之間的路徑由 VO 位移和陀螺儀航向串起來，對所有 lane 匹配做擬合，量測的門檻和 σ 都與濾波器相同，並使用穩健損失。
+- 用 10 個已知 public 的 T3 提交檢驗：前 60 幀誤差的排序和 public 的 Spearman 相關為 0.92（N=150）到 1.00（N=200）。
+- 限制：若 VO 尺度可以自由調整，或設定成 1.06，排序會反轉；前向參考對設定也很敏感。所以它只用來比較候選的排序，不當作絕對真值。
+
+**發現的問題**：濾波器的 VO 尺度 `kvo` 在三軌都收斂到 1.0 以下（T1 0.963、T2 0.994、T3 0.95–0.97），但起步是從 1.0 開始，直到地圖修正把尺度拉回來為止，起步段的速度都慢了 3–4%。第 0–150 幀的弱 lane 前向修正一致顯示「車其實更前面」（+0.26～+0.82 m）。
+
+**修改**：`--kvo0 0.97`（初始 VO 尺度取 T1／T2 收斂值的平均，屬跨軌校正，沒有針對 T3 調整）。
+- 第 0–60 幀平均往前 0.09 m（rms 0.11 m），之後和 vofill 相差不到 0.04 m。
+- 起步段弱修正的 innovation 降為 +0.14～+0.49 m；共同幀 innovation 不變。
+- 起步參考的前 60 幀誤差在四種設定下都變小（N=150、尺度 1.044 時 0.338 → 0.309）。
+- 假設庫在第 600 幀改選 −1.5°（912 對 908），但起步段的差異很小。
+
+**結果**：`submissions/online/t3_online_kvo97.csv`（Kaggle 57709059）public **0.20**（vofill 0.22）。
+
+**透明說明**：我是先在 public 分數上看到「起步越後面越差」的模式，才開始查起步偏後的問題。最後的修改依據是 VO 尺度的跨軌校正，並用只靠資料的起步參考驗證，沒有依排行榜微調數值。
+- runner（`work/runs/T3_kvo97r`）重跑結果和提交檔逐位元相同；正式檔 `result_3.csv` 已改為 kvo97。

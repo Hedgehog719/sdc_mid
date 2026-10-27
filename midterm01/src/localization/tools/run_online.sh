@@ -72,7 +72,14 @@ case $TR in
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
          --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init
          --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120 --terrain_lat --seg_gate 0.5 --seg_gate_track
-         --seg_gate_from 300 --yaw_soft_peak 0.2" ;;
+         --seg_gate_from 300 --yaw_soft_peak 0.2 --kvo0 0.97" ;;
+      # --kvo0 0.97: initial VO scale (VO speed / true speed) from the converged Track01 / Track02 values (0.963 / 0.994;
+      # Track03 itself converges to 0.95-0.97) instead of 1.0: the start ran 3-4 % slow until the map fixes corrected
+      # the scale, and the weak lane forward fixes of frames 0-150 all said "further ahead" (+0.26..+0.82 m); with it
+      # +0.14..+0.49 m, frames 0-60 move 0.09 m forward, everything after within 0.04 m, fair innovations unchanged;
+      # error vs the start reference (batch fit of the start pose to the lane matches of frames 0-150 with the VO / gyro
+      # path, work/online/start_batch.py; its ranking of 10 earlier T3 submissions agrees with their public scores,
+      # rank correlation 0.92) 0.338 -> 0.309 over frames 0-60; public 0.22 -> 0.20 (t3_online_kvo97)
       # --seg_gate 0.5 --seg_gate_track --seg_gate_from 300: road-surface gate as T2, but only from frame 300 - gated from
       # the start it dropped the right forward fixes at 105-177 and took a wrong one (0.9 m behind for ~40 frames; public
       # 0.35 vs 0.24); from 300 on: start identical, fair innovations lane fwd 0.089 -> 0.067 m, lane heading 0.227 ->

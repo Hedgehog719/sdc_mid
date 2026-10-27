@@ -4,7 +4,7 @@
 | --- | --- | --- | --- |
 | result_1.csv | t1_online_v9_ens5.csv | **0.45** (57705538) | `tools/run_online.sh /root/data/Track1 T1` |
 | result_2.csv | t2_online_v22.csv | 0.26 (57703980) | `tools/run_online.sh /root/data/Track2 T2` |
-| result_3.csv | t3_online_vofill.csv | 0.22 (57688125) | `tools/run_online.sh /root/data/Track3 T3` |
+| result_3.csv | t3_online_kvo97.csv | **0.20** (57709059) | `tools/run_online.sh /root/data/Track3 T3` |
 
 Each file is byte-identical to the runner output in the current Docker image (`sdc_ros2_dev`, container recreated
 2026-10-25), checked on 2026-10-27. The earlier T1 v7 (0.46) and T2 v19 (0.26) files came from the previous container
@@ -16,10 +16,12 @@ reference 0.214 -> 0.206, GNSS forward innovations at the start 0.116 -> 0.083 m
 ```text
 54fea41964c3ba3f3a8e107e9b31d34f28e49092b639294bf735222e45d47807  result_1.csv
 f2abb64e8ad8683e33f77b7bcd9a8ac364524679147a32105cf2af978268116b  result_2.csv
-7573d68d84820b77922e0454f072c9cf102bcbdd4670d96caa7c038906d6b155  result_3.csv
+1fa6daa6c9fd6ccdd8b5ece484e1d7008bc9c7c103f1ee0f2e5a8544552154f8  result_3.csv
 ```
 
 T1 v9 (10/27 23:22) is the frame-wise mean of five causal runner members (v7_img configuration, + --fwd_batch 8 / 10 / 12, + --gnss_huber; tools/ensemble.py inside run_online.sh): offline 0.427 -> 0.404, public 0.47 -> 0.45.
+
+T3 kvo97 (10/28 01:40) adds --kvo0 0.97 (initial VO scale from the converged T1 / T2 values; the start ran 3-4 % slow): frames 0-60 move 0.09 m forward, public 0.22 -> 0.20.
 
 All three passed schema, consecutive-index, finite-value and wrapped-heading checks (3011 / 3299 / 3142 poses). All
 methods are causal and online: frame k uses frames <= k, written once. Only public scores are known; the Kaggle
