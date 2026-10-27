@@ -421,7 +421,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v9_ens5.csv` | **0.45** | 5 個因果成員的逐幀平均（v7 設定、`--fwd_batch 8/10/12`、`--gnss_huber`；6.13），離線 0.427 → 0.404 |
 | T2 | `submissions/final/result_2.csv` | `t2_online_v22.csv` | 0.26 | v19 + `--slow_sharp_f 0.035 2` + 停車航向搜尋每 15 幀／σ5.6（6.8、6.12），離線 0.214 → 0.201 |
-| T3 | `submissions/final/result_3.csv` | `t3_online_kvo97.csv` | **0.20** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`（6.8、6.15），runner 預設 |
+| T3 | `submissions/final/result_3.csv` | `t3_online_kvo97_mean.csv` | **0.19** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`+假設庫後驗平均（6.8、6.15），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
 
@@ -733,3 +733,10 @@ T3 沒有 ground truth，所以前向模型的參數改用 **GNSS-denied 預演*
 
 **透明說明**：我是先在 public 分數上看到「起步越後面越差」的模式，才開始查起步偏後的問題。最後的修改依據是 VO 尺度的跨軌校正，並用只靠資料的起步參考驗證，沒有依排行榜微調數值。
 - runner（`work/runs/T3_kvo97r`）重跑結果和提交檔逐位元相同；正式檔 `result_3.csv` 已改為 kvo97。
+
+**再一步：假設庫改用後驗平均（public 0.20 → 0.19）**。第 0–599 幀的輸出改為各航向假設依當下似然加權的平均（`SDC_HYP_ESTIMATOR=mean`，現為 runner 預設），取代逐幀 MAP。
+- 理由：評分是 RMSE，而在平方誤差下最佳的估計是後驗平均（MMSE）；每幀的權重只用到當下以前的似然，所以仍是因果的。
+- 起步參考的前 60 幀誤差 0.309 → 0.262（尺度 1.03 時為 0.384 → 0.343）。MAP 的先驗 sd 改成 1、2、4 輸出都完全相同。
+- 10/26 沒有 `--kvo0` 時，同樣的比較是 0.349 對 0.330，差距較小，兩者 public 都是 0.23。
+- Kaggle 57710203 public **0.19**；runner 重跑（`work/runs/T3_kvo97m`）逐位元相同，正式檔 `result_3.csv` 已更新。
+- T1 用 `--kvo0 0.97` 反而變差（5 成員平均 0.404 → 0.422，每個成員 0.427–0.438；T1 的 kvo 在第 300 幀前都還停在 1.0），所以只用於 T3。
