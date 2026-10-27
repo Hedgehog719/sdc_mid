@@ -58,6 +58,9 @@ ap.add_argument('--gnss_stride', type=int, default=1, help='validation only: con
 ap.add_argument('--gnss_phase', type=int, default=0, help='validation only: first GNSS sample index for --gnss_stride')
 ap.add_argument('--gnss_yaw_sigma', type=float, default=0.0, help='deg: optional weak GNSS orientation prior; 0 disables')
 ap.add_argument('--gnss_yaw_once', action='store_true', help='use only the first valid GNSS heading when it arrives')
+ap.add_argument('--gnss_huber', action='store_true', help='GNSS position updates get the --huber weight too (multipath '
+                'outliers: Track01 GNSS innovations reach 1-2 m against sigma 0.2 m); they still do not count in the map '
+                'log-likelihood')
 ap.add_argument('--gnss_sigma', type=float, nargs=2, default=[0.3, 0.3], help='m: along / across-track GNSS noise (white part '
                 'when --gnss_bias_sd > 0)')
 ap.add_argument('--gnss_bias_sd', type=float, default=0.0, help='m (joint EKF): GNSS error modelled as a first-order Gauss-Markov bias '
@@ -640,7 +643,7 @@ if __name__ == '__main__':
         if cur < sd * sd:
             inflate(kind, sd * sd - cur)
 
-    def jupd(h, e, r2, gate, robust=False):
+    def jupd(h, e, r2, gate, robust=False, huber=False):
         """Scalar measurement update of the joint EKF: innovation e = z - h.s, noise variance r2. robust: Huber
         weight (map matches have heavy tails: a normalised innovation above --huber inflates the noise)."""
         global x, y, yaw, v, b, kvo, bg, PJ, gbx, gby, LL
@@ -652,7 +655,7 @@ if __name__ == '__main__':
         if robust:   # log-likelihood of the map measurements (tools/hyp_select.py)
             LL -= 0.5 * e * e / S + 0.5 * np.log(2 * np.pi * S)
         t = abs(e) / np.sqrt(S)
-        if robust and a.huber > 0 and t > a.huber:
+        if (robust or huber) and a.huber > 0 and t > a.huber:
             S = S - r2 + r2 * t / a.huber
         K = PJ @ h / S
         x, y, yaw = x + K[0] * e, y + K[1] * e, yaw + K[2] * e
@@ -692,10 +695,10 @@ if __name__ == '__main__':
         x, y, yaw, v = x + d * cm, y + d * sm, yaw + dpsi, v_new
         return d
 
-    def upd_fwd(e, sig, gate=16.0, robust=False):
+    def upd_fwd(e, sig, gate=16.0, robust=False, huber=False):
         global x, y, v, b, kvo, P3
         if a.joint:
-            return jupd(np.r_[axis('f'), np.zeros(7)], e, sig ** 2, gate, robust)
+            return jupd(np.r_[axis('f'), np.zeros(7)], e, sig ** 2, gate, robust, huber)
         S = P3[0, 0] + sig ** 2
         if e * e >= gate * S:
             return False
@@ -706,10 +709,10 @@ if __name__ == '__main__':
         P3 = P3 - np.outer(K, P3[0, :])
         return True
 
-    def upd_lat(e, sig, gate=16.0, robust=False):
+    def upd_lat(e, sig, gate=16.0, robust=False, huber=False):
         global x, y, Pl
         if a.joint:
-            return jupd(np.r_[axis('l'), np.zeros(7)], e, sig ** 2, gate, robust)
+            return jupd(np.r_[axis('l'), np.zeros(7)], e, sig ** 2, gate, robust, huber)
         S = Pl + sig ** 2
         if e * e >= gate * S:
             return False
@@ -841,13 +844,13 @@ if __name__ == '__main__':
                         c, s = np.cos(yaw), np.sin(yaw)
                         if a.joint and a.gnss_bias_sd > 0:   # GNSS = position + time-correlated bias + white noise
                             ef = c * (gx - x - gbx) + s * (gy - y - gby)
-                            ok1 = jupd(np.array([c, s, 0, 0, 0, 0, 0, c, s]), ef, a.gnss_sigma[0] ** 2, 25.0)
+                            ok1 = jupd(np.array([c, s, 0, 0, 0, 0, 0, c, s]), ef, a.gnss_sigma[0] ** 2, 25.0, huber=a.gnss_huber)
                             el = -s * (gx - x - gbx) + c * (gy - y - gby)
-                            ok2 = jupd(np.array([-s, c, 0, 0, 0, 0, 0, -s, c]), el, a.gnss_sigma[1] ** 2, 25.0)
+                            ok2 = jupd(np.array([-s, c, 0, 0, 0, 0, 0, -s, c]), el, a.gnss_sigma[1] ** 2, 25.0, huber=a.gnss_huber)
                         else:
                             ef, el = c * (gx - x) + s * (gy - y), -s * (gx - x) + c * (gy - y)
-                            ok1 = upd_fwd(ef, a.gnss_sigma[0], 25.0)
-                            ok2 = upd_lat(el, a.gnss_sigma[1], 25.0)
+                            ok1 = upd_fwd(ef, a.gnss_sigma[0], 25.0, huber=a.gnss_huber)
+                            ok2 = upd_lat(el, a.gnss_sigma[1], 25.0, huber=a.gnss_huber)
                         D.update(g_ef=ef, g_el=el, g_fa=int(ok1), g_la=int(ok2))
                         cnt['gnss'] += int(ok1 or ok2)
                         if gnss_prior is not None:

@@ -2,7 +2,7 @@
 
 | file | candidate | Kaggle public | produced by |
 | --- | --- | --- | --- |
-| result_1.csv | t1_online_v7_img.csv | 0.47 (57689088) | `tools/run_online.sh /root/data/Track1 T1` |
+| result_1.csv | t1_online_v9_ens5.csv | **0.45** (57705538) | `tools/run_online.sh /root/data/Track1 T1` |
 | result_2.csv | t2_online_v22.csv | 0.26 (57703980) | `tools/run_online.sh /root/data/Track2 T2` |
 | result_3.csv | t3_online_vofill.csv | 0.22 (57688125) | `tools/run_online.sh /root/data/Track3 T3` |
 
@@ -14,10 +14,12 @@ same public score, changes mostly in the private part. T2 v20 adds --slow_sharp_
 reference 0.214 -> 0.206, GNSS forward innovations at the start 0.116 -> 0.083 m rms; public unchanged at 2 decimals); v21 also sets --stand_search_sigma 4 (fair innovations lane heading 0.581 -> 0.518 deg); v22 searches every 15 frames with sigma 5.6 (same information per second, smoother convergence: vs the reference 0.205 -> 0.201, all fair innovations flat or better).
 
 ```text
-1fd129f4a2e9eabf66978b958ef9ad4a7d16bf5954ab41c74c08cbf5602cf252  result_1.csv
+54fea41964c3ba3f3a8e107e9b31d34f28e49092b639294bf735222e45d47807  result_1.csv
 f2abb64e8ad8683e33f77b7bcd9a8ac364524679147a32105cf2af978268116b  result_2.csv
 7573d68d84820b77922e0454f072c9cf102bcbdd4670d96caa7c038906d6b155  result_3.csv
 ```
+
+T1 v9 (10/27 23:22) is the frame-wise mean of five causal runner members (v7_img configuration, + --fwd_batch 8 / 10 / 12, + --gnss_huber; tools/ensemble.py inside run_online.sh): offline 0.427 -> 0.404, public 0.47 -> 0.45.
 
 All three passed schema, consecutive-index, finite-value and wrapped-heading checks (3011 / 3299 / 3142 poses). All
 methods are causal and online: frame k uses frames <= k, written once. Only public scores are known; the Kaggle

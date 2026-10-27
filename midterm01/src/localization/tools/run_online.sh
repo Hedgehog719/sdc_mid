@@ -169,6 +169,23 @@ if [ "$TR" = T3 ]; then
   $LOC $W/full.csv --vo $VO $IMU $COMMON $P --init_offset $OB --debug $W/debug.csv > $W/localize.log 2>&1
   python3 tools/hyp_select.py "$COMBINE" "$OUT" $NH $W/full.csv $OFFS $PAIRS 2>> $W/hyp_select.log
   tail -n 1 $W/hyp_select.log
+elif [ "$TR" = T1 ]; then
+  # Track01's filter is chaotic where the markings are sparse (near-identical settings differ by +-0.02 vs the
+  # reference): frame-wise mean of five causal runs (tools/ensemble.py; frame k averages the members' frame-k poses,
+  # each from frames <= k only). Members: the configuration above; + --fwd_batch 8 / 10 / 12 (weak lane forward
+  # offsets batched to a median: the single sharpness-0.024 fix at frame ~2040 pulled the position 0.6 m back); +
+  # --gnss_huber (Huber weight on GNSS: innovations up to 1-2 m against sigma 0.2 m). Members 0.427 / 0.408 / 0.414 /
+  # 0.407 / 0.409 vs the reference, mean 0.404 (start 0-300 0.437 -> 0.373 m, 1800-2400 0.420 -> 0.361 m); public
+  # 0.47 -> 0.45 (t1_online_v9_ens5)
+  MEMBERS=("" "--fwd_batch 8" "--fwd_batch 10" "--fwd_batch 12" "--gnss_huber"); RUNS=""
+  for i in "${!MEMBERS[@]}"; do
+    if [ "$i" -eq 0 ]; then D="$W/debug.csv"; L="$W/localize.log"; else D="$W/member_${i}_dbg.csv"; L="$W/member_$i.log"; fi
+    $LOC $W/member_$i.csv --vo "$VO" $IMU $COMMON $P ${MEMBERS[$i]} --debug "$D" > "$L" 2>&1 &
+    RUNS="$RUNS $W/member_$i.csv"
+    [ $(((i + 1) % HYP_WORKERS)) -eq 0 ] && wait
+  done
+  wait
+  python3 tools/ensemble.py "$OUT" $RUNS
 else
   $LOC "$OUT" --vo "$VO" $IMU $COMMON $P --debug "$W/debug.csv" > "$W/localize.log" 2>&1
 fi
