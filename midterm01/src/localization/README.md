@@ -421,7 +421,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v9_ens5.csv` | **0.45** | 5 個因果成員的逐幀平均（v7 設定、`--fwd_batch 8/10/12`、`--gnss_huber`；6.13），離線 0.427 → 0.404 |
 | T2 | `submissions/final/result_2.csv` | `t2_online_v23_ens5.csv` | **0.25** | 5 個因果變體的逐幀平均（v22、搜尋 σ4、+ 同步、+ 低速 GNSS consider、+ 推算運動累積；6.16），離線 0.214 → 0.198 |
-| T3 | `submissions/final/result_3.csv` | `t3_online_kvo97_mean.csv` | **0.19** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`+假設庫後驗平均（6.8、6.15），runner 預設 |
+| T3 | `submissions/final/result_3.csv` | `t3_online_kvo97_mean_r.csv` | **0.19** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`+假設庫後驗平均（6.8、6.15），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
 
@@ -774,3 +774,21 @@ T3 沒有 ground truth，所以前向模型的參數改用 **GNSS-denied 預演*
   - `--fwd_batch 10` 的輸出和基準逐位元相同：T2 有 GNSS，前向不確定度一直很小，batch 機制從未觸發。
   - `--yaw_soft_peak 0.2`：對參考 0.2255，near 側向 0.098 → 0.104，依規則排除。
   - 擴充後的平均是 0.1984–0.1992，不如 v23 的 0.1980，T2 維持 v23。
+- **T3 起步密集量測 `--start_dense 6`**（前 6 幀每幀做 lane 量測，原本每 3 幀一次）：第 3 幀的航向跳動消失（+0.64° → −0.01°），但第 10–30 幀偏後 0.1–0.23 m。起步參考只在四種設定中的一種較好（尺度 1.044、N=150 時 0.262 → 0.235），其餘三種較差。kvo97 和後驗平均在四種設定下都一致變好，這次不是，所以不提交，選項預設關閉。
+- **T2 再加成員 `--yaw_sigma 1.0`、`--gnss_sigma 0.25 0.2`**：
+  - `yaw_sigma 1.0` 的 innovation 變好（near 側向 0.098 → 0.093、lane 航向 0.531 → 0.471），但對參考變差（0.208）。以前 T2 從 σ 1.0 改成 2.5 時 public 從 0.27 降到 0.26，排行榜站在參考這一邊，所以不採用。
+  - `gnss_sigma 0.25` 對參考 0.206。
+  - 加入平均後是 0.1979–0.1986，與 v23（0.1980）相當，不更新。
+
+### 6.17 從零重建的可重現性檢查（2026-10-28 07:20）
+
+**問題**：runner 會在中間產物「檔案已存在」時直接沿用快取，而部分快取是較早的程式版本建的（T1／T3 的標線地圖和 VO 是 10/23 建的，T2 是 10/25，T3 的遮罩 VO 是 10/27 10:17）。如果用目前的程式從零建出來不同，助教重跑就無法重現我們提交的檔案。
+
+**檢查**：`work/online/rebuild_check.sh` 用和 runner 完全相同的指令與環境變數，把中間產物重建到 `work/rebuild/<TR>`，再逐陣列比對。
+- T3：`mk_D`、`mk_S`、`vo` 都相同（所以 `SDC_CAM_SYNC` 不影響 VO）；**`vo_m30` 不同**（3125/3141 對，前向差中位數 0.8 mm、最大 0.33 m），連帶 `vo_fill` 在補洞的 1075 對也不同。
+- 重建兩次結果逐位元相同，所以計算是確定的，原因是快取來自較早的遮罩匹配程式。
+
+**修正**：把舊快取移到 `work/runs/T3/stale_1027/`，讓 runner 從零重建（`work/runs/T3_fresh`）。
+- 第 0–1146 幀和原正式檔完全相同（public 部分不變）；第 1146–2160 幀平均差 0.003 m，第 2160–3142 幀平均差 0.044 m（最大 0.57 m）。
+- 重新提交為 `t3_online_kvo97_mean_r.csv`（Kaggle 57715774），public 0.19，並改為正式檔 `result_3.csv`。先前的 kvo97／kvo97_mean 檔是用舊快取產生的，無法從零重現，不能作為最終選擇。
+- T1、T2 的檢查進行中。
