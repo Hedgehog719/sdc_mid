@@ -420,7 +420,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | Track | 正式檔 | 採用來源 | 已確認 public | 本輪結論 |
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v7_img.csv` | 0.47 | v7 設定在目前映像重跑（舊 0.46 檔無法重現，見 6.8） |
-| T2 | `submissions/final/result_2.csv` | `t2_online_v21.csv` | 0.26 | v19 + `--slow_sharp_f 0.035 2` + `--stand_search_sigma 4`（6.8），離線 0.214 → 0.205 |
+| T2 | `submissions/final/result_2.csv` | `t2_online_v22.csv` | 0.26 | v19 + `--slow_sharp_f 0.035 2` + 停車航向搜尋每 15 幀／σ5.6（6.8、6.12），離線 0.214 → 0.201 |
 | T3 | `submissions/final/result_3.csv` | `t3_online_vofill.csv` | **0.22** | SE(2)+soft-heading+VO 缺口補值（6.8），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
@@ -677,3 +677,8 @@ T3 沒有 ground truth，所以前向模型的參數改用 **GNSS-denied 預演*
 - **T2「15 幀／σ5.6」加側相機同步**：0.202（不加同步 0.201），沒有疊加效果；lane 前向 innovation 0.260 → 0.266，側向和航向略好。不提交。
 
 **10/27 晚間結論**：今晚驗證的方向都沒有超過基準，或是改善小於 2 位小數看得出的範圍。正式檔維持 T1 `t1_online_v7_img`（0.47）、T2 `t2_online_v21`（0.26）、T3 `t3_online_vofill`（0.22）。
+- **T3 起步的事後推算指標（診斷用，不採用）**：拿收斂後第 K 幀的位姿，用 VO 位移和陀螺儀航向往回推，得到「事後的第 0–K 幀路徑」，再拿各版本相比（`work/online/hindsight_prof.py`、`hindsight_rank.py`）。
+  - vofill 在第 0 幀偏右 0.53 m，約 30 幀後收斂；前向會隨錨點改變（K=90 時 −1.4 m，K=120 時 −2.7 m），不可靠。
+  - 拿 10 個已知 public 的 T3 提交比較，側向加航向指標和 public 是**負相關**（Spearman −0.72）；去掉 VO 側向後仍為 −0.59～+0.18。
+  - 結論：事後路徑本身有偏差（錨點航向、VO 尺度），無法當作 T3 public 的代理指標。
+- **T2 v22 提交**（每 15 幀／σ5.6，Kaggle 57703980）：public 0.26（與 v21 同分）。runner 預設已更新，重跑結果和提交檔逐位元相同；因為離線分數和 innovation 都比 v21 好，正式檔 `result_2.csv` 改為 v22。

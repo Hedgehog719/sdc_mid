@@ -42,8 +42,12 @@ case $TR in
       # heading sigma 0.5 / 1.0 / 1.5, GNSS sigma 0.6 fwd / 0.3 lat, terrain, segmentation gate: all worse)
   T2) export SDC_ROT_FIX=calib/cam_fix_v10t2.json
       P="--gnss --gnss_sigma 0.15 0.2 --gyro_bias -0.247 --lane_k 0.02 0.01 --vo_noise 0.15 --acc_noise 0.05 --floor 0.1 0.1 0.15
-         --stand_search 30 --stand_search_sigma 4 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5
+         --stand_search 15 --stand_search_sigma 5.6 --imu_causal --seg_gate 0.5 --seg_gate_track --yaw_sigma 2.5
          --slow_sharp_f 0.035 2" ;;
+      # --stand_search 15 --stand_search_sigma 5.6 (was 30 / 4): the same information per second (twice the searches,
+      # sqrt(2) the sigma), spread more evenly: the frame-0 search error (-1.9 deg) is taken back sooner and without the
+      # overshoot of 15 / 4 (+0.5 deg at 150-200); vs the reference 0.205 -> 0.201, fair innovations lane lat 0.100 ->
+      # 0.099 m, near lat 0.101 -> 0.098, lane heading 0.518 -> 0.515, near heading 0.407 -> 0.400 deg (10 / 4: 0.207)
       # --stand_search_sigma 4 (was 2.5): the standstill searches see the same queue scene, their errors are correlated
       # (all ~+1.5 deg vs where the moving lane headings later put it); 2.5 each let five of them rotate the heading
       # +0.77 deg: fair innovations lane heading 0.581 -> 0.518 deg, lane lat 0.113 -> 0.100 m, vs the reference 0.206 ->
