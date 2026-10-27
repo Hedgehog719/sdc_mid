@@ -105,6 +105,12 @@ if '--cand' in sys.argv:
     for cp in sys.argv[sys.argv.index('--cand') + 1:]:
         o = pd.read_csv(cp)
         print(f'candidate {cp}: e30 {err(o, 30):.3f} e60 {err(o, 60):.3f} e150 {err(o, min(N, 150)):.3f}')
+        if '--prof' in sys.argv:
+            for k in (0, 3, 6, 10, 15, 20, 30, 45, 60, 90):
+                h = H[k]
+                ex, ey = o.x[k] - X[k], o.y[k] - Y[k]
+                print(f'    frame {k:3d}: fwd {np.cos(h) * ex + np.sin(h) * ey:+.2f} lat {-np.sin(h) * ex + np.cos(h) * ey:+.2f} '
+                      f'yaw {np.degrees((o.yaw[k] - h + np.pi) % (2 * np.pi) - np.pi):+.2f}')
 r = pd.DataFrame(rows, columns=['file', 'public', 'e30', 'e60', 'e150']).sort_values('public')
 print(r.to_string(index=False, float_format=lambda v: f'{v:.3f}'))
 for c_ in ('e30', 'e60', 'e150'):

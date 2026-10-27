@@ -150,6 +150,8 @@ ap.add_argument('--pitch_max', type=float, default=2.0, help='deg')
 ap.add_argument('--still_meas', type=int, default=0, help='--still_freeze: still take the map measurements on this many '
                 'measurement frames per standstill, 1 s apart from 1 s after the stop (the stop pose itself is measured; the '
                 'same scene measured hundreds of times is what made the pose wander)')
+ap.add_argument('--still_probe', action='store_true', help='diagnostics: while frozen (--still_freeze) still run the lane '
+                'match and write it to the debug csv (columns sp_*) without using it')
 ap.add_argument('--still_freeze', action='store_true', help='no lane / near measurements while the IMU shows standstill '
                 '(--zupt): the same image measured again and again let the pose wander 0.5 m / 2 deg during a 40 s stop')
 ap.add_argument('--terrain', action='store_true', help='lane matching on the map road surface: the image BEV is projected '
@@ -962,6 +964,10 @@ if __name__ == '__main__':
                     LS.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
                     if a.accum_dist > 0 and a.accum_vmin > 0:
                         LS.BM.A.accum = 12 if v >= a.accum_vmin else 0
+                    if frozen and a.still_probe:   # diagnostics only: the stop pose as the lane match sees it
+                        rp_ = lane_measure(k, mp, win, False, False)
+                        if rp_ is not None:
+                            D.update(sp_df=rp_[0], sp_dl=rp_[1], sp_dy=np.degrees(rp_[2]), sp_sf=rp_[3], sp_sl=rp_[4], sp_pk=rp_[5])
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if a.pitch_track and not frozen and r is not None and mi % a.pitch_every == 0:
                         pk = [None, r[5], None]
