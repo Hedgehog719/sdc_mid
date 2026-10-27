@@ -420,7 +420,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | Track | 正式檔 | 採用來源 | 已確認 public | 本輪結論 |
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v9_ens5.csv` | **0.45** | 5 個因果成員的逐幀平均（v7 設定、`--fwd_batch 8/10/12`、`--gnss_huber`；6.13），離線 0.427 → 0.404 |
-| T2 | `submissions/final/result_2.csv` | `t2_online_v22.csv` | 0.26 | v19 + `--slow_sharp_f 0.035 2` + 停車航向搜尋每 15 幀／σ5.6（6.8、6.12），離線 0.214 → 0.201 |
+| T2 | `submissions/final/result_2.csv` | `t2_online_v23_ens5.csv` | **0.25** | 5 個因果變體的逐幀平均（v22、搜尋 σ4、+ 同步、+ 低速 GNSS consider、+ 推算運動累積；6.16），離線 0.214 → 0.198 |
 | T3 | `submissions/final/result_3.csv` | `t3_online_kvo97_mean.csv` | **0.19** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`+假設庫後驗平均（6.8、6.15），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
@@ -753,3 +753,19 @@ T3 沒有 ground truth，所以前向模型的參數改用 **GNSS-denied 預演*
 - **T3 後半段兩種側向量測互相矛盾**：
   - 第 2340 幀附近，lane 側向中位數 −0.10 m，near 側向 +0.17 m；第 2400–2460 幀分別為 +0.11 與 −0.04 m；第 2820–2940 幀（減速到停車）分別為 −0.09 與 +0.08～+0.12 m。
   - 濾波器夾在兩者之間。遠處 BEV 和近距對齊相差約 0.2 m，可能來自動態側傾或路面橫向形狀，目前無法判斷誰對，已準備檢視頁供肉眼判斷。
+
+### 6.16 T2 v23：五個變體平均（2026-10-28 05:09，public 0.26 → 0.25）與同時段其他測試
+
+**未採用的測試**：
+- **T2 `--yaw0_sd 4／5.6`**（讓第 0 幀的航向搜尋和每 15 幀的重複搜尋權重一致）：航向更快收斂到搜尋平均值，但那個平均值比參考偏 +1.0°（起點區地圖旋轉），對參考 0.201 → 0.215／0.213；和參考無關的 near 側向 innovation 也變差（0.098 → 0.103／0.105），兩者方向一致。
+- **低速時 GNSS 不更新航向 `--gnss_noyaw_v`**（Schmidt／consider 更新，Joseph 形式）：
+  - T2（< 3 m/s）：0.201 → 0.201，第 300 幀航向 +0.66° → +0.55°；第 250 幀仍漂到 +0.50°，所以那段漂移主要不是 GNSS 造成的。
+  - T1（< 5 m/s，五成員）：0.404 → 0.478。少了 GNSS 修正後，航向沿陀螺儀漂到 +2.1～+2.3°，所以 T1 起步時 GNSS 雖然造成擺盪，整體仍是必要的。
+- **T3 起步假設庫：航向 5 × 前向 3（−0.75／0／+0.75 m）**，二維後驗平均（`work/online/t3_bank2.sh`、`bank2_combine.py`；新增 `--init_fwd`）：起步參考在四種設定中一好三壞，起步整體往後移 0.08 m，地圖似然對前向的分辨力不足，不提交。
+
+**T2 v23（採用）**：逐幀平均 5 個今晚各自測過、修改方向不同的 T2 變體。
+- 成員：v22、每 15 幀搜尋且 σ4、+ 側相機同步、+ `--gnss_noyaw_v 3`、+ 推算運動多幀累積（5 m、≥ 3 m/s）。
+- 各成員對參考 0.201／0.201／0.202／0.201／0.203，平均後 0.198，穩態側向 0.069 → 0.065 m。
+- 成員集合是事先依原則決定的：排除自身 innovation 已變差的偏差補償和被取代的 v21，並沒有從所有組合中挑最好的一組（挑最好的組合是 0.197，但那等於對參考過擬合）。
+- Kaggle 57713202，public **0.25**（v22 為 0.26）。
+- `run_online.sh` 的 T1／T2 合併成同一段成員平均邏輯（`MEMBERS`／`MENV`：每個成員可設定額外參數與環境變數，例如同步用的環境變數）；T1 的成員和順序不變。runner 重跑（`work/runs/T2_v23`）和提交檔逐位元相同，5 個成員也各自和原本的 run 相同；正式檔 `result_2.csv` 已改為 v23。
