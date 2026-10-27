@@ -68,6 +68,10 @@ ap.add_argument('--gyro_heading', action='store_true', help='use the yaw derivat
                 'of world-z angular velocity; --gyro_bias must use the same convention')
 ap.add_argument('--step', type=int, default=3, help='map measurement every step frames')
 ap.add_argument('--init', default='', help='x,y,yaw_rad instead of init_guess.txt')
+ap.add_argument('--guess', default='', help='x,y,yaw_rad in place of the init_guess.txt pose; the frame-0 searches still run '
+                '(validation: restart tests)')
+ap.add_argument('--first', type=int, default=0, help='validation only: the filter starts at this frame as if it were frame 0 '
+                '(restart tests of the start logic on frames with a converged trajectory); earlier rows are written as zeros')
 ap.add_argument('--init_yaw', type=float, default=25.0, help='deg: heading window of the initial search')
 ap.add_argument('--init_offset', type=float, default=0.0, help='deg added to the frame-0 heading (heading hypotheses, '
                 'tools/hyp_select.py: the frame-0 match can be flat over several degrees)')
@@ -505,16 +509,18 @@ def initial_pose(G):
         return [float(v) for v in a.init.split(',')]
     M = np.loadtxt(os.path.join(a.track_dir, 'init_guess.txt'), delimiter=',')
     x, y, yaw = M[0, 3], M[1, 3], Rotation.from_matrix(M[:3, :3]).as_euler('ZYX')[0]
+    if a.guess:
+        x, y, yaw = (float(v) for v in a.guess.split(','))
     if G is not None:
-        k = int(np.searchsorted(G[0], TS[0], side='right')) - 1
-        if k >= 0 and (TS[0] - G[0][k]) * 1e-9 < 0.5:
+        k = int(np.searchsorted(G[0], TS[a.first], side='right')) - 1
+        if k >= 0 and (TS[a.first] - G[0][k]) * 1e-9 < 0.5:
             x, y = G[1][k], G[2][k]
     y0 = yaw
     LS.BM.A.seg_gate = 0.0 if a.seg_gate_track else a.seg_gate
     for my, ms, ys in ((a.init_yaw, 1.0, 1.0), (3.0, 1.0, 0.5)):
         LS.set_window(max_shift=ms, max_yaw=my, yaw_step=ys)
         try:
-            r = LS.match(0, (x, y, yaw))
+            r = LS.match(a.first, (x, y, yaw))
         except (IndexError, ValueError):
             r = None
         if r is not None and r[0] > 0.08:
@@ -526,7 +532,7 @@ def initial_pose(G):
         LS.set_window(max_shift=a.init_pos, max_yaw=1.0, yaw_step=0.5)   # frame-0 match position, wide window
         position_yaw = yaw + np.radians(a.init_offset) if a.init_pos_per_hyp else yaw
         try:
-            r = LS.match(0, (x, y, position_yaw))
+            r = LS.match(a.first, (x, y, position_yaw))
         except (IndexError, ValueError):
             r = None
         if r is not None and r[0] > a.min_peak_lo:
@@ -575,7 +581,7 @@ if __name__ == '__main__':
         VO = {int(j): (f, d, r) for j, f, d, r in zip(zv['j'], zv['fwd'], zv['dt'], zv['resp'])}   # pair (j, j + 1)
     print(f'{T}: {n} frames, IMU {"yes" if heading else "no"}, GNSS {"yes" if G is not None else "no"}, VO {"yes" if VO else "no"}', flush=True)
     if REPLAY is None:
-        LS.set_motion_frame(0, 0.0)
+        LS.set_motion_frame(a.first, 0.0)
     x, y, yaw = REPLAY['init'] if REPLAY is not None else initial_pose(G)
     yaw += np.radians(a.init_offset)
     REC['init'] = (x, y, yaw)
@@ -605,7 +611,7 @@ if __name__ == '__main__':
     cnt = dict(fwd=0, lat=0, yaw=0, vo=0, gnss=0, still=0)
     gi = 0
     if G is not None:
-        gi = int(np.searchsorted(G[0], TS[0], side='right'))   # samples up to frame 0 are not used afterwards
+        gi = int(np.searchsorted(G[0], TS[a.first], side='right'))   # samples up to frame 0 are not used afterwards
 
     def axis(kind):   # unit vector of the vehicle's forward ('f') or left ('l') axis in the map frame
         return np.array([np.cos(yaw), np.sin(yaw)]) if kind == 'f' else np.array([-np.sin(yaw), np.cos(yaw)])
@@ -743,21 +749,21 @@ if __name__ == '__main__':
 
     initial_gnss_yaw = False
     if gnss_prior is not None and G is not None:
-        previous = int(np.searchsorted(G[0], TS[0], side='right')) - 1
+        previous = int(np.searchsorted(G[0], TS[a.first], side='right')) - 1
         if previous >= 0:
-            initial_gnss_yaw = update_gnss_heading(previous, TS[0])
+            initial_gnss_yaw = update_gnss_heading(previous, TS[a.first])
             cnt['gnss_yaw'] += int(initial_gnss_yaw)
-    meas_frames = list(range(a.step, n, a.step))
+    meas_frames = list(range(a.first + a.step, n, a.step))
     block = 4 * a.workers
     mi = 0
     with Pool(a.workers) as pool:
         pending = iter(())
         resp_cache = {}
-        for k in range(n):
+        for k in range(a.first, n):
             D = {'k': k}
-            if k == 0 and initial_gnss_yaw:
+            if k == a.first and initial_gnss_yaw:
                 D['g_ya'] = 1
-            if k > 0:
+            if k > a.first:
                 t0, t1 = TS[k - 1] * 1.0, TS[k] * 1.0
                 dt = (t1 - t0) * 1e-9
                 dyaw_p = (heading(t0, t1) - bg * dt) if heading else w * dt
@@ -929,7 +935,7 @@ if __name__ == '__main__':
                     if DYN is not None and a.pitch_track and not frozen:
                         DYN[k, 0] = pitch_est   # camera pitch tracked from the lane matches (slope changes, braking dive)
                     if a.seg_gate_track and a.seg_gate_from > 0:
-                        LS.BM.A.seg_gate = a.seg_gate if k >= a.seg_gate_from else 0.0
+                        LS.BM.A.seg_gate = a.seg_gate if k - a.first >= a.seg_gate_from else 0.0
                     LS.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
                     r = None if frozen else lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
                     if a.pitch_track and not frozen and r is not None and mi % a.pitch_every == 0:
