@@ -74,6 +74,10 @@ ap.add_argument('--gnss_sigma', type=float, nargs=2, default=[0.3, 0.3], help='m
                 'when --gnss_bias_sd > 0)')
 ap.add_argument('--gnss_bias_sd', type=float, default=0.0, help='m (joint EKF): GNSS error modelled as a first-order Gauss-Markov bias '
                 'state of this sd (GNSS errors are strongly time-correlated: autocorrelation 0.8-0.9 at 1 s); 0 = white noise only')
+ap.add_argument('--gnss_bias_still', action='store_true', help='--gnss_bias_sd: the GNSS bias is estimated only while '
+                'standing (where batched lane evidence sees it, --still_lat_batch); moving, it is a consider state (kept, '
+                'decaying with --gnss_bias_tau, not updated): estimated all the time it absorbed lane biases (Track02 steady '
+                'lateral 0.069 -> 0.092 m)')
 ap.add_argument('--gnss_bias_tau', type=float, default=3.0, help='s: correlation time of the GNSS bias')
 ap.add_argument('--no_imu', action='store_true')
 ap.add_argument('--gyro_heading', action='store_true', help='use the yaw derivative of the IMU forward axis instead '
@@ -895,9 +899,10 @@ if __name__ == '__main__':
                         c, s = np.cos(yaw), np.sin(yaw)
                         if a.joint and a.gnss_bias_sd > 0:   # GNSS = position + time-correlated bias + white noise
                             ef = c * (gx - x - gbx) + s * (gy - y - gby)
-                            ok1 = jupd(np.array([c, s, 0, 0, 0, 0, 0, c, s]), ef, a.gnss_sigma[0] ** 2, 25.0, huber=a.gnss_huber)
+                            bfix = (7, 8) if a.gnss_bias_still and not D.get('still') else ()
+                            ok1 = jupd(np.array([c, s, 0, 0, 0, 0, 0, c, s]), ef, a.gnss_sigma[0] ** 2, 25.0, huber=a.gnss_huber, fix=bfix)
                             el = -s * (gx - x - gbx) + c * (gy - y - gby)
-                            ok2 = jupd(np.array([-s, c, 0, 0, 0, 0, 0, -s, c]), el, a.gnss_sigma[1] ** 2, 25.0, huber=a.gnss_huber)
+                            ok2 = jupd(np.array([-s, c, 0, 0, 0, 0, 0, -s, c]), el, a.gnss_sigma[1] ** 2, 25.0, huber=a.gnss_huber, fix=bfix)
                         else:
                             ef, el = c * (gx - x) + s * (gy - y), -s * (gx - x) + c * (gy - y)
                             gfix = (2, 6) if a.gnss_noyaw_v > 0 and v < a.gnss_noyaw_v else ()
