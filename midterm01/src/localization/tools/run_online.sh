@@ -187,7 +187,7 @@ if [ "$TR" = T3 ]; then
   tail -n 1 $W/hyp_select.log
 elif [ "$TR" = T1 ] || [ "$TR" = T2 ]; then
   # frame-wise mean of five causal runs (tools/ensemble.py; frame k averages the members' frame-k poses, each from
-  # frames <= k only); MEMBERS: extra options per member, MENV: extra environment per member
+  # frames <= k only); MEMBERS: extra options per member, MENV: extra environment per member (T1 five, T2 six)
   # T1: the filter is chaotic where the markings are sparse (near-identical settings differ by +-0.02 vs the
   # reference). Members: the configuration above; + --fwd_batch 8 / 10 / 12 (weak lane forward offsets batched to a
   # median: the single sharpness-0.024 fix at frame ~2040 pulled the position 0.6 m back); + --gnss_huber (Huber
@@ -197,12 +197,16 @@ elif [ "$TR" = T1 ] || [ "$TR" = T2 ]; then
   # T2: members the configuration above (v22); + --stand_search_sigma 4 (search every 15 frames, sigma 4); + camera
   # capture-time sync (SE(2)); + --gnss_noyaw_v 3 (GNSS leaves the heading alone below 3 m/s); + dead-reckoned lane
   # accumulation over 5 m above 3 m/s. Members 0.201 / 0.201 / 0.202 / 0.201 / 0.203 vs the reference, mean 0.198
-  # (lateral steady state 0.069 -> 0.065 m); public 0.26 -> 0.25 (t2_online_v23_ens5)
+  # (lateral steady state 0.069 -> 0.065 m); public 0.26 -> 0.25 (t2_online_v23_ens5). Sixth member: GNSS bias state
+  # estimated only while standing, fed by batched weak lane lateral offsets of the queue (all said 0.2 m right of the
+  # biased GNSS), a consider state while moving (alone 0.223: the standstill bias lingers for ~30 s; near lat 0.097 ->
+  # 0.100); mean of six 0.191; public 0.25 -> 0.24 (t2_online_v24_ens6)
   if [ "$TR" = T1 ]; then
     MEMBERS=("" "--fwd_batch 8" "--fwd_batch 10" "--fwd_batch 12" "--gnss_huber"); MENV=("" "" "" "" "")
   else
-    MEMBERS=("" "--stand_search_sigma 4" "" "--gnss_noyaw_v 3" "--accum_dist 5 --accum_dr --accum_vmin 3")
-    MENV=("" "" "SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1" "" "")
+    MEMBERS=("" "--stand_search_sigma 4" "" "--gnss_noyaw_v 3" "--accum_dist 5 --accum_dr --accum_vmin 3"
+             "--gnss_bias_sd 0.2 --gnss_bias_tau 30 --gnss_bias_still --still_lat_batch 5 0.15 0.05")
+    MENV=("" "" "SDC_CAM_SYNC=1 SDC_CAM_SYNC_YAW=1" "" "" "")
   fi
   RUNS=""
   for i in "${!MEMBERS[@]}"; do

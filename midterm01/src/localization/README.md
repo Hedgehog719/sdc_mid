@@ -425,7 +425,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | Track | 正式檔 | 採用來源 | 已確認 public | 本輪結論 |
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v9_ens5.csv` | **0.45** | 5 個因果成員的逐幀平均（v7 設定、`--fwd_batch 8/10/12`、`--gnss_huber`；6.13），離線 0.427 → 0.404 |
-| T2 | `submissions/final/result_2.csv` | `t2_online_v23_ens5.csv` | **0.25** | 5 個因果變體的逐幀平均（v22、搜尋 σ4、+ 同步、+ 低速 GNSS consider、+ 推算運動累積；6.16），離線 0.214 → 0.198 |
+| T2 | `submissions/final/result_2.csv` | `t2_online_v24_ens6.csv` | **0.24** | 5 個因果變體的逐幀平均（v22、搜尋 σ4、+ 同步、+ 低速 GNSS consider、+ 推算運動累積；6.16），離線 0.214 → 0.198 |
 | T3 | `submissions/final/result_3.csv` | `t3_online_slb3.csv` | **0.19** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`+假設庫後驗平均（6.8、6.15），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
@@ -827,3 +827,10 @@ T3 沒有 ground truth，所以前向模型的參數改用 **GNSS-denied 預演*
   - 範圍 6 m：起步參考暴增到 5.2–6.3（起步完全崩壞），2790–2970 幀的矛盾沒有解決（lane −0.085、near +0.099）。
   - 範圍 4 m：起步參考 0.90–1.84（大幅變差），矛盾減輕（lane −0.016），但第 2100–2400 幀的側向變差。
   - 結論：起步段非常依賴遠處、道路兩側的地形資訊，那些大高度差多半是真實的路面形狀。後半段的矛盾無法用全域設定修正而不傷害其他路段，不採用，選項預設保持整個寬度。
+
+### 6.19 T2 v24：第六個成員，停車時才估計的 GNSS 偏差（2026-10-28 13:14，public 0.25 → 0.24）
+
+- **想法**：T2 排隊時，lane 側向匹配連續數十次都顯示車在偏差 GNSS 的右側 0.2 m（6.18 的停車側向批次），但 GNSS 每秒約 4 筆，會一直把位置拉回去。讓濾波器估計 GNSS 偏差，地圖證據就會修正偏差估計，而不是和 GNSS 拉鋸。全程估計時，偏差會吸收 lane 的偏差（6.18：穩態側向 0.069 → 0.092 m），所以新增 `--gnss_bias_still`：偏差只在停車時更新，移動時改為 consider 狀態（保留並依 `--gnss_bias_tau` 衰減，但不更新）。
+- **單獨使用**（σ 0.2 m、τ 30 s、停車側向批次 5 個）：起步平均側向偏差 +0.101 → +0.031 m，但開動後估計值要 30 秒左右才衰減，穩態側向 0.069 → 0.082 m，對參考 0.201 → 0.223（τ 60 s：0.218）。
+- **作為第六個成員**：它的誤差型態和其他成員差異很大，平均時互相抵消，對參考 0.198 → 0.191（穩態前向 0.101 → 0.090 m）。依成員規則（獨立的 near 側向 innovation 不能比基準差超過 0.005；`yaw_soft_peak` 是 +0.006 被排除）：τ 30 為 0.097 → 0.100，納入；τ 60 為 0.106，排除。
+- **結果**：Kaggle 57725349，public **0.24**。runner 的 T2 成員改為 6 個，重跑（`work/runs/T2_v24`）逐位元相同，正式檔 `result_2.csv` 已更新。
