@@ -45,6 +45,10 @@ def bev_grid():
 # m: largest lateral road-shape offset the terrain BEV accepts (crown / gutters are ~0.1 m; more is usually a kerb or a
 # raised pavement in the map ground beside the road); 0.3 by default
 TERRAIN_LAT_CLIP = float(os.environ.get('SDC_TERRAIN_LAT_CLIP', '0.3'))
+# m: lateral extent of the --terrain_lat road shape; beyond it the shape is held at its value there (Track03 2840-2920:
+# the far side of a crowned road falls 0.3-0.4 m within 12 m, where flat-plane lanes and the near alignment disagree
+# with the terrain lanes); 15 (= the whole BEV) by default
+TERRAIN_LAT_SPAN = float(os.environ.get('SDC_TERRAIN_LAT_SPAN', '15'))
 CAM_SYNC = os.environ.get('SDC_CAM_SYNC', '0') == '1'   # compensate the side cameras' capture-time offsets
 CAM_SYNC_YAW = os.environ.get('SDC_CAM_SYNC_YAW', '0') == '1'
 
@@ -238,6 +242,10 @@ class ImageBEV:
             res = zc.reshape(CU.shape) - (pa[0] * CU + pa[1] * CV + pa[2]) - (F(cu) @ coef)[:, None]
             res = np.where(okc.reshape(CU.shape) & np.isfinite(res), np.clip(res, -TERRAIN_LAT_CLIP, TERRAIN_LAT_CLIP), 0.0)
             res[:, np.abs(cv) < 1.0] = 0.0   # the strip itself is the profile
+            if TERRAIN_LAT_SPAN < Y_MAX:   # hold the shape beyond the span at its edge value
+                lo_, hi_ = int(np.argmin(np.abs(cv + TERRAIN_LAT_SPAN))), int(np.argmin(np.abs(cv - TERRAIN_LAT_SPAN)))
+                res[:, :lo_] = res[:, lo_:lo_ + 1]
+                res[:, hi_ + 1:] = res[:, hi_:hi_ + 1]
             from scipy.ndimage import median_filter
             res = median_filter(res, size=(3, 1), mode='nearest')   # along the road: map noise, not shape
             # bilinear onto the BEV grid (rows: x descending from X_MAX; columns: y descending from Y_MAX)
