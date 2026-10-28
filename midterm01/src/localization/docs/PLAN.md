@@ -1116,3 +1116,12 @@ New pipeline: tools/localize_online.py (one forward filter), end-to-end tools/ru
  * Restart test tool: localize_online --first K0 --guess x,y,yaw (validation only; --first 0 identical on 60 frames),
    work/online/restart.sh: rerun the T3 start logic (wide heading search, bank) at converged frames with a perturbed
    init_guess, error vs the converged trajectory over the first 150 frames.
+
+## 10/28 09:45 state (user unplugged the laptop to move)
+ * Finals (all submitted, runner reproduces each byte-identically from the raw data): T1 t1_online_v9_ens5 0.45, T2
+   t2_online_v23_ens5 0.25, T3 t3_online_slb3 0.19. Do NOT select t3_online_kvo97_mean (stale masked-VO cache).
+ * T3 start reference (work/online/start_batch.py, rec work/runs/T3f/rec300.npz): adopt a start change only if the
+   frames 0-60 error drops in all four settings (scale 1.03 / 1.044 x N 150 / 200).
+ * Next: (1) user's visual check of the T3 lateral lane-vs-near disagreement (viewer Track3_lat_a_final / b_left15 /
+   c_right15, frames 2340-2460, 2820-2940) -> private part; (2) if time: T3 tempering tau 2 (+0.000..0.008, not yet
+   adopted); (3) restart the review server after reboot (see memory project-notes-location).
