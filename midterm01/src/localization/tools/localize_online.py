@@ -91,6 +91,8 @@ ap.add_argument('--still_lat_batch', type=float, nargs=3, default=[0, 0.15, 0.05
                 'as one median measurement (sigma max(MAD / sqrt(N), 0.1) m); the scene does not change while standing, so '
                 'single weak matches are unreliable but their median is not (Track02 queue: peaks 0.16-0.19, all saying '
                 '0.1-0.23 m right of the biased GNSS); N=0 disables')
+ap.add_argument('--fwd_batch_frames', type=int, default=0, help='>0: --fwd_batch only in the first N frames (the start: weak '
+                'forward offsets of Track03 frames 6-12 all said +0.10..+0.22 m)')
 ap.add_argument('--start_lat_batch', type=float, nargs=4, default=[0, 0.15, 0.05, 60], metavar=('N', 'PEAK', 'SHARP', 'FRAMES'),
                 help='as --still_lat_batch, but for the first FRAMES frames (moving start): weak lane lateral offsets applied '
                 'as one median per N (Track03 frames 6-12: peaks 0.196-0.198 all said 0.18-0.20 m right); N=0 disables')
@@ -1056,7 +1058,8 @@ if __name__ == '__main__':
                         cnt['fwd'] += D['ln_fa']
                         if a.lo_peak_start and D['ln_fa'] and peak > a.min_peak:
                             lo_ok = False
-                    elif (a.fwd_batch > 0 and var('f') > a.fwd_batch_sd ** 2 and peak > a.fwd_batch_peak
+                    elif (a.fwd_batch > 0 and (a.fwd_batch_frames <= 0 or k - a.first < a.fwd_batch_frames)
+                          and var('f') > a.fwd_batch_sd ** 2 and peak > a.fwd_batch_peak
                           and sf > a.min_sharp_f_lo and abs(df) < win - 0.15 and travelled >= a.start_dist):
                         fwd_buf.append(df)   # weak forward offset: batched, applied as a robust median
                         if len(fwd_buf) >= a.fwd_batch:
