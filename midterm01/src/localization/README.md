@@ -426,7 +426,7 @@ Fixed model hypotheses; live Docker matching, causal-prefix and CSV checks befor
 | --- | --- | --- | ---: | --- |
 | T1 | `submissions/final/result_1.csv` | `t1_online_v9_ens5.csv` | **0.45** | 5 個因果成員的逐幀平均（v7 設定、`--fwd_batch 8/10/12`、`--gnss_huber`；6.13），離線 0.427 → 0.404 |
 | T2 | `submissions/final/result_2.csv` | `t2_online_v23_ens5.csv` | **0.25** | 5 個因果變體的逐幀平均（v22、搜尋 σ4、+ 同步、+ 低速 GNSS consider、+ 推算運動累積；6.16），離線 0.214 → 0.198 |
-| T3 | `submissions/final/result_3.csv` | `t3_online_kvo97_mean_r.csv` | **0.19** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`+假設庫後驗平均（6.8、6.15），runner 預設 |
+| T3 | `submissions/final/result_3.csv` | `t3_online_slb3.csv` | **0.19** | SE(2)+soft-heading+VO 缺口補值+起步 VO 尺度先驗 `--kvo0 0.97`+假設庫後驗平均（6.8、6.15），runner 預設 |
 
 最新版已通過全部 58 項 Docker unittest、Bash 語法及編輯器 diagnostics；完整候選另外通過 live matching、CSV 與 causal prefix 驗證。三份正式檔共 3011／3299／3142 筆，SHA-256 與採用來源相同，清單見 `submissions/final/README.md`。所有本輪程式、測試、實際 CSV／JSON 與分析已 commit／push 到 `copilot/research-kaggle-competition`；中間模型與失敗結果保留供重現，不能誤當正式最佳。
 
@@ -798,3 +798,14 @@ T3 沒有 ground truth，所以前向模型的參數改用 **GNSS-denied 預演*
 - 重新提交為 `t3_online_kvo97_mean_r.csv`（Kaggle 57715774），public 0.19，並改為正式檔 `result_3.csv`。先前的 kvo97／kvo97_mean 檔是用舊快取產生的，無法從零重現，不能作為最終選擇。
 - T1、T2：`mk_D`、`mk_S`、`vo` 從零重建後逐陣列相同（T1／T2 的 runner 不使用遮罩 VO），兩份正式檔可從原始資料重現。
 - 殘餘風險：路面分割和車輛遮罩（`$TD/road/f.npz`、`$TD/masks/f.npz`，由 SegFormer／YOLO 產生）存在資料夾中，沒有重新推論驗證；若重新推論，GPU 浮點運算的差異可能讓結果有極小差別。
+- **T2 靜止時的側向批次 `--still_lat_batch N PEAK SHARP`**：T2 排隊時，lane 側向匹配連續數十次都顯示 −0.20 ± 0.01 m（車在偏差 GNSS 的右側，和參考方向一致），但峰值只有 0.18–0.20、側向 sharpness 只有 0.08–0.099，全部被門檻擋掉。
+  - 改為每 N 個取中位數做一次側向更新（σ = max(MAD/√N, 0.1)）。N=5 時第 0–300 幀側向 rms 0.123 → 0.108，對參考 0.201 → 0.200，near 側向 0.098 → 0.096。
+  - GNSS（σ 0.2 m，約 4 Hz，帶 +0.2 m 偏差）會一直把側向拉回去，所以效果有限；加入 v23 平均後仍是 0.1980，不採用，選項預設關閉。
+
+### 6.18 T3 起步側向批次（2026-10-28 08:42，public 0.19 不變，採用）
+
+- **觀察**：起步參考顯示第 0–20 幀側向偏左約 0.21 m。第 6、9、12 幀的 lane 側向匹配都說「往右 0.18–0.20 m」，但峰值只有 0.196–0.198，被門檻擋掉；起步的弱側向匹配本來就關閉，因為在 T1 預演中曾造成錯車道鎖定。
+- **修改**：`--start_lat_batch 3 0.15 0.05 60`。前 60 幀的弱側向偏移（峰值 > 0.15、側向 sharpness > 0.05）不逐一採用，而是每 3 個取中位數更新一次（σ = max(MAD/√3, 0.1)），和停車時的側向批次共用程式。中位數更新出現在第 9 幀（−0.18 m）和第 18 幀（−0.20 m），之後約為 0。
+- **起步參考**：前 60 幀誤差在四種設定下都變小（0.343／1.253／0.262／0.704 → 0.330／1.248／0.247／0.698），前 30 幀也是。之前只有 kvo97 和後驗平均做到四種設定一致變好。
+- **其他影響**：假設庫在第 600 幀改選 0°；和前一版相比，第 943–2160 幀平均差 0.002 m，第 2160–3142 幀平均差 0.025 m；共同幀 innovation 大致持平（lane 前向 0.081 → 0.077，lane 航向 0.223 → 0.233）。
+- **結果**：Kaggle 57718059，public 0.19（與前一版相同）。依 T2 v22 的先例（離線更好、public 相同就採用）納入 runner；runner 用新快取重跑後逐位元相同，正式檔 `result_3.csv` 已更新。

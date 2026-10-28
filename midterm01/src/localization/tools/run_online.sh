@@ -72,7 +72,12 @@ case $TR in
       P="--gyro_bias -0.23 --lane_k 0.005 0.005 --vo_noise 0.08 --acc_noise 0.1 --v0_sd 10 --min_peak_lo 0.13 --lo_peak_sd 0.5 99
          --still_freeze --imu_causal --terrain --dyn_att --dyn_roll_scale 0 --pitch_per_accel -0.3 --init_pos 2.5 --vo_dr_init
          --att_imu_map 1.5 --att_resid --att_pitch_only --roll_imu_map 120 --terrain_lat --seg_gate 0.5 --seg_gate_track
-         --seg_gate_from 300 --yaw_soft_peak 0.2 --kvo0 0.97" ;;
+         --seg_gate_from 300 --yaw_soft_peak 0.2 --kvo0 0.97 --start_lat_batch 3 0.15 0.05 60" ;;
+      # --start_lat_batch 3 0.15 0.05 60: in the first 60 frames weak lane lateral offsets (peak > 0.15, lateral
+      # sharpness > 0.05, below the regular gates) are applied as one median per 3 (frames 6-12 all said 0.18-0.20 m
+      # right; single weak lateral matches stay off - they caused a wrong-lane lock in the T1 rehearsal): updates at
+      # frames 9 (-0.18) and 18 (-0.20), later ones ~0; the start reference error (frames 0-60) is lower in all four
+      # settings (0.343 / 1.253 / 0.262 / 0.704 -> 0.330 / 1.248 / 0.247 / 0.698); public 0.19 (= before, 57718059)
       # --kvo0 0.97: initial VO scale (VO speed / true speed) from the converged Track01 / Track02 values (0.963 / 0.994;
       # Track03 itself converges to 0.95-0.97) instead of 1.0: the start ran 3-4 % slow until the map fixes corrected
       # the scale, and the weak lane forward fixes of frames 0-150 all said "further ahead" (+0.26..+0.82 m); with it

@@ -85,6 +85,18 @@ ap.add_argument('--guess', default='', help='x,y,yaw_rad in place of the init_gu
 ap.add_argument('--first', type=int, default=0, help='validation only: the filter starts at this frame as if it were frame 0 '
                 '(restart tests of the start logic on frames with a converged trajectory); earlier rows are written as zeros')
 ap.add_argument('--init_yaw', type=float, default=25.0, help='deg: heading window of the initial search')
+ap.add_argument('--still_lat_batch', type=float, nargs=3, default=[0, 0.15, 0.05], metavar=('N', 'PEAK', 'SHARP'), help='standing '
+                'still: lane lateral offsets with peak > PEAK and lateral sharpness > SHARP (below the regular --min_peak / '
+                '--min_sharp_l) are collected and every N of them applied '
+                'as one median measurement (sigma max(MAD / sqrt(N), 0.1) m); the scene does not change while standing, so '
+                'single weak matches are unreliable but their median is not (Track02 queue: peaks 0.16-0.19, all saying '
+                '0.1-0.23 m right of the biased GNSS); N=0 disables')
+ap.add_argument('--start_lat_batch', type=float, nargs=4, default=[0, 0.15, 0.05, 60], metavar=('N', 'PEAK', 'SHARP', 'FRAMES'),
+                help='as --still_lat_batch, but for the first FRAMES frames (moving start): weak lane lateral offsets applied '
+                'as one median per N (Track03 frames 6-12: peaks 0.196-0.198 all said 0.18-0.20 m right); N=0 disables')
+ap.add_argument('--start_dense', type=int, default=0, help='map measurements on every frame of the first N frames (then every '
+                '--step): the start has the largest forward uncertainty and the first --step frames ran on the frame-0 '
+                'match alone')
 ap.add_argument('--init_fwd', type=float, default=0.0, help='m added to the frame-0 position along the heading (position '
                 'hypotheses of the start bank)')
 ap.add_argument('--init_offset', type=float, default=0.0, help='deg added to the frame-0 heading (heading hypotheses, '
@@ -592,6 +604,7 @@ if __name__ == '__main__':
     att_ema = None
     still_k0, still_used = None, 0   # --still_meas: frame where the current standstill began
     fwd_buf = []   # --fwd_batch: weak lane-match forward offsets awaiting their median
+    lat_buf = []   # --still_lat_batch: weak lane-match lateral offsets while standing
     roll_mean, roll_n = 0.0, 0   # --roll_imu_map
     if a.terrain and REPLAY is None:
         LS.BM.BEV.terrain = MK.height
@@ -787,7 +800,7 @@ if __name__ == '__main__':
         if previous >= 0:
             initial_gnss_yaw = update_gnss_heading(previous, TS[a.first])
             cnt['gnss_yaw'] += int(initial_gnss_yaw)
-    meas_frames = list(range(a.first + a.step, n, a.step))
+    meas_frames = sorted(set(range(a.first + a.step, n, a.step)) | set(range(a.first + 1, min(a.first + 1 + a.start_dense, n))))
     block = 4 * a.workers
     mi = 0
     with Pool(a.workers) as pool:
@@ -1060,6 +1073,20 @@ if __name__ == '__main__':
                             inflate('l', dl * dl)                                    # means the filter drifted
                             drift_l.clear()
                             D['drift'] = 1
+                    lbp = None   # weak lateral offsets batched to a median: standing still, or the start
+                    if a.still_lat_batch[0] > 0 and D.get('still'):
+                        lbp = a.still_lat_batch[:3]
+                    elif a.start_lat_batch[0] > 0 and k - a.first < a.start_lat_batch[3]:
+                        lbp = a.start_lat_batch[:3]
+                    if (lbp is not None and not l_ok and peak > lbp[1] and sl > lbp[2] and abs(dl) < win - 0.15):
+                        lat_buf.append(dl)   # standing: weak lateral offset, batched to a median
+                        if len(lat_buf) >= int(lbp[0]):
+                            lb = np.array(lat_buf)
+                            med = float(np.median(lb))
+                            sgl = max(1.4826 * float(np.median(np.abs(lb - med))) / np.sqrt(len(lb)), 0.1)
+                            D['lb_dl'], D['lb_a'] = med, int(upd_lat(med, sgl))
+                            cnt['lat'] += D['lb_a']
+                            lat_buf.clear()
                     if l_ok and sl > 0:
                         sig = float(np.clip(a.lane_k[1] / sl, 0.1, 1.0))
                         S = var('l') + sig ** 2
