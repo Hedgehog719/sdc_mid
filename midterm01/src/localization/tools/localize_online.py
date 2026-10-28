@@ -91,6 +91,9 @@ ap.add_argument('--still_lat_batch', type=float, nargs=3, default=[0, 0.15, 0.05
                 'as one median measurement (sigma max(MAD / sqrt(N), 0.1) m); the scene does not change while standing, so '
                 'single weak matches are unreliable but their median is not (Track02 queue: peaks 0.16-0.19, all saying '
                 '0.1-0.23 m right of the biased GNSS); N=0 disables')
+ap.add_argument('--start_lat_batch', type=float, nargs=4, default=[0, 0.15, 0.05, 60], metavar=('N', 'PEAK', 'SHARP', 'FRAMES'),
+                help='as --still_lat_batch, but for the first FRAMES frames (moving start): weak lane lateral offsets applied '
+                'as one median per N (Track03 frames 6-12: peaks 0.196-0.198 all said 0.18-0.20 m right); N=0 disables')
 ap.add_argument('--start_dense', type=int, default=0, help='map measurements on every frame of the first N frames (then every '
                 '--step): the start has the largest forward uncertainty and the first --step frames ran on the frame-0 '
                 'match alone')
@@ -1070,10 +1073,14 @@ if __name__ == '__main__':
                             inflate('l', dl * dl)                                    # means the filter drifted
                             drift_l.clear()
                             D['drift'] = 1
-                    if (a.still_lat_batch[0] > 0 and not l_ok and D.get('still') and peak > a.still_lat_batch[1]
-                            and sl > a.still_lat_batch[2] and abs(dl) < win - 0.15):
+                    lbp = None   # weak lateral offsets batched to a median: standing still, or the start
+                    if a.still_lat_batch[0] > 0 and D.get('still'):
+                        lbp = a.still_lat_batch[:3]
+                    elif a.start_lat_batch[0] > 0 and k - a.first < a.start_lat_batch[3]:
+                        lbp = a.start_lat_batch[:3]
+                    if (lbp is not None and not l_ok and peak > lbp[1] and sl > lbp[2] and abs(dl) < win - 0.15):
                         lat_buf.append(dl)   # standing: weak lateral offset, batched to a median
-                        if len(lat_buf) >= int(a.still_lat_batch[0]):
+                        if len(lat_buf) >= int(lbp[0]):
                             lb = np.array(lat_buf)
                             med = float(np.median(lb))
                             sgl = max(1.4826 * float(np.median(np.abs(lb - med))) / np.sqrt(len(lb)), 0.1)
