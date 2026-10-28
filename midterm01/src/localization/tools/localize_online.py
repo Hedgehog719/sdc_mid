@@ -225,6 +225,9 @@ ap.add_argument('--near_yaw_sigma', type=float, default=0.6, help='deg; 0 = no h
                 'responds weakly: perturbing the prior heading by 1 deg moves it by only ~0.1 deg)')
 ap.add_argument('--lane_k', type=float, nargs=2, default=[0.01, 0.01], help='lane fix sigma = k / sharpness (forward, lateral)')
 ap.add_argument('--near_k', type=float, default=0.006)
+ap.add_argument('--lat_vote', type=float, nargs=2, default=[0.0, 0], metavar=('D', 'FROM'),
+                help='--terrain_lat: when the terrain and flat lane lateral offsets differ by > D m (from frame FROM on), '
+                     'ask the near alignment at the same prior pose; if it sides with the flat one, skip the terrain lateral fix')
 ap.add_argument('--near_fwd', type=float, default=0.0, help='>0: near-alignment forward offset as a measurement, sigma = '
                 'near_fwd / forward sharpness (0 = recorded only)')
 ap.add_argument('--near_fwd_min', type=float, default=0.02, help='smallest forward sharpness for a near forward measurement')
@@ -1022,6 +1025,17 @@ if __name__ == '__main__':
                                 dp = a.pitch_step * (1 if pk[2] > pk[0] else -1)
                             pitch_est = float(np.clip(pitch_est + a.pitch_gain * dp, -a.pitch_max, a.pitch_max))
                         D['pitch'] = pitch_est
+                    if a.lat_vote[0] > 0 and a.terrain_lat and r is not None and r[7] and k - a.first >= a.lat_vote[1]:
+                        LS.BM.BEV.TERRAIN_LAT = False   # same frame, same prior pose: flat lateral shape
+                        rf = lane_measure(k, mp, win, lo_ok and var('f') > a.lo_peak_sd[0] ** 2, lo_ok and var('l') > a.lo_peak_sd[1] ** 2)
+                        LS.BM.BEV.TERRAIN_LAT = True
+                        if rf is not None and abs(r[1] - rf[1]) > a.lat_vote[0]:
+                            B.set_motion_frame(k, v, dyaw_p / max(dt, 1e-3))
+                            rv = near_measure(k, mp, resp, float(np.clip(3 * np.sqrt(var('l')), 0.4, 1.0)) if MP is None else 1.0, 1.0)
+                            D['lv_flat'], D['lv_near'] = rf[1], (rv[0] if rv is not None else np.nan)
+                            if rv is not None and rv[3] and abs(rf[1] - rv[0]) < 0.5 * abs(r[1] - rv[0]):
+                                r = r[:7] + (False,) + r[8:]
+                                D['lv'] = 1
                     if r is not None:   # record as absolute pose + match quality
                         cm, sm = np.cos(mp[2]), np.sin(mp[2])
                         REC['lane'][k] = (mp[0] + cm * r[0] - sm * r[1], mp[1] + sm * r[0] + cm * r[1], mp[2] + r[2], r[3], r[4], r[5])
