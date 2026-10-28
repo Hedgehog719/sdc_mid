@@ -42,6 +42,9 @@ def bev_grid():
     return x, y
 
 
+# m: largest lateral road-shape offset the terrain BEV accepts (crown / gutters are ~0.1 m; more is usually a kerb or a
+# raised pavement in the map ground beside the road); 0.3 by default
+TERRAIN_LAT_CLIP = float(os.environ.get('SDC_TERRAIN_LAT_CLIP', '0.3'))
 CAM_SYNC = os.environ.get('SDC_CAM_SYNC', '0') == '1'   # compensate the side cameras' capture-time offsets
 CAM_SYNC_YAW = os.environ.get('SDC_CAM_SYNC_YAW', '0') == '1'
 
@@ -233,7 +236,7 @@ class ImageBEV:
             CU, CV = np.meshgrid(cu, cv, indexing='ij')
             zc, okc = self.terrain(*world(CU.ravel(), CV.ravel()))
             res = zc.reshape(CU.shape) - (pa[0] * CU + pa[1] * CV + pa[2]) - (F(cu) @ coef)[:, None]
-            res = np.where(okc.reshape(CU.shape) & np.isfinite(res), np.clip(res, -0.3, 0.3), 0.0)
+            res = np.where(okc.reshape(CU.shape) & np.isfinite(res), np.clip(res, -TERRAIN_LAT_CLIP, TERRAIN_LAT_CLIP), 0.0)
             res[:, np.abs(cv) < 1.0] = 0.0   # the strip itself is the profile
             from scipy.ndimage import median_filter
             res = median_filter(res, size=(3, 1), mode='nearest')   # along the road: map noise, not shape
