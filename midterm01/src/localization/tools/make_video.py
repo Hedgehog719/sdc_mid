@@ -29,6 +29,9 @@ ap.add_argument('--dyn_csv', default='')
 ap.add_argument('--pano', type=float, default=0, help='bottom row as one cylindrical panorama of radius R m (0: three images)')
 ap.add_argument('--pano_az', type=float, default=105, help='panorama half width (deg)')
 ap.add_argument('--pano_el', type=float, nargs=2, default=[-30, 20], help='panorama elevation range (deg)')
+ap.add_argument('--wide', action='store_true', help='1920x1080: panorama at full width below, BEV (grey road, black mask, white markings) cropped to fill the rest')
+ap.add_argument('--bev_lat', type=float, default=0, help='--wide: show +-L m sideways (BEV scaled down, padded); 0 = fill the width')
+ap.add_argument('--range', default='', help='lo:hi frames only')
 ap.add_argument('--trail', type=int, default=400, help='past frames drawn as the trajectory')
 a = ap.parse_args()
 
@@ -58,7 +61,7 @@ CH = int(CW * 464 / 720)
 Rm0 = Rotation.from_euler('ZYX', [-1.5, 0, 0], degrees=True).as_matrix()
 if a.pano > 0:   # cylinder around the front camera: pixel -> (azimuth, elevation) -> point at radius R -> each camera
     C = Cameras(os.path.join(a.track_dir, f'{track}_images', 'camera_info'))
-    PW = BW
+    PW = 1920 if a.wide else BW
     PH = int(PW * (a.pano_el[1] - a.pano_el[0]) / (2 * a.pano_az))
     az = np.radians(np.linspace(a.pano_az, -a.pano_az, PW))          # left of the car on the left
     el = np.radians(np.linspace(a.pano_el[1], a.pano_el[0], PH))
@@ -74,27 +77,41 @@ if a.pano > 0:   # cylinder around the front camera: pixel -> (azimuth, elevatio
                      wgt.reshape(PH, PW).astype(np.float32))
 os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
 BOT = PH if a.pano > 0 else CH
-vw = cv2.VideoWriter(a.out, cv2.VideoWriter_fourcc(*'mp4v'), a.fps, (BW, BH + BOT))
+if a.wide:
+    FW, FH = 1920, 1080
+    TOPH = FH - PH
+    SF = FW / H if a.bev_lat <= 0 else TOPH / (2 * a.bev_lat / RES)   # px per BEV cell
+    CROP0 = int(W * SF / 2 - TOPH / 2)           # lateral crop centred on the car
+    vw = cv2.VideoWriter(a.out, cv2.VideoWriter_fourcc(*'mp4v'), a.fps, (FW, FH))
+else:
+    vw = cv2.VideoWriter(a.out, cv2.VideoWriter_fourcc(*'mp4v'), a.fps, (BW, BH + BOT))
 X, Y, YAW = tr.x.values, tr.y.values, tr.yaw.values
-for i in range(0, len(tr), a.step):
+LO, HI = (0, len(tr)) if not a.range else [int(v) for v in a.range.split(':')]
+for i in range(LO, min(HI, len(tr)), a.step):
     x, y, yaw = X[i], Y[i], YAW[i]
     B.pose = (x, y, yaw)
     resp, valid = B.render_resp(i, lane_response)
-    g = np.clip(resp / 2.0 * 255, 0, 255).astype(np.uint8)
+    if a.wide:   # grey road, black where no camera sees the road (masks, outside the images), white markings
+        g = (90 + 165 * np.clip(resp / 2.0, 0, 1)).astype(np.uint8)
+        g[~valid] = 0
+    else:
+        g = np.clip(resp / 2.0 * 255, 0, 255).astype(np.uint8)
     bev = cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
-    bev[~valid] = (40, 40, 40)
+    if not a.wide:
+        bev[~valid] = (40, 40, 40)
     lanes = MK.bev(np.array([x, y]), yaw)[0] > 0.5
     bev[lanes] = (0.45 * bev[lanes] + 0.55 * np.array([40, 40, 230])).astype(np.uint8)
-    bev = cv2.resize(bev, (W * S, H * S), interpolation=cv2.INTER_NEAREST)
+    Sx = SF if a.wide else S
+    bev = cv2.resize(bev, (int(W * Sx), int(H * Sx)), interpolation=cv2.INTER_NEAREST)
     j0 = max(0, i - a.trail)
     dx, dy = X[j0:i + 1] - x, Y[j0:i + 1] - y
     c, s = np.cos(yaw), np.sin(yaw)
     fw, lt = c * dx + s * dy, -s * dx + c * dy
-    rr = ((X_MAX - fw) / RES - 0.5) * S
-    cc = ((Y_MAX - lt) / RES - 0.5) * S
+    rr = ((X_MAX - fw) / RES - 0.5) * Sx
+    cc = ((Y_MAX - lt) / RES - 0.5) * Sx
     for r_, c_ in zip(rr.astype(int), cc.astype(int)):
-        if 0 <= r_ < H * S and 0 <= c_ < W * S:
-            cv2.circle(bev, (c_, r_), 2, (230, 200, 40), -1)
+        if 0 <= r_ < bev.shape[0] and 0 <= c_ < bev.shape[1]:
+            cv2.circle(bev, (c_, r_), 3 if a.wide else 2, (230, 200, 40), -1)
     bev = cv2.rotate(bev, cv2.ROTATE_90_CLOCKWISE)   # car on the left, driving to the right
     if a.pano > 0:
         Rm = Rm0 if not a.dyn_csv else Rotation.from_euler('ZYX', [-1.5, DY[i, 0], DY[i, 1]], degrees=True).as_matrix()
@@ -123,11 +140,19 @@ for i in range(0, len(tr), a.step):
             img = cv2.imread(os.path.join(imgdir[cam], names[cam][i]))
             strip.append(cv2.resize(img, (CW, CH)) if img is not None else np.zeros((CH, CW, 3), np.uint8))
         bottom = np.concatenate(strip, 1)
-    bottom = cv2.copyMakeBorder(bottom, 0, 0, 0, BW - bottom.shape[1], cv2.BORDER_CONSTANT)
-    frame = np.concatenate([bev, bottom], 0)
+    if a.wide:
+        top = bev[max(CROP0, 0):max(CROP0, 0) + TOPH, :FW]
+        top = cv2.copyMakeBorder(top, 0, TOPH - top.shape[0], (FW - top.shape[1]) // 2,
+                                 FW - top.shape[1] - (FW - top.shape[1]) // 2, cv2.BORDER_CONSTANT)
+        frame = np.concatenate([top, bottom], 0)
+        legend_y = TOPH - 16
+    else:
+        bottom = cv2.copyMakeBorder(bottom, 0, 0, 0, BW - bottom.shape[1], cv2.BORDER_CONSTANT)
+        frame = np.concatenate([bev, bottom], 0)
+        legend_y = BH - 16
     cv2.putText(frame, f'{track}  frame {i}', (16, 36), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-    cv2.putText(frame, 'white: camera markings   red: map markings   cyan: past trajectory', (16, BH - 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+    cv2.putText(frame, 'white: camera markings   red: map markings   cyan: past trajectory', (16, legend_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     vw.write(frame)
     if i % 300 == 0:
         print(f'frame {i}/{len(tr)}', flush=True)
