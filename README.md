@@ -8,8 +8,8 @@
 | | 感測器 | Public | Private | 名次 |
 |---|---|---|---|---|
 | **Track03** | 相機＋IMU（**無 GNSS**） | 0.199 | **0.247** | **Private 第 1**（第 2 名 0.561） |
-| Track02 | 相機＋IMU＋GNSS | 0.250 | 0.250 | `[待補]` |
-| Track01 | 相機＋IMU＋GNSS | 0.459 | 0.459 | `[待補]` |
+| Track02 | 相機＋IMU＋GNSS | 0.250 | 0.250 | 第 2 |
+| Track01 | 相機＋IMU＋GNSS | 0.459 | 0.459 | 第 2 |
 
 分數 = 位置 RMSE（m）＋ 0.2 × 航向 RMSE（度），越低越好。T1/T2 的 public 就是整條軌跡；T3 的 public 只算前約 13%，private 算其餘約 87%。
 
