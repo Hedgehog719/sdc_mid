@@ -35,6 +35,24 @@ Midterm01（Kaggle 競賽，三個 track）。
 
 Track03 沒有 GNSS、起點航向偏約 17°、一開始就在行駛，中途停紅燈 27 秒，路面有坡度、排水坡，是三軌中最難的一軌。
 
+### 資料前處理
+
+`tools/run_online.sh` 依序執行，每一步的輸出已存在就跳過；除了 VO 用相鄰兩幀（k−1, k）之外，都是逐張影像或只用地圖，不會用到未來幀。
+
+| 步驟 | 程式 | 做什麼 | 輸出 |
+|---|---|---|---|
+| 1. 地圖 | `map_to_npy.py` | `map.pcd` 轉成 numpy（xyz、反射強度），定位時用 KD 查詢周圍點 | `map.npy`、`map_intensity.npy` |
+| 2. 感測器 | `extract_bag.py` | 從 ROS 2 bag（`.db3`）讀出 IMU（角速度、加速度、姿態四元數）與 GNSS（T1/T2） | `sensors/imu.csv`、`gnss.csv` |
+| 3. 時間戳 | （`localize_online.py` 內） | 每幀時間取自 `raw_ply/` 的檔名（`*_ts_<ns>.ply`），點雲內容不使用；IMU／GNSS 只取該幀時間以前的樣本並外推 | — |
+| 4. 路面分割 | `segment_road.py` | SegFormer-B2（Cityscapes）每張影像的路面機率 | `road/{fl,f,fr}.npz` |
+| 5. 車輛遮罩 | `segment_vehicles.py` | YOLO11x-seg 的車、機車、行人遮罩（膨脹後存成位元圖） | `masks/{fl,f,fr}.npz` |
+| 6. 車身遮罩 | `calib/ego_mask_*.png` | 手繪的引擎蓋／車身範圍（三軌同一台車） | — |
+| 7. 標線地圖 | `marking_map.py ALL` | 由整張 LiDAR 地圖找地面與標線（見 3.2），不用任何軌跡 | `mk_D.npz`（二值）、`mk_S.npz`（連續值） |
+| 8. 視覺里程計 | `bev_vo.py`、`vo_fill.py` | 前相機路面鳥瞰圖，相鄰兩幀樣板比對得到前進距離；T3 前車太近時改用遮罩比對補洞 | `vo.npz`（T3：`vo_fill.npz`） |
+| 9. 定位 | `localize_online.py` | 因果 EKF（第 3 節） | `<T>_online.csv` |
+
+輸出格式為 Kaggle 的 `idx,x,y,yaw`（yaw 為 rad，換算到 (−π, π]，與助教轉換程式的 atan2 相同；T3 在第 2458 幀轉過 180°）。
+
 ## 2. 方法概覽
 
 ![流程](docs/img/f_pipeline_v.png)
